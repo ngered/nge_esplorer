@@ -174,7 +174,198 @@ Ne rien installer de lourd avant la réponse : un passage à Windows 11 implique
 Marquage : C3-CONFIDENTIEL pour NgeEsPlorer, C2-LIMITÉ pour la VM (libellés de la politique d'étiquettes Office
 NGE : « Cx : Propriété de NGE », pied de page centré, 10 pt).
 
-## 11. Points ouverts
+## 11. Modèle de données et relevé de chambres
+
+Décisions (30 octobre 2026) :
+- **Base BE** : SpatiaLite d'abord, bascule possible sur PostGIS (même schéma).
+- **Schéma commun** `PRJ_NOE` (objets ponctuels) / `PRJ_LINEAIRE` (objets linéaires, reliés à leurs nœuds), autour
+  duquel se greffent les schémas métiers (chambres, poteaux, immeubles…). FOA Explorer était une base métier
+  chambres + poteaux ; NgeEsPlorer généralise.
+- **Échange et stockage terminal en GeoJSON** (Flutter ne lit pas SpatiaLite sur Android).
+- **Hors périmètre de NgeEsPlorer** : préparation des données, génération des FOA et autres sorties. Elles sont
+  déléguées à une application BE en C# : FibReady, une extension de FibReady ou une application dédiée sur les
+  mêmes bibliothèques (CommonTools, DataTools, CartoTools : EPPlus 8, PDFsharp, NetTopologySuite avec SpatiaLite et
+  shapefile, System.Data.SQLite).
+- **InfraExplorer** : pas de reprise du code ; on s'inspire du mode opératoire du relevé de chambres (manuel
+  `o:\C#\Installs\InfraExp\2024_remastered\Annexe\INFRA_EXPLORER_MANUEL.chm`).
+
+Mode opératoire hérité du relevé de chambres :
+1. Préparation BE : import des chambres du PIT Orange (shapefile), référentiel adresses FANTOIR par code INSEE,
+   fonds de plan découpés sur l'emprise, une base par zone copiée sur la tablette.
+2. Terrain : sélection sur la carte → fiche (n°, type, adresse, date, opérateur, commande) → masques A à D en
+   grille → alvéoles et sous-tubages glissés (diamètres normalisés) → statut (R réservée, X occupée, M mauvaise) →
+   destination (chambre voisine ou autre : poteau, façade, abonné) → câbles (taux d'occupation, grille FT) →
+   miroir (report des alvéoles de la chambre A vers la chambre B qu'elles desservent).
+3. Photos : une par masque, dessus, environnement (positions des masques A à D placées sur la photo), mesures.
+4. Niveau de renseignement en trois couleurs : non relevée, partielle, complète (1 masque renseigné = 1 photo,
+   photos d'environnement, de mesure et de dessus présentes).
+5. Sorties : fiche FOA Excel par chambre (masques + photos, synthèse d'occupation), lot ZIP filtré par période.
+   Exemple : `c:\NoDrive\Documents\Etudes\essonne\CHA_597.xlsx` (deux onglets ; photos nommées
+   `CHA_597_A_1`, `CHA_597_DESSUS_1`, `CHA_597_ENV_1`…).
+
+Relevé de chambres dans NgeEsPlorer :
+- **Quatre faces seulement** à la saisie. Les très grandes faces se parcourent par déplacement (« pan ») sur une
+  grille plus large que l'écran. L'export FOA transpose en masques E, F, G… sur plusieurs feuilles, comme les FOA
+  Orange des grandes chambres.
+- On garde l'esprit du miroir, des couleurs et du niveau de renseignement, mais l'interface dépend du support :
+  smartphone en vertical (interface repensée), tablette en horizontal (proche de FOA Explorer).
+- **Photos prises en direct**, fonction du socle commun à tous les modules (voir la maquette Figma) ; plusieurs
+  photos par masque, dont une photo principale désignée.
+
+Stockage et échange (proposition) :
+- **Terminal** : SQLite chiffrée (SQLCipher), une ligne par objet ; colonnes d'index (UUID, classe, zone, statut,
+  date de modification, emprise xmin/ymin/xmax/ymax) et une colonne contenant l'objet GeoJSON complet. Aucune
+  géométrie SpatiaLite sur le terminal.
+- **Objets** : deux sortes d'objets GeoJSON, selon le modèle GraceTHD ci-dessous. Un nœud (Point) porte ses
+  entités métier, ses positions de masque et ses photos ; un linéaire (LineString) porte ses conduites (alvéoles,
+  sous-tubes, occupation). Chaque élément imbriqué a son UUID ; les références entre objets se font par UUID.
+- **BE** : le GeoJSON n'est que le format d'échange. À l'import, l'application BE aplatit chaque objet dans les
+  tables relationnelles (`PRJ_NOE`, `PRJ_LINEAIRE`, tables métier) avec de vraies géométries SpatiaLite ou PostGIS.
+
+Inspiration GraceTHD (exemple : `c:\NoDrive\Documents\Etudes\Auvergne\projets\test_grace\data\Export\GraceTHD\
+test_grace_EXP_GRACETHD.sqlite`, tables `patch201` → version 2.0.1) : les entités métier sont séparées de leur
+expression géométrique.
+
+| Couche | GraceTHD | NgeEsPlorer |
+| --- | --- | --- |
+| Géométrie ponctuelle | `t_noeud` (PT, ST, SF) | `PRJ_NOE` |
+| Géométrie linéaire entre deux nœuds | `t_cheminement` (`cm_ndcode1`, `cm_ndcode2`) | `PRJ_LINEAIRE` |
+| Métier porté par un nœud | `t_ptech` (chambre, poteau, façade), `t_ebp` (porté par le ptech), `t_sitetech`, `t_suf` | Tables métier (chambre, poteau, immeuble, support électrique…) |
+| Métier porté par un linéaire | `t_conduite` via `t_cond_chem` (sous-tubage : `cd_cd_code`) ; `t_cable` via `t_cab_cond` | Conduites (alvéoles), câbles |
+| Position dans une chambre | `t_masque` (nœud, face, colonne, ligne, conduite) | Positions de masque |
+| Traçabilité | `_creadat`, `_majdate`, `_majsrc`, `_abddate`, `_abdsrc`, `_geolqlt`, `_geolmod`, `_geolsrc` | Idem : abandon daté plutôt que suppression |
+
+Conséquences pour le relevé de chambres :
+- une alvéole est une **conduite** portée par le linéaire qui relie la chambre à sa destination ; renseigner la
+  destination revient à choisir ou créer le nœud d'arrivée (chambre, poteau, façade, abonné) et le linéaire ;
+- le **miroir** devient naturel : la même conduite apparaît dans le masque de chaque extrémité ; « appliquer le
+  miroir » crée seulement la position de masque côté B, sans recopier de données ;
+- les colonnes et lignes de masque ne sont pas bornées, ce qui convient aux grandes faces parcourues par
+  déplacement ;
+- l'application BE dispose déjà d'import et d'export GraceTHD dans FibReady (`PlugImpShpGrace`, `PlugExpGrace`).
+
+Le motif nœud / linéaire / métier rattaché s'étend à l'électricité ; seules les tables métier diffèrent.
+
+GraceTHD v3 : aucune base SpatiaLite publiée (GitHub `GraceTHD-community` s'arrête à la v2.0.1 ; standard CNIG
+v3.0 au stade de projet). Base vide reconstituée depuis les gabarits de l'export FibReady
+(`PlugExpGrace\...\Data\shapes_v3`) : `docs/gracethd/gracethd_v3.sqlite`, script et règles dans
+[tools/gracethd/](../tools/gracethd/README.md). Ces gabarits sont une variante de donneur d'ordre.
+Différences structurantes avec la v2 :
+- `t_noeud` réduit au code et aux dates ; le support physique géolocalisé devient `t_pointaccueil` (chambre,
+  appui, ancrage façade…), et `t_tranchee` relie deux points d'accueil ;
+- `t_sitetech` / `t_ltech` / `t_suf` → `t_site` / `t_local` ;
+- **plus de `t_conduite`, `t_cond_chem` ni `t_masque`** : le câble emprunte directement les cheminements
+  (`t_cab_chem`).
+
+Conséquence : les masques, alvéoles et sous-tubages du relevé de chambres n'ont pas d'équivalent en v3. Ils
+forment une extension métier propre à NgeEsPlorer, à exporter en v2 (`t_conduite`, `t_masque`) ou dans les FOA.
+
+**Décision (30 octobre 2026)** : modèle mixte, au plus près de **GraceTHD v2** (la version la plus utilisée) et de
+**FOA Explorer**. De GraceTHD v2 : la séparation entre géométrie (nœuds, linéaires) et entités métier. De FOA
+Explorer : la convention d'identifiants (`XXX_ID` en clé, `XXX_KEY` en référence) et les tables de matériel
+détaillées (`MAT_CHAMBRE` avec dimensions, `MAT_POTEAU`, `MAT_CABLE` avec COMAC, `MAT_EQUIP`, fabricants).
+
+Modèle mixte (proposition) :
+
+| Couche | Tables | Origine |
+| --- | --- | --- |
+| Géométrie | `PRJ_NOE` (Point), `PRJ_LINEAIRE` (LineString, `NOE1_KEY` / `NOE2_KEY`) | GraceTHD `t_noeud`, `t_cheminement` |
+| Métier sur nœud | `PRJ_CHB`, `PRJ_POT`, équipements, immeubles… (`NOE_KEY`, `MAT_KEY`) | FOA `PRJ_CHB_NOE`, `PRJ_POT_NOE` sans géométrie ; GraceTHD `t_ptech`, `t_ebp` |
+| Métier sur linéaire | `PRJ_CONDUITE` (`LIN_KEY`, `PARENT_KEY` pour le sous-tubage, état R/X/M), occupation par câbles, `PRJ_CABLE` | GraceTHD `t_conduite`, `t_cable` ; FOA `PRJ_CHB_ALVEOLE`, `PRJ_CHB_ALVCAB` |
+| Relevé de chambre | `PRJ_MASQUE` (`NOE_KEY`, face, colonne, ligne, `CD_KEY`, masque logique) | GraceTHD `t_masque` ; FOA masques logiques |
+| Photos et pièces jointes | `PRJ_ATTACH_FILE` (entité, rôle, rang, principale) | FOA |
+| Référentiels | `DEF_TYPE` (arborescence des types), `MAT_*`, `DEF_FABRICANTS`, `DEF_FIB_*` ; correspondance vers les listes GraceTHD pour l'export | FOA `DEF_ALLTYPES` / `DEF_CLASSTYPE` |
+
+Points d'attention :
+- **Nommage** : suffixe `_ID` = clé primaire, suffixe `_KEY` = clé étrangère, préfixé par l'entité visée
+  (`NOE_KEY`, `LIN_KEY`, `MAT_KEY`) ; un rôle distingue plusieurs références vers la même table (`NOE1_KEY` /
+  `NOE2_KEY`, `TAMPON_MAT_KEY`, `PARENT_KEY`).
+- **Identifiants** (décision du 30 octobre 2026) — trois notions distinctes :
+
+  | Champ | Nature | Unicité | Attribué par |
+  | --- | --- | --- | --- |
+  | `XXX_ID` | Entier long auto-incrémenté, clé technique | Dans une base | La base BE |
+  | `XXX_CODE_EXT` | Chaîne, identifiant stable de l'entité | Dans le projet | Le BE ou le terminal qui crée l'entité |
+  | `XXX_LIB` | Libellé lu par l'humain (ex. n° de chambre Orange « 1476 ») | Aucune | Saisie |
+
+  Le GeoJSON et la synchronisation n'utilisent que `CODE_EXT`, y compris pour les références entre entités ;
+  l'import BE le résout en `XXX_ID`. Les référentiels (`MAT_*`, `DEF_*`), gérés par le BE seul, gardent leurs
+  entiers partout. Une entité créée hors ligne reçoit son `CODE_EXT` sur le terminal : le format doit garantir
+  l'unicité sans coordination (UUID, ou préfixe propre au terminal + séquence).
+- **À ne pas reprendre de FOA** : géométrie répétée dans chaque table métier (`PRJ_CHB_NOE`, `PRJ_POT_NOE`),
+  clé composée (`NOE_ID`, `TYPE_KEY`) et références polymorphes (`ALV_DEST_KEY` + `ALV_DEST_TYPE_KEY`) — un seul
+  `PRJ_NOE` les rend inutiles ; types de voies mélangés à `DEF_ALLTYPES` ; dates en entier Unix (préférer
+  l'ISO 8601).
+- **À reprendre de GraceTHD** : traçabilité (création, mise à jour, abandon et leurs sources ; qualité et mode de
+  géolocalisation).
+
+### Modules : noyau et greffons
+
+Chaque module (chambre, poteau, immeuble, optique…) a son univers : tables métier, référentiels (`MAT_*`), code,
+contrôles et sorties. Le module est une seule notion, déclinée à trois endroits et décrite par un **manifeste**
+commun (nom, version, dépendances, tables BE, espace GeoJSON, référentiels, correspondance GraceTHD).
+
+| | Desktop BE | Terminal | Échange GeoJSON |
+| --- | --- | --- | --- |
+| Schéma | Un fichier SQLite par module, attaché à la base noyau (`ATTACH`) ; un schéma par module dans PostGIS | Pas de tables métier : une ligne par objet GeoJSON | Un espace de nommage versionné par module (`properties.chb`, `properties.pot`…) |
+| Code | Une bibliothèque C# par module | Un paquet Dart par module | — |
+| Référentiels | Dans le fichier du module | Un fichier de référentiels par module, téléchargé avec lui | Codes `MAT_KEY` / `TYPE_KEY` |
+| Activation | Le projet attache ses modules | L'abonnement liste les modules autorisés | Un paquet de zone ne contient que les modules souscrits |
+
+Toutes les géométries restent dans le noyau (`PRJ_NOE`, `PRJ_LINEAIRE`) : les modules ne contiennent que des tables
+attributaires, ce qui évite les limites de SpatiaLite sur les bases attachées.
+
+Contraintes SQLite entre bases attachées (vérifiées par essai le 30 octobre 2026, sauf le mode WAL tiré de la
+documentation) :
+
+| Mécanisme | Résultat |
+| --- | --- |
+| Clé étrangère d'un module vers le noyau | Impossible : la référence est cherchée dans le module lui-même |
+| Trigger ou vue enregistrés qui croisent deux bases | Refusés |
+| Trigger ou vue `TEMP` (recréés à chaque connexion) | Fonctionnent : un orphelin est bien refusé |
+| Transaction sur plusieurs bases en mode WAL | Atomique base par base, pas sur l'ensemble |
+
+Règles qui en découlent :
+1. pas de clé étrangère déclarée entre bases : les `_KEY` sont des colonnes indexées ;
+2. intégrité assurée par l'application : triggers et vues `TEMP` à l'ouverture du projet, recherche d'orphelins
+   dans le sas de contrôle ; l'abandon daté limite les suppressions en cascade ;
+3. journal `DELETE` ou `TRUNCATE`, pas WAL : un relevé écrit à la fois dans le noyau et dans un module ;
+4. dépendances explicites dans le manifeste ; un module ne référence que les modules qu'il déclare.
+
+Graphe de dépendances (à préciser) :
+
+```
+noyau (PRJ_NOE, PRJ_LINEAIRE, DEF_TYPE, adresses)
+ ├─ infra (conduites, sous-tubage)
+ │   ├─ chambre (PRJ_CHB, masques, MAT_CHAMBRE)
+ │   ├─ poteau (PRJ_POT, MAT_POTEAU, COMAC)
+ │   └─ optique (câbles, boîtiers, MAT_CABLE…) — dépend aussi de chambre et poteau
+ └─ immeuble (…)
+```
+
+### Applications desktop
+
+La logique qui relie les schémas est écrite une seule fois, dans des bibliothèques C# communes (lignée
+CommonTools / DataTools) :
+- **bibliothèque noyau** : ouverture d'un projet et attachement des modules selon leurs manifestes, contrôle des
+  dépendances, intégrité entre bases, résolution des `CODE_EXT` en `XXX_ID` à l'import, abandon daté ;
+- **une bibliothèque par module** : tables, contrôles, écrans BE, sorties (FOA, C3A, export GraceTHD…).
+
+Les applications assemblent ces bibliothèques selon leur rôle :
+
+| Rôle | Nature | Contenu |
+| --- | --- | --- |
+| Préparation et publication | Interactive (BE) | Import PIT / GraceTHD, découpage en zones, publication des paquets chiffrés |
+| Sas de contrôle et d'intégration | Interactive pour la validation, automatique pour le transport | Réception des retours, contrôles par module, arbitrage des conflits, intégration au référentiel |
+| Exploitation et sorties | Interactive (BE) | FOA, C3A, synoptiques, exports GraceTHD |
+
+Préparation et sorties peuvent vivre dans une seule application à modules, comme FibReady et ses plugins
+(import, export, panneau, moteur) : extension de FibReady ou application sœur sur les mêmes bibliothèques. Une
+application séparée ne se justifie que pour un fonctionnement à part : la tâche planifiée Azure ↔ PostGIS de la
+phase 2, sous forme de service sans interface. Objectif : le BE et le terminal appliquent les mêmes définitions,
+sans règles divergentes d'une application à l'autre.
+
+## 12. Points ouverts
 
 - Réponses de la DSI : synthèse + complément NgeEsPlorer, évolution de la VM.
 - Note de vision d'ensemble (finalité, mode de fonctionnement, choix techniques) — à venir.

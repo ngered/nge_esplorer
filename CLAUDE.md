@@ -25,6 +25,13 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
 - **Phase 2** : PostGIS interne jamais exposée aux terminaux ; échange par paquets chiffrés via Azure ; **tous les
   retours passent par validation dans le sas de contrôle et de synchronisation** avant intégration.
 - Sur le web : données de test uniquement (pas de chiffrement local dans le navigateur).
+- **Périmètre** : saisie terrain uniquement. Préparation des données et sorties (FOA, C3A…) dans une application BE
+  en C# (famille FibReady) ; base BE SpatiaLite puis PostGIS, schéma commun `PRJ_NOE` / `PRJ_LINEAIRE` + schémas
+  métiers ; modèle mixte GraceTHD v2 (séparation géométrie / métier) et FOA Explorer (`XXX_ID` / `XXX_KEY`, tables
+  `MAT_*`). Terminal : SQLite chiffrée, une ligne par objet GeoJSON complet (voir docs/echanges.md §11).
+- **Modules** : manifeste commun (BE, terminal, GeoJSON) ; côté BE, un fichier SQLite par module attaché au noyau
+  (pas de clé étrangère entre bases, intégrité par l'application, journal non WAL) ; côté terminal, un paquet Dart
+  et un espace `properties.<module>` par module.
 
 ## Environnement (poste actuel)
 
