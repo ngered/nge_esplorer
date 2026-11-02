@@ -9,11 +9,17 @@ import 'barre_basse.dart';
 import 'retour_carte.dart';
 
 /// Barre basse commune des écrans d'un support : module (Portées du poteau, Masques de la chambre à venir),
-/// Connecteurs (liens optiques, à venir), Carte, Ajouter (un visuel libre).
+/// Connecteurs (liens optiques, à venir), Carte, Ajouter (un visuel libre, ou l'ajout propre à l'écran).
 class BarreSupport extends StatelessWidget {
-  const BarreSupport({super.key, required this.objet, this.avant, this.apres});
+  const BarreSupport({super.key, required this.objet, this.avant, this.apres, this.dansModule = false, this.ajout});
 
   final Objet objet;
+
+  /// Écran du module (rosace des portées) : son entrée est active.
+  final bool dansModule;
+
+  /// Dernière entrée propre à l'écran (Direction sur la rosace) ; par défaut, Ajouter un visuel libre.
+  final EntreeBarre? ajout;
 
   /// Avant une action qui ouvre un écran ou écrit l'objet (enregistrer la saisie en cours) ; faux : rester.
   final Future<bool> Function()? avant;
@@ -36,6 +42,7 @@ class BarreSupport extends StatelessWidget {
         EntreeBarre(
           icone: Icons.explore_outlined,
           libelle: 'Portées',
+          active: dansModule,
           onPressed: objet.point == null
               ? null
               : () => _action(
@@ -45,11 +52,12 @@ class BarreSupport extends StatelessWidget {
         const EntreeBarre(icone: Icons.grid_on_outlined, libelle: 'Masques'),
       const EntreeBarre(icone: Icons.cable_outlined, libelle: 'Connecteurs'),
       EntreeBarre(icone: Icons.public, libelle: 'Carte', onPressed: () => revenirALaCarte(context)),
-      EntreeBarre(
-        icone: Icons.add,
-        libelle: 'Ajouter',
-        onPressed: () => _action(context, () => ajouterVisuelLibre(context, objet)),
-      ),
+      ajout ??
+          EntreeBarre(
+            icone: Icons.add,
+            libelle: 'Ajouter',
+            onPressed: () => _action(context, () => ajouterVisuelLibre(context, objet)),
+          ),
     ]);
   }
 }

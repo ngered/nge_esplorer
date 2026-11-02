@@ -38,7 +38,8 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
 - **Paquet de zone** : [docs/paquet.md](docs/paquet.md) (ZIP : `paquet.json`, `objets.geojson`,
   `referentiels.json`, photos) ; publication et vérification par `tools/geojson/paquet.py` (référence côté BE).
 - **Terminal** (`lib/`) : `data/` (objet GeoJSON, paquet, `DataRepository` + implémentation mémoire), `carte/`
-  (`TileSource` : Plan et photos IGN (fond par défaut en France), OSM (ailleurs, Maroc), Google Plan / Satellite /
+  (pictos des supports repris de FibReady, couleur du statut de renseignement façon FOA Explorer
+  (`modules/renseignement.dart`) ; `TileSource` : Plan et photos IGN (fond par défaut en France), OSM (ailleurs, Maroc), Google Plan / Satellite /
   Hybride par la Map Tiles API avec la clé renseignée par l'utilisateur dans les paramètres, sous sa responsabilité,
   comme dans FibReady ; tuiles : serveur en usage courant, cache selon les en-têtes HTTP pour la fluidité, secours
   sans connexion sauf Google (règles de la Map Tiles API : ni usage hors connexion, logo et copyright de la vue

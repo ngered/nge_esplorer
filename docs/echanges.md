@@ -236,6 +236,21 @@ interrupteurs des paramètres s'appliquent immédiatement.
   avec un aperçu (Portées, Ouvrir) avant la fiche ;
 - **démarrage** : bleu nuit, grand logo NGE sur cartouche blanc, compte, bouton jaune d'ouverture de la zone ;
 - **couleurs de la carte** : celles de l'application (GraceTHD), appui énergie en bleu, façade en orange pointillé ;
+- **symboles des supports** : pictos de FibReady, jeu par défaut des paramètres
+  (`C:\outils\fibready_parametres\fibready_parametres_default\Pictures\noe\svg` : `NOE_POT`, `NOE_CHB`,
+  `NOE_FAC`, copiés dans `assets/fibready/noe`), affichés en 24 px (points au-dessous du zoom 16, comme FibReady
+  au-delà du 1/10 000) ; le remplissage « papier » prend la couleur du **statut de renseignement**, sur le principe
+  de FOA Explorer (NOE_STATUT) : à renseigner cyan `#00FFFF`, partiel orange `#FF8C00`, complet vert `#00FF7F`,
+  défaut rouge `#FF0000` (poteau déclaré inutilisable au dernier contrôle) ; même couleur au fond de l'étiquette ;
+  encre bleue pour l'appui énergie (même picto que le télécom dans FibReady) ; pastille magenta : modifié ;
+  sélection : halo jaune cerclé de bleu ; règles de complétude par module (champ `completude` des manifestes),
+  calculées en direct par la carte et posées dans `POT_NIVEAU` / `CHB_NIVEAU` à l'enregistrement, comme FOA
+  Explorer à l'enregistrement de la fiche ;
+- **paramètres FibReady** (2 novembre 2026) : coquille corrigée dans `fibready_parametres_default` —
+  `param_arbo_noe_pictures.csv`, la ligne poteau portait les poses de chambre (`POT,CHB-EX,CHB-AC,CHB-FT`, reste
+  de « CHB-FTPOH ») et donnait le picto poteau aux chambres CHB-EX, CHB-AC et CHB-FT ; ramenée à `POT` ; correction
+  ajoutée à `_recensement/merge_default.py` (`ARBO_FIX`) ; la coquille reste dans le paramétrage livré
+  (`Desktop/Demo/Parametrage`, `Sources/bin/.../Parametrage`) et les affaires orne et unifiber ;
 - **visuel et photo** : un **visuel** (vue attendue, `DEF_VUE`) regroupe **plusieurs photos** et porte ses
   fonctions propres (`VUE_ACTION` : visuel masque → bouton masque) ; toucher un visuel ouvre la **galerie** de ses
   photos, que l'on organise : la photo du haut est la **photo de référence** du visuel (`FIC_RANG` 1,
@@ -244,6 +259,9 @@ interrupteurs des paramètres s'appliquent immédiatement.
   puis première photo ; il existe tant qu'il a des photos, qui portent son identifiant et son titre
   (`PRJ_FICHIER.VIS_CODE`, `VIS_LIB`, `VUE_KEY` nul) ; renommable dans sa galerie ; affiché après les visuels
   attendus ; un support sans vue attendue s'ouvre aussi sur ses visuels, pour pouvoir en ajouter ;
+- un **visuel attendu** est un visuel libre **précréé et branché sur un module** (`DEF_VUE` : titre, ordre,
+  obligation, fonction propre) : même nature, même galerie ; il est affiché vide, « à renseigner », dès
+  l'ouverture du support (retenu le 2 novembre 2026, plutôt qu'une liste à activer par « Ajouter ») ;
 - **support** : écran d'arrivée « visuels » (une carte par visuel : photo de référence, nombre de photos ou
   « Manquante », prendre une photo, fonction propre du visuel) ; le **crayon** de l'en-tête ouvre la saisie générale de l'entité
   (identification, commentaire, caractéristiques, contrôles, données propres au module), pas les photos ni leur
@@ -255,7 +273,10 @@ interrupteurs des paramètres s'appliquent immédiatement.
   détail d'un câble porté, « Supprimer le support » en bas de la saisie du support, avec confirmation ;
 - l'action du module n'est pas répétée sur chaque vue, sauf la **grille du masque de chambre**, propre à la vue
   catégorisée (masque A, B…) ;
-- **portées** : rosace en haut, câbles portés en accordéon dessous.
+- **portées** : rosace en haut, câbles portés en accordéon dessous (un seul ouvert, saisie sur place : type,
+  longueur, nappe, pose, flèche et température si relevée, « Supprimer ce câble » avec « Annuler ») ; barre commune
+  du support, Portées active, « Direction » ajoute une portée ; l'enregistrement recalcule le niveau du poteau
+  (`POT_NIVEAU`), l'orientation des portées comptant dans son renseignement.
 
 Mise en œuvre (2 novembre 2026) : thème `lib/theme.dart`, démarrage, carte, visuels, galerie et saisie du
 support. Les gestes sur les photos (prise, ordre, suppression) sont enregistrés aussitôt, sans bouton Enregistrer ;

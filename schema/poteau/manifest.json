@@ -34,7 +34,7 @@
     {"type": "POT", "code": "ENSEMBLE", "lib": "Vue d'ensemble", "ordre": 2, "obligatoire": "OUI"},
     {"type": "POT", "code": "TETE", "lib": "Vue tête de poteau", "ordre": 3, "obligatoire": "OUI", "action": "ROSACE"}
   ],
-  "completude": "À définir : vues obligatoires, caractéristiques, portées et contrôles.",
+  "completude": "POT_NIVEAU, principe de FOA Explorer. Complet (2) : vues obligatoires photographiées, référence du catalogue (MAT_KEY), toutes les portées orientées (angle relevé au poteau), au moins un contrôle. Partiel (1) : une photo, un contrôle ou une portée orientée. Non relevé (0) sinon. Défaut (affichage) : dernier contrôle SEC_UTILISABLE = 0.",
   "grace": {
     "POT_POTEAU": "t_ptech (pt_typephy A ; pt_a_haut, pt_a_struc, pt_nature = MAT_POTEAU.MAT_LIB)"
   }

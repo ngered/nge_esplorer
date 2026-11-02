@@ -75,6 +75,8 @@ flutter:
     - assets/google/
     # logo NGE Energies Solutions (cadre recadré sur le dessin)
     - assets/nge/
+    # pictos des supports, jeu par défaut des paramètres FibReady (fibready_parametres_default/Pictures/noe/svg)
+    - assets/fibready/noe/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

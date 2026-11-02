@@ -7,6 +7,7 @@ import '../data/paquet.dart';
 import '../data/referentiels.dart';
 import '../data/reglages.dart';
 import '../data/visuels.dart';
+import '../modules/renseignement.dart';
 import 'sortie_page.dart' if (dart.library.js_interop) 'sortie_page_web.dart';
 
 /// État de la session terrain : paquet chargé, compte, intervention en cours.
@@ -126,6 +127,7 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> enregistrer(Objet o, {bool abandon = false}) async {
+    if (!abandon) await poserNiveau(o, referentiels, repo);
     await repo.enregistrer(o, auteur: auteur, abandon: abandon);
     await apresEcriture();
   }

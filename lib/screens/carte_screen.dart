@@ -9,10 +9,12 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../carte/couleurs.dart';
+import '../carte/pictos.dart';
 import '../carte/tile_source.dart';
 import '../data/objet.dart';
 import '../data/referentiels.dart';
 import '../modules/poteau/rosace_screen.dart';
+import '../modules/renseignement.dart';
 import '../providers/app_provider.dart';
 import '../theme.dart';
 import '../widgets/barre_basse.dart';
@@ -227,6 +229,9 @@ class _CarteState extends State<_Carte> {
   late TileSource _fond = fondParDefaut(context.read<AppProvider>().emprise);
   final Set<Couche> _couches = {Couche.aerien, Couche.souterrain};
   List<Objet> _visibles = [];
+
+  /// Statut de renseignement des supports visibles, par id.
+  Map<String, Renseignement?> _statuts = {};
   Objet? _selection;
   Timer? _attente;
   int _revision = -1;
@@ -336,11 +341,16 @@ class _CarteState extends State<_Carte> {
         [b.west, b.south, b.east, b.north],
         classes: {Classe.noe, Classe.lin, if (_couches.contains(Couche.administratif) && _zoom >= 16) Classe.adr},
       );
+      final statuts = <String, Renseignement?>{
+        for (final o in objets)
+          if (o.classe == Classe.noe) o.id: await renseignement(o, app.referentiels, app.repo),
+      };
       // un support supprimé (abandonné) quitte la sélection
       final sel = _selection == null ? null : await app.repo.objet(_selection!.id);
       if (mounted) {
         setState(() {
           _visibles = objets;
+          _statuts = statuts;
           _selection = sel == null || sel.abandonne ? null : sel;
         });
       }
@@ -393,6 +403,19 @@ class _CarteState extends State<_Carte> {
                     },
                   );
                 }),
+              const Divider(height: 24),
+              Text('Renseignement des supports', style: t.titleMedium),
+              const SizedBox(height: 8),
+              Wrap(spacing: 16, runSpacing: 8, children: [
+                for (final r in Renseignement.values)
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    PictoSupport(famille: 'POT', fond: r.couleur, taille: 22),
+                    const SizedBox(width: 6),
+                    Text(r.lib),
+                  ]),
+              ]),
+              const SizedBox(height: 4),
+              Text('Encre bleue : appui énergie. Pastille magenta : modifié.', style: t.bodySmall),
               const Divider(height: 24),
               Text('Fond de plan', style: t.titleMedium),
               const SizedBox(height: 8),
@@ -509,7 +532,7 @@ class _CarteState extends State<_Carte> {
                 if (sel != null)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: _Apercu(objet: sel, referentiels: ref),
+                    child: _Apercu(objet: sel, referentiels: ref, statut: _statuts[sel.id]),
                   ),
                 _Attribution(logo: _fond.logo, mention: _mention ?? _fond.attribution),
               ]),
@@ -537,53 +560,83 @@ class _CarteState extends State<_Carte> {
     );
   }
 
-  /// Support : forme et couleur du métier ; sélection en jaune cerclé de bleu ; modifié cerclé de magenta ;
-  /// étiquette encadrée à la couleur du métier à partir du zoom 18 (et toujours pour la sélection).
+  /// Support : picto FibReady, remplissage à la couleur du statut de renseignement (FOA Explorer), encre bleue pour
+  /// l'énergie, point aux petites échelles ; sélection : halo jaune cerclé de bleu ; modifié : pastille magenta ;
+  /// étiquette sur fond du statut à partir du zoom 18 (et toujours pour la sélection). Adresse : point orange.
   Marker _marqueur(Objet n, Referentiels ref) {
+    if (n.classe == Classe.adr) {
+      return Marker(
+        point: n.point!,
+        width: 14,
+        height: 14,
+        child: const Center(child: PointSupport(fond: couleurAdresse, encre: Colors.white, taille: 8)),
+      );
+    }
     final famille = ref.codeFamille(n.typeKey);
     final selectionne = _selection?.id == n.id;
-    final taille = n.classe == Classe.adr ? 8.0 : (selectionne ? 20.0 : (_zoom >= 17 ? 16.0 : 11.0));
-    final (couleur, forme) = switch (famille) {
-      'POT' => (n.typeKey == 15 ? couleurEnergie : couleurTelecom, BoxShape.rectangle),
-      'CHB' => (couleurSouterrain, BoxShape.rectangle),
-      'FAC' => (couleurFacade, BoxShape.circle),
-      _ when n.classe == Classe.adr => (couleurAdresse, BoxShape.circle),
-      _ => (Colors.grey, BoxShape.circle),
-    };
-    final etiquette = (_zoom >= 18 || selectionne) && n.classe == Classe.noe && n.lib != null;
-    final (fond, bord) = selectionne
-        ? (Nge.jaune, Nge.ardoise)
-        : (
-            famille == 'CHB' ? couleur.withValues(alpha: 0.25) : couleur,
-            n.statut != null ? couleurModifie : (famille == 'CHB' ? couleur : Colors.white),
-          );
+    final statut = _statuts[n.id];
+    final energie = n.typeKey == 15;
+    final picto = _zoom >= 16 || selectionne;
+    final taille = picto ? (_zoom >= 17 || selectionne ? 24.0 : 20.0) : 10.0;
+    final boite = taille + 16; // halo de sélection et zone de toucher
+    final marge = (boite - taille) / 2;
+    final etiquette = (_zoom >= 18 || selectionne) && n.lib != null;
     // le symbole reste sur le point, l'étiquette dessous
-    final hauteur = taille + 8 + (etiquette ? 22 : 0);
+    final hauteur = boite + (etiquette ? 22 : 0);
     return Marker(
       point: n.point!,
-      width: etiquette ? 140 : taille + 8,
+      width: etiquette ? 140 : boite,
       height: hauteur,
-      alignment: etiquette ? Alignment(0, 1 - (taille + 8) / hauteur) : Alignment.center,
+      alignment: etiquette ? Alignment(0, 1 - boite / hauteur) : Alignment.center,
       child: GestureDetector(
-        onTap: n.classe == Classe.adr ? null : () => setState(() => _selection = n),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _selection = n),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: taille,
-            height: taille,
-            margin: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              shape: forme,
-              color: fond,
-              border: Border.all(color: bord, width: selectionne ? 3 : 1.5),
-            ),
+          SizedBox(
+            width: boite,
+            height: boite,
+            child: Stack(alignment: Alignment.center, children: [
+              if (selectionne)
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Nge.jaune.withValues(alpha: 0.85),
+                    border: Border.all(color: Nge.ardoise, width: 2.5),
+                  ),
+                ),
+              picto
+                  ? PictoSupport(famille: famille, fond: statut?.couleur, energie: energie, taille: taille)
+                  : PointSupport(
+                      fond: statut?.couleur ?? PictoSupport.papier,
+                      encre: energie ? couleurEnergie : Colors.black,
+                      taille: taille,
+                    ),
+              if (n.statut != null && picto)
+                Positioned(
+                  top: marge - 4,
+                  right: marge - 4,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: couleurModifie,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+            ]),
           ),
           if (etiquette)
             Container(
               height: 20,
               padding: const EdgeInsets.symmetric(horizontal: 4),
               decoration: BoxDecoration(
-                color: selectionne ? Nge.jaune : Colors.white.withValues(alpha: 0.9),
-                border: Border.all(color: selectionne ? Nge.ardoise : couleur, width: selectionne ? 1.5 : 1),
+                color: selectionne ? Nge.jaune : (statut?.couleur ?? Colors.white).withValues(alpha: 0.9),
+                border: Border.all(
+                  color: selectionne ? Nge.ardoise : (energie ? couleurEnergie : Colors.black),
+                  width: selectionne ? 1.5 : 1,
+                ),
                 borderRadius: BorderRadius.circular(3),
               ),
               child: Text(n.lib!,
@@ -752,10 +805,11 @@ class _Bandeau extends StatelessWidget {
 
 /// Aperçu du support sélectionné, avant d'ouvrir sa fiche.
 class _Apercu extends StatelessWidget {
-  const _Apercu({required this.objet, required this.referentiels});
+  const _Apercu({required this.objet, required this.referentiels, this.statut});
 
   final Objet objet;
   final Referentiels referentiels;
+  final Renseignement? statut;
 
   @override
   Widget build(BuildContext context) {
@@ -767,7 +821,20 @@ class _Apercu extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(objet.lib ?? 'Sans étiquette', style: t.titleMedium?.copyWith(fontSize: 18)),
+          Row(children: [
+            Expanded(child: Text(objet.lib ?? 'Sans étiquette', style: t.titleMedium?.copyWith(fontSize: 18))),
+            if (statut != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statut!.couleur,
+                  border: Border.all(color: Colors.black26),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(statut!.lib,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Nge.ardoiseFoncee)),
+              ),
+          ]),
           Text(
             [
               referentiels.libType(objet.typeKey),
