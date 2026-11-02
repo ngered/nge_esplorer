@@ -223,7 +223,47 @@ visible seulement s'il y a quelque chose à enregistrer ; après l'enregistremen
 « Enregistré ») ; quitter avec une saisie en cours demande « Quitter sans enregistrer ? » (Rester / Quitter). Les
 interrupteurs des paramètres s'appliquent immédiatement.
 
-Suites prévues : prise de photos (socle « visuels »), saisie des masques de chambre en grille, persistance locale
+**Rapprochement de la maquette Figma et de la charte NGE** (2 novembre 2026 ; captures du prototype dans
+`docs/captures/figma/`) : parcours et organisation des écrans repris du Figma, couleurs de la charte NGE de FibReady
+(`Megatools/NgeCharte/ClsCharte.cs`) au lieu du fond bleu nuit du prototype, peu lisible en plein soleil :
+- **thème clair imposé** (pas de thème sombre automatique), texte de base en 16, cibles tactiles de 48 dp et plus ;
+  bleu nuit `#022A78` réservé à l'écran de démarrage (support de marque) ; barres en bleu d'interface `#1C3C73`
+  soulignées d'un filet jaune ; action principale (Enregistrer, Ouvrir) en jaune `#FAC100`, texte `#153166` ;
+  rouge réservé aux suppressions et aux défauts ;
+- **carte** : bandeau haut « Identification support » (recherche d'un support par son étiquette) ; barre basse
+  Couches · Créer · Retour (compteur) · Paramètres ; panneau Couches (Aérien, Souterrain, Administratif avec l'œil)
+  et fonds de plan ; étiquettes des supports encadrées à la couleur du métier ; sélection en jaune cerclé de bleu,
+  avec un aperçu (Portées, Ouvrir) avant la fiche ;
+- **démarrage** : bleu nuit, grand logo NGE sur cartouche blanc, compte, bouton jaune d'ouverture de la zone ;
+- **couleurs de la carte** : celles de l'application (GraceTHD), appui énergie en bleu, façade en orange pointillé ;
+- **visuel et photo** : un **visuel** (vue attendue, `DEF_VUE`) regroupe **plusieurs photos** et porte ses
+  fonctions propres (`VUE_ACTION` : visuel masque → bouton masque) ; toucher un visuel ouvre la **galerie** de ses
+  photos, que l'on organise : la photo du haut est la **photo de référence** du visuel (`FIC_RANG` 1,
+  `FIC_PRINCIPALE`), affichée sur la carte du visuel ; la corbeille d'une photo est dans la galerie ;
+- **visuel libre** : « Ajouter » (barre basse du support) crée un visuel hors des vues attendues : titre saisi,
+  puis première photo ; il existe tant qu'il a des photos, qui portent son identifiant et son titre
+  (`PRJ_FICHIER.VIS_CODE`, `VIS_LIB`, `VUE_KEY` nul) ; renommable dans sa galerie ; affiché après les visuels
+  attendus ; un support sans vue attendue s'ouvre aussi sur ses visuels, pour pouvoir en ajouter ;
+- **support** : écran d'arrivée « visuels » (une carte par visuel : photo de référence, nombre de photos ou
+  « Manquante », prendre une photo, fonction propre du visuel) ; le **crayon** de l'en-tête ouvre la saisie générale de l'entité
+  (identification, commentaire, caractéristiques, contrôles, données propres au module), pas les photos ni leur
+  titre ; barre basse commune module (Portées pour le poteau) · **Connecteurs** (liens optiques, écrans
+  `support_saisie_optique` / `support_route_optique`) · Carte (globe, remplace « Revenir à la carte ») · Ajouter
+  (visuel libre) ;
+- **suppression au plus près de l'élément** (au lieu de la coche de sélection et de la corbeille de la barre basse du
+  Figma) : corbeille sur chaque photo de la galerie avec « Annuler » dans le message qui suit, « Supprimer ce câble » dans le
+  détail d'un câble porté, « Supprimer le support » en bas de la saisie du support, avec confirmation ;
+- l'action du module n'est pas répétée sur chaque vue, sauf la **grille du masque de chambre**, propre à la vue
+  catégorisée (masque A, B…) ;
+- **portées** : rosace en haut, câbles portés en accordéon dessous.
+
+Mise en œuvre (2 novembre 2026) : thème `lib/theme.dart`, démarrage, carte, visuels, galerie et saisie du
+support. Les gestes sur les photos (prise, ordre, suppression) sont enregistrés aussitôt, sans bouton Enregistrer ;
+une photo prise sur le terminal remonte dans le paquet de retour (`fichiers/<FIC_CODE_EXT>.<ext>`) tant qu'elle
+reste rattachée ; sur le web, « prendre une photo » choisit une image (appareil photo sur Android, à venir).
+L'action `ROSACE` de la vue tête de poteau n'est pas affichée (Portées dans la barre basse).
+
+Suites prévues : appareil photo sur Android, saisie des masques de chambre en grille, persistance locale
 (Drift ; SQLCipher sur Android), boussole pour orienter la rosace, connexion par jeton abonné.
 
 ## 9. Environnement de développement

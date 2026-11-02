@@ -212,6 +212,8 @@ CREATE TABLE PRJ_FICHIER (
     ENT_KEY         INTEGER NOT NULL REFERENCES DEF_ENTITE (ENT_ID),
     OBJ_KEY         INTEGER NOT NULL,
     VUE_KEY         INTEGER REFERENCES DEF_VUE (VUE_ID),
+    VIS_CODE        TEXT,           -- visuel libre (VUE_KEY nul) : identifiant commun à ses photos (UUID)
+    VIS_LIB         TEXT,           -- titre du visuel libre, saisi sur le terrain
     FIC_RANG        INTEGER NOT NULL DEFAULT 1,
     FIC_PRINCIPALE  INTEGER NOT NULL DEFAULT 0 CHECK (FIC_PRINCIPALE IN (0, 1)),
     FIC_NOM         TEXT NOT NULL,

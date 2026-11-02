@@ -144,6 +144,13 @@ void main() {
       expect((await repo.lineairesDe('P1')).map((o) => o.id), unorderedEquals(['L1', 'L2']));
     });
 
+    test('recherche par étiquette : nœuds seulement, les plus courtes d\'abord', () async {
+      expect((await repo.rechercher('10')).map((o) => o.lib), ['100', '101', '102']);
+      expect((await repo.rechercher(' 101 ')).map((o) => o.id), ['P2']);
+      expect(await repo.rechercher('L1'), isEmpty);
+      expect(await repo.rechercher(''), isEmpty);
+    });
+
     test('angles : relevé sinon géométrie, du bon côté du linéaire', () async {
       final ed = RosaceEdition(repo, (await repo.objet('P1'))!, auteur: 'essai');
       await ed.charger();

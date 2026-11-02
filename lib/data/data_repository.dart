@@ -26,6 +26,9 @@ abstract class DataRepository {
 
   Future<Objet?> objet(String id);
 
+  /// Nœuds dont l'étiquette contient [texte] (casse ignorée, abandonnés exclus), les plus courtes d'abord.
+  Future<List<Objet>> rechercher(String texte, {int max = 20});
+
   /// Linéaires dont le nœud est une extrémité (abandonnés exclus).
   Future<List<Objet>> lineairesDe(String noeudId);
 
@@ -35,6 +38,12 @@ abstract class DataRepository {
   /// Objets modifiés depuis le chargement, pour le paquet de retour.
   Future<List<Objet>> modifies();
 
-  /// Fichier joint au paquet (photo), par son chemin dans le paquet.
+  /// Fichier joint au paquet ou pris sur le terminal (photo), par son chemin dans le paquet.
   Uint8List? fichier(String chemin);
+
+  /// Conserve un fichier pris sur le terminal (photo), à remonter avec le paquet de retour.
+  Future<void> ajouterFichier(String chemin, Uint8List octets);
+
+  /// Fichiers pris sur le terminal depuis le chargement du paquet, par chemin.
+  Map<String, Uint8List> get fichiersNouveaux;
 }

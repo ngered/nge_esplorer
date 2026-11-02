@@ -11,6 +11,7 @@ class MemoryRepository implements DataRepository {
   final Map<String, Objet> _objets = {};
   final Map<String, List<double>> _emprises = {};
   final Map<String, Set<String>> _lineairesParNoeud = {};
+  final Map<String, Uint8List> _nouveaux = {};
 
   @override
   bool get ouvert => _paquet != null;
@@ -57,6 +58,7 @@ class MemoryRepository implements DataRepository {
     _objets.clear();
     _emprises.clear();
     _lineairesParNoeud.clear();
+    _nouveaux.clear();
   }
 
   @override
@@ -72,6 +74,20 @@ class MemoryRepository implements DataRepository {
 
   @override
   Future<Objet?> objet(String id) async => _objets[id];
+
+  @override
+  Future<List<Objet>> rechercher(String texte, {int max = 20}) async {
+    final q = texte.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final res = [
+      for (final o in _objets.values)
+        if (o.classe == Classe.noe && !o.abandonne && (o.lib?.toLowerCase().contains(q) ?? false)) o,
+    ]..sort((a, b) {
+        final c = a.lib!.length.compareTo(b.lib!.length);
+        return c != 0 ? c : a.lib!.compareTo(b.lib!);
+      });
+    return res.take(max).toList();
+  }
 
   @override
   Future<List<Objet>> lineairesDe(String noeudId) async => [
@@ -105,5 +121,11 @@ class MemoryRepository implements DataRepository {
       ];
 
   @override
-  Uint8List? fichier(String chemin) => _paquet?.fichiers[chemin];
+  Uint8List? fichier(String chemin) => _nouveaux[chemin] ?? _paquet?.fichiers[chemin];
+
+  @override
+  Future<void> ajouterFichier(String chemin, Uint8List octets) async => _nouveaux[chemin] = octets;
+
+  @override
+  Map<String, Uint8List> get fichiersNouveaux => Map.unmodifiable(_nouveaux);
 }

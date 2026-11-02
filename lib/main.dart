@@ -6,6 +6,7 @@ import 'data/memory_repository.dart';
 import 'data/reglages.dart';
 import 'providers/app_provider.dart';
 import 'screens/carte_screen.dart';
+import 'theme.dart';
 import 'widgets/retour_carte.dart';
 
 void main() {
@@ -26,8 +27,9 @@ class NgeEsPlorerApp extends StatelessWidget {
     return MaterialApp(
       title: 'NgeEsPlorer',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF00558C), useMaterial3: true),
-      darkTheme: ThemeData(colorSchemeSeed: const Color(0xFF00558C), brightness: Brightness.dark, useMaterial3: true),
+      // thème clair imposé, même si le terminal est en mode sombre (lisibilité en extérieur)
+      theme: themeNge(),
+      themeMode: ThemeMode.light,
       locale: const Locale('fr', 'FR'),
       supportedLocales: const [Locale('fr', 'FR')],
       localizationsDelegates: const [

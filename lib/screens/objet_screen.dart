@@ -5,15 +5,18 @@ import '../data/objet.dart';
 import '../data/referentiels.dart';
 import '../modules/chambre/chambre_resume.dart';
 import '../modules/poteau/poteau_fiche.dart';
-import '../modules/poteau/rosace_edition.dart' show typePorteeAerienne, typeParcoursFacade;
-import '../modules/poteau/rosace_screen.dart';
 import '../providers/app_provider.dart';
+import '../theme.dart';
+import '../widgets/barre_support.dart';
 import '../widgets/champs.dart';
 import '../widgets/retour_carte.dart';
 import '../widgets/saisie.dart';
+import '../widgets/titre_ecran.dart';
+import 'visuels_screen.dart';
 
-/// Fiche d'un nœud : identification (noyau), section du module selon le type, visuels et linéaires rattachés.
-/// La fiche travaille sur une copie, écrite dans le dépôt à l'enregistrement.
+/// Saisie d'un support (crayon des visuels) : identification et commentaire (noyau), caractéristiques et contrôles
+/// du module selon le type, linéaires rattachés, suppression. Les photos sont dans les visuels.
+/// La saisie travaille sur une copie, écrite dans le dépôt à l'enregistrement.
 class ObjetScreen extends StatefulWidget {
   const ObjetScreen({super.key, required this.objet});
 
@@ -59,12 +62,46 @@ class _ObjetScreenState extends State<ObjetScreen> {
     signalerEnregistre(context);
   }
 
-  Future<void> _rosace() async {
+  /// Avant d'ouvrir les portées ou d'ajouter un visuel : la saisie en cours est enregistrée.
+  Future<bool> _avant() async {
     if (_modifie) await _enregistrer();
-    if (!mounted) return;
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => RosaceScreen(poteau: _o)));
+    return mounted;
+  }
+
+  /// Ensuite : l'objet a pu changer (orientation, photos), les linéaires aussi.
+  Future<void> _apres() async {
+    final frais = await context.read<AppProvider>().repo.objet(_o.id);
+    if (!mounted || frais == null) return;
+    setState(() => _o = frais.copie());
     _extremites.clear();
     await _chargerLineaires();
+  }
+
+  /// Supprimer le support : abandon (DATE_ABD), validé au contrôle du retour ; retour à la carte.
+  Future<void> _supprimer() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Supprimer le support ?'),
+        content: Text('${_o.lib ?? 'Le support'} sera marqué supprimé. '
+            'La suppression sera validée au contrôle du retour.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Nge.rouge, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await context.read<AppProvider>().enregistrer(_o, abandon: true);
+    if (!mounted) return;
+    setState(() => _modifie = false);
+    signalerEnregistre(context, 'Support supprimé');
+    await WidgetsBinding.instance.endOfFrame; // l'écran ne demande plus confirmation avant de se fermer
+    if (mounted) await revenirALaCarte(context);
   }
 
   @override
@@ -75,37 +112,36 @@ class _ObjetScreenState extends State<ObjetScreen> {
       modifie: _modifie,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_o.lib ?? 'Sans étiquette'),
-          actions: [
-            if (_o.statut != null) Chip(label: Text(_o.statut == 'C' ? 'Créé' : 'Modifié')),
-            const BoutonCarte(),
-            const SizedBox(width: 8),
-          ],
+          title: TitreEcran(
+            _o.lib ?? 'Sans étiquette',
+            ['saisie du support', if (_o.statut == 'C') 'créé', if (_o.statut == 'M') 'modifié'].join(' · '),
+          ),
         ),
+        bottomNavigationBar: BarreSupport(objet: _o, avant: _avant, apres: _apres),
         floatingActionButton: boutonEnregistrer(visible: _modifie, onPressed: _enregistrer),
         body: ListView(
           padding: const EdgeInsets.only(bottom: margeBoutonFlottant),
           children: [
             _identification(ref),
             if (famille == 'POT') ...[
-              Section(
-                titre: 'Portées',
-                action: FilledButton.tonalIcon(
-                  onPressed: _o.point == null ? null : _rosace,
-                  icon: const Icon(Icons.explore_outlined),
-                  label: const Text('Rosace'),
-                ),
-                enfants: [
-                  Text('${_lineaires.where((l) => l.typeKey == typePorteeAerienne || l.typeKey == typeParcoursFacade).length}'
-                      ' portée(s) ; directions, destinations et câbles portés sur la rosace.'),
-                ],
-              ),
               PoteauCaracteristiques(noeud: _o, referentiels: ref, onChanged: _changer),
               PoteauControles(noeud: _o, onChanged: _changer),
             ],
             if (famille == 'CHB') ChambreResume(noeud: _o, referentiels: ref),
-            _visuels(ref),
             _listeLineaires(ref),
+            if (_o.classe == Classe.noe && !_o.horsZone)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Nge.rouge,
+                    side: const BorderSide(color: Color(0xFFE8B4B4)),
+                  ),
+                  onPressed: _supprimer,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Supprimer le support'),
+                ),
+              ),
           ],
         ),
       ),
@@ -130,36 +166,6 @@ class _ObjetScreenState extends State<ObjetScreen> {
     ]);
   }
 
-  /// Vues attendues pour le type (DEF_VUE) et photos présentes.
-  Widget _visuels(Referentiels ref) {
-    final types = <int?>{_o.typeKey, ref.type(_o.typeKey)?['TYPE_PARENT_KEY'] as int?};
-    final vues = ref.table('noyau', 'DEF_VUE').where((v) => types.contains(v['TYPE_KEY'])).toList()
-      ..sort((a, b) => (a['VUE_ORDRE'] as int).compareTo(b['VUE_ORDRE'] as int));
-    if (vues.isEmpty) return const SizedBox.shrink();
-    final fichiers = [for (final f in (_o.props['fichiers'] as List?) ?? const []) (f as Map).cast<String, dynamic>()];
-    final repo = context.read<AppProvider>().repo;
-    return Section(titre: 'Visuels', enfants: [
-      for (final v in vues)
-        Builder(builder: (context) {
-          final photos = fichiers.where((f) => f['VUE_CODE'] == v['VUE_CODE']).toList();
-          final octets = photos.map((f) => f['fichier'] == null ? null : repo.fichier(f['fichier'] as String)).nonNulls.toList();
-          return ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: octets.isNotEmpty
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.memory(octets.first, width: 48, height: 48, fit: BoxFit.cover))
-                : Icon(photos.isEmpty ? Icons.photo_camera_outlined : Icons.photo_outlined),
-            title: Text('${v['VUE_LIB']}${v['VUE_OBLIGATOIRE'] == 'OUI' ? ' *' : ''}'),
-            subtitle: Text(photos.isEmpty
-                ? 'Aucune photo'
-                : '${photos.length} photo(s)${octets.length < photos.length ? ', non embarquées' : ''}'),
-          );
-        }),
-      Text('* obligatoire. Prise de photos : à venir.', style: Theme.of(context).textTheme.bodySmall),
-    ]);
-  }
-
   Widget _listeLineaires(Referentiels ref) {
     if (_lineaires.isEmpty) return const SizedBox.shrink();
     return Section(titre: 'Linéaires', enfants: [
@@ -179,7 +185,7 @@ class _ObjetScreenState extends State<ObjetScreen> {
             trailing: autre == null ? null : const Icon(Icons.chevron_right),
             onTap: autre == null
                 ? null
-                : () => Navigator.push(context, MaterialPageRoute(builder: (_) => ObjetScreen(objet: autre))),
+                : () => ouvrirSupport(context, autre),
           );
         }),
     ]);

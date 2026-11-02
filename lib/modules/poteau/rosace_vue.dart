@@ -2,14 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../carte/couleurs.dart';
 import '../../carte/geo.dart';
 import '../../data/referentiels.dart';
 import '../infra/cables.dart';
 import 'rosace_edition.dart';
 
-/// Couleurs de la légende Hirondelle (télécom vert, énergie bleu) et du poteau.
-const couleurTelecom = Color(0xFF26B424);
-const couleurEnergie = Color(0xFF0080CA);
+/// Couleurs de la rosace (télécom et énergie : celles de la carte) et du poteau.
 const couleurInconnu = Color(0xFF8A8A8A);
 const couleurPoteau = Color(0xFF0070C0);
 const couleurSelection = Color(0xFFD5168B);

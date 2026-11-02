@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/objet.dart';
+import '../theme.dart';
 
 /// Champs de saisie liés à une clé d'une carte de propriétés (valeur vide = clé retirée).
 
@@ -139,7 +140,11 @@ class Section extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [
-              Expanded(child: Text(titre, style: Theme.of(context).textTheme.titleMedium)),
+              Expanded(
+                child: Text(titre.toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Nge.petrole)),
+              ),
               ?action,
             ]),
             const SizedBox(height: 4),

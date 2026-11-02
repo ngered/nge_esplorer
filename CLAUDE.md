@@ -42,8 +42,8 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   Hybride par la Map Tiles API avec la clé renseignée par l'utilisateur dans les paramètres, sous sa responsabilité,
   comme dans FibReady ; tuiles : serveur en usage courant, cache selon les en-têtes HTTP pour la fluidité, secours
   sans connexion sauf Google (règles de la Map Tiles API : ni usage hors connexion, logo et copyright de la vue
-  obligatoires) ; calculs d'azimut en grades), `data/reglages.dart` (paramètres conservés : Keystore sur Android), `providers/` (`AppProvider`, provider + ChangeNotifier comme cruci),
-  `screens/` (carte, fiche), `modules/<module>/` (futurs paquets Dart : poteau avec la rosace, chambre, infra).
+  obligatoires) ; calculs d'azimut en grades), `data/reglages.dart` (paramètres conservés : Keystore sur Android), `theme.dart` (charte NGE de FibReady, thème clair imposé), `providers/` (`AppProvider`, provider + ChangeNotifier comme cruci),
+  `screens/` (carte, visuels du support et galerie, saisie du support), `modules/<module>/` (futurs paquets Dart : poteau avec la rosace, chambre, infra).
   Tests : `flutter test` ; `PAQUET_REEL=<zip>` pour un vrai paquet.
 - **Modules** : manifeste commun (BE, terminal, GeoJSON) ; côté BE, un fichier SQLite par module attaché au noyau
   (pas de clé étrangère entre bases, intégrité par l'application, journal non WAL) ; côté terminal, un paquet Dart

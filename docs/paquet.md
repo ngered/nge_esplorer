@@ -74,7 +74,7 @@ Règles :
 | `pot` | nœud | `POT_POTEAU`, avec `controles` (`POT_CONTROLE`) |
 | `inf` | nœud | `equipements` (`INF_EQUIPEMENT`) |
 | `inf` | linéaire | `conduites` (`INF_CONDUITE`, chacune avec ses `cables` : `INF_CD_CABLE`) et `portee` (`INF_PORTEE`, avec ses `cables` : `INF_PORTEE_CABLE`) |
-| `fichiers` | objet | `PRJ_FICHIER` de l'objet et de ses éléments : `ENTITE` (table porteuse), `VUE_CODE`, colonnes du fichier ; `fichier` = chemin dans le paquet s'il y est inclus |
+| `fichiers` | objet | `PRJ_FICHIER` de l'objet et de ses éléments : `ENTITE` (table porteuse), `VUE_CODE` (visuel attendu) ou `VIS_CODE` / `VIS_LIB` (visuel libre), colonnes du fichier ; ordre de la galerie `FIC_RANG`, photo de référence `FIC_PRINCIPALE` ; `fichier` = chemin dans le paquet s'il y est inclus |
 
 Identification des éléments imbriqués : par leur `CODE_EXT` quand ils en ont un (conduite, équipement, fichier),
 sinon par leur clé naturelle dans le parent : face `FAC_CODE`, position `CD_KEY` dans la face, masque logique

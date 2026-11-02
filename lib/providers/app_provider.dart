@@ -6,6 +6,7 @@ import '../data/objet.dart';
 import '../data/paquet.dart';
 import '../data/referentiels.dart';
 import '../data/reglages.dart';
+import '../data/visuels.dart';
 import 'sortie_page.dart' if (dart.library.js_interop) 'sortie_page_web.dart';
 
 /// État de la session terrain : paquet chargé, compte, intervention en cours.
@@ -129,7 +130,14 @@ class AppProvider extends ChangeNotifier {
     await apresEcriture();
   }
 
-  /// Paquet de retour (objets modifiés et intervention) et son nom de fichier.
+  /// Ajoute une photo prise sur le terminal au visuel [v] de [o] (copie de travail) et enregistre l'objet.
+  Future<void> ajouterPhoto(Objet o, Visuel v, {required String nom, required Uint8List octets}) async {
+    final f = o.ajouterPhoto(v, nom: nom, taille: octets.length, auteur: auteur);
+    await repo.ajouterFichier(f['fichier'] as String, octets);
+    await enregistrer(o);
+  }
+
+  /// Paquet de retour (objets modifiés, intervention, photos prises sur le terminal) et son nom de fichier.
   Future<(String, Uint8List)> paquetRetour() async {
     final e = entete!;
     final objets = await repo.modifies();
@@ -148,7 +156,17 @@ class AppProvider extends ChangeNotifier {
       'DATE_DEBUT': _debut ?? date,
       'DATE_FIN': date,
     };
-    final zip = Paquet.ecrireRetour(base: e, intervention: intervention, objets: objets);
+    // photos prises sur le terminal et toujours rattachées à un objet du retour
+    final references = {
+      for (final o in objets)
+        for (final f in o.fichiers)
+          if (f['DATE_ABD'] == null) f['fichier'],
+    };
+    final fichiers = {
+      for (final f in repo.fichiersNouveaux.entries)
+        if (references.contains(f.key)) f.key: f.value,
+    };
+    final zip = Paquet.ecrireRetour(base: e, intervention: intervention, objets: objets, fichiers: fichiers);
     final nom = '${(e['projet'] as Map?)?['code']}_${(e['zone'] as Map?)?['code']}_RETOUR_'
         '${date.replaceAll(RegExp(r'[-:]'), '').substring(0, 13)}.zip';
     return (nom, zip);
