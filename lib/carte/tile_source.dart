@@ -6,8 +6,32 @@ import 'package:http/http.dart' as http;
 import 'package:http/retry.dart';
 import 'package:http_parser/http_parser.dart';
 
-/// Délai au-delà duquel le serveur de tuiles est considéré injoignable (le cache prend alors le relais).
+/// Délai par tentative au-delà duquel le serveur de tuiles est considéré injoignable (le cache prend alors le relais).
 const delaiTuiles = Duration(seconds: 8);
+
+/// Client réseau des tuiles : délai par tentative et nouvelles tentatives sur erreur réseau, délai dépassé, 429 et
+/// 5xx (la Géoplateforme limite le débit), avant de déclarer la tuile en échec (trou dans le fond de plan).
+/// [attente] : délai avant la tentative n (par défaut 0,5 s puis × 1,5).
+http.Client clientReseauTuiles({http.Client? interne, Duration Function(int)? attente}) => RetryClient(
+      _ClientDelai(interne ?? http.Client()),
+      retries: 2,
+      when: (r) => r.statusCode == 429 || r.statusCode >= 500,
+      whenError: (e, _) => e is TimeoutException || (e is http.ClientException && e is! http.RequestAbortedException),
+      delay: attente ?? (n) => const Duration(milliseconds: 500) * (n == 0 ? 1 : 1.5 * n),
+    );
+
+/// Applique [delaiTuiles] à chaque tentative.
+class _ClientDelai extends http.BaseClient {
+  _ClientDelai(this._interne);
+
+  final http.Client _interne;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) => _interne.send(request).timeout(delaiTuiles);
+
+  @override
+  void close() => _interne.close();
+}
 
 /// Tuiles HTTP : le serveur en usage courant (le terminal est le plus souvent connecté), selon la fraîcheur annoncée
 /// par ses en-têtes ; le cache rend fluides les tuiles encore fraîches. Cache sur Android et Windows ; sur le web,
@@ -17,7 +41,7 @@ const delaiTuiles = Duration(seconds: 8);
 /// le web, chaque annulation met en outre le débogueur en pause).
 TileProvider fournisseurTuiles({bool annulerObsoletes = false, bool secours = true}) {
   final stockage = BuiltInMapCachingProvider.getOrCreateInstance();
-  final client = secours ? ClientTuilesSecours(stockage) : RetryClient(http.Client());
+  final client = secours ? ClientTuilesSecours(stockage) : clientReseauTuiles();
   return _Fournisseur(client, stockage, annulerObsoletes);
 }
 
@@ -44,7 +68,7 @@ class _Fournisseur extends NetworkTileProvider {
 /// modifiée » (304), et flutter_map l'affiche depuis le cache ; elle reste périmée pour que le serveur soit de
 /// nouveau interrogé à la tuile suivante.
 class ClientTuilesSecours extends http.BaseClient {
-  ClientTuilesSecours(this._stockage, [http.Client? reseau]) : _reseau = reseau ?? RetryClient(http.Client());
+  ClientTuilesSecours(this._stockage, [http.Client? reseau]) : _reseau = reseau ?? clientReseauTuiles();
 
   final MapCachingProvider _stockage;
   final http.Client _reseau;
@@ -52,7 +76,7 @@ class ClientTuilesSecours extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     try {
-      return await _reseau.send(request).timeout(delaiTuiles);
+      return await _reseau.send(request);
     } on http.RequestAbortedException {
       rethrow;
     } on Object catch (e) {
@@ -155,6 +179,27 @@ TileSource fondParDefaut(List<double>? emprise) {
   return france ? PlanIgn() : Osm();
 }
 
+/// Fonds proposés (identifiant, nom) : les fonds Google seulement avec une clé renseignée. Les identifiants des
+/// fonds Google sont préfixés (« plan » est le Plan IGN, pas Google Plan).
+List<(String, String)> fondsProposes(String cleGoogle) => [
+      ('plan', 'Plan IGN'),
+      ('ortho', 'Photographies aériennes IGN'),
+      ('osm', 'OpenStreetMap'),
+      if (cleGoogle.isNotEmpty)
+        for (final g in TypeGoogle.values) ('google-${g.name}', g.nom),
+    ];
+
+/// Ouvre le fond [id] de [fondsProposes] (session Map Tiles pour un fond Google).
+Future<TileSource> ouvrirFond(String id, String cleGoogle) async {
+  final google = TypeGoogle.values.where((g) => 'google-${g.name}' == id).firstOrNull;
+  return switch (id) {
+    _ when google != null => await GoogleTiles.ouvrir(google, cleGoogle),
+    'ortho' => OrthoIgn(),
+    'osm' => Osm(),
+    _ => PlanIgn(),
+  };
+}
+
 enum TypeGoogle {
   plan('Google Plan', {'mapType': 'roadmap'}, 'assets/google/google_maps_contour_clair.png'),
   satellite('Google Satellite', {'mapType': 'satellite'}, 'assets/google/google_maps_contour_sombre.png'),
@@ -181,6 +226,15 @@ class GoogleTiles extends TileSource {
 
   /// Ouvre (ou réutilise tant qu'elle est valide) une session de tuiles du type demandé ; une clé refusée lève une
   /// [http.ClientException] portant la réponse de Google.
+  /// Message d'une réponse d'erreur Google (`error.message`), sinon le corps de la réponse.
+  static String _motif(String corps) {
+    try {
+      return ((jsonDecode(corps) as Map)['error'] as Map)['message'] as String;
+    } catch (_) {
+      return corps;
+    }
+  }
+
   static Future<GoogleTiles> ouvrir(TypeGoogle type, String cle) async {
     final s = _sessions[(type, cle)];
     if (s != null && s.$2.isAfter(DateTime.now().add(const Duration(hours: 1)))) {
@@ -191,7 +245,7 @@ class GoogleTiles extends TileSource {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({...type.parametres, 'language': 'fr-FR', 'region': 'FR'}),
     );
-    if (rep.statusCode != 200) throw http.ClientException('Google Map Tiles : ${rep.statusCode} ${rep.body}');
+    if (rep.statusCode != 200) throw http.ClientException('Google Map Tiles ${rep.statusCode} : ${_motif(rep.body)}');
     final j = jsonDecode(rep.body) as Map<String, dynamic>;
     final session = j['session'] as String;
     final expiration = DateTime.fromMillisecondsSinceEpoch(int.parse('${j['expiry']}') * 1000);

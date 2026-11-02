@@ -27,6 +27,14 @@ class _Cache implements MapCachingProvider {
 }
 
 void main() {
+  test('fonds proposés : identifiants distincts, Plan IGN sans appel à Google', () async {
+    final ids = fondsProposes('cle').map((f) => f.$1).toList();
+    expect(ids.toSet().length, ids.length);
+    expect(fondsProposes('').map((f) => f.$2), ['Plan IGN', 'Photographies aériennes IGN', 'OpenStreetMap']);
+    expect(await ouvrirFond('plan', 'cle'), isA<PlanIgn>());
+    expect(await ouvrirFond('osm', ''), isA<Osm>());
+  });
+
   final hors = MockClient((_) async => throw http.ClientException('réseau injoignable'));
 
   test('connecté : la réponse du serveur passe telle quelle', () async {
@@ -50,6 +58,31 @@ void main() {
     expect(fondParDefaut([6.18, 48.65, 6.21, 48.67]), isA<PlanIgn>()); // Heillecourt
     expect(fondParDefaut([-7.65, 33.55, -7.55, 33.62]), isA<Osm>()); // Casablanca
     expect(fondParDefaut(null), isA<PlanIgn>());
+  });
+
+  test('serveur saturé ou réseau coupé un instant : nouvelles tentatives avant l\'échec', () async {
+    var n = 0;
+    final c = clientReseauTuiles(
+      interne: MockClient((_) async => switch (n++) {
+            0 => http.Response('', 429),
+            1 => throw http.ClientException('coupure'),
+            _ => http.Response('png', 200),
+          }),
+      attente: (_) => Duration.zero,
+    );
+    final r = await c.get(Uri.parse('https://tuiles.test/1/2/3.png'));
+    expect([r.statusCode, n], [200, 3]);
+
+    n = 0;
+    final refus = clientReseauTuiles(
+      interne: MockClient((_) async {
+        n++;
+        return http.Response('', 404);
+      }),
+      attente: (_) => Duration.zero,
+    );
+    expect((await refus.get(Uri.parse('https://tuiles.test/0/0/0.png'))).statusCode, 404);
+    expect(n, 1, reason: 'une tuile absente du serveur n\'est pas redemandée');
   });
 
   test('sans connexion ni cache : erreur (tuile transparente)', () async {

@@ -242,6 +242,25 @@ class _CarteState extends State<_Carte> {
   /// Mention de copyright de la vue (null : mention fixe du fond, en attendant).
   String? _mention;
 
+  /// Rechargement des tuiles du fond (trous laissés par des tuiles en échec).
+  final _rechargementFond = StreamController<void>.broadcast();
+  Timer? _rechargementPrevu;
+  DateTime? _dernierRechargement;
+
+  /// Tuile en échec : rechargement du fond 3 s plus tard, au plus une fois toutes les 30 s (sans connexion, pas de
+  /// boucle de requêtes).
+  void _tuileEnEchec() {
+    final d = _dernierRechargement;
+    if (_rechargementPrevu?.isActive ?? false) return;
+    if (d != null && DateTime.now().difference(d) < const Duration(seconds: 30)) return;
+    _rechargementPrevu = Timer(const Duration(seconds: 3), _rechargerFond);
+  }
+
+  void _rechargerFond() {
+    _dernierRechargement = DateTime.now();
+    if (!_rechargementFond.isClosed) _rechargementFond.add(null);
+  }
+
   /// Paquet affiché (compteur de chargements de l'AppProvider).
   int? _paquet;
 
@@ -291,26 +310,11 @@ class _CarteState extends State<_Carte> {
     }
   }
 
-  /// Fonds proposés (identifiant, nom) : les fonds Google seulement avec une clé renseignée.
-  List<(String, String)> _fonds(String cleGoogle) => [
-        ('plan', 'Plan IGN'),
-        ('ortho', 'Photographies aériennes IGN'),
-        ('osm', 'OpenStreetMap'),
-        if (cleGoogle.isNotEmpty)
-          for (final g in TypeGoogle.values) (g.name, g.nom),
-      ];
-
   Future<void> _choisirFond(String id) async {
     final messager = ScaffoldMessenger.of(context);
     final cle = context.read<AppProvider>().cleGoogle;
     try {
-      final google = TypeGoogle.values.where((g) => g.name == id).firstOrNull;
-      final fond = switch (id) {
-        _ when google != null => await GoogleTiles.ouvrir(google, cle),
-        'ortho' => OrthoIgn(),
-        'osm' => Osm(),
-        _ => PlanIgn(),
-      };
+      final fond = await ouvrirFond(id, cle);
       if (!mounted) return;
       setState(() {
         _fond = fond;
@@ -325,6 +329,8 @@ class _CarteState extends State<_Carte> {
   @override
   void dispose() {
     _attente?.cancel();
+    _rechargementPrevu?.cancel();
+    _rechargementFond.close();
     super.dispose();
   }
 
@@ -420,7 +426,7 @@ class _CarteState extends State<_Carte> {
               Text('Fond de plan', style: t.titleMedium),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 8, children: [
-                for (final (id, nom) in _fonds(app.cleGoogle))
+                for (final (id, nom) in fondsProposes(app.cleGoogle))
                   ChoiceChip(
                     label: Text(nom),
                     selected: _fond.nom == nom,
@@ -434,6 +440,18 @@ class _CarteState extends State<_Carte> {
                 const SizedBox(height: 8),
                 Text('Fonds Google : renseigner votre clé Map Tiles dans les Paramètres.', style: t.bodySmall),
               ],
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(feuille);
+                    _rechargerFond();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Recharger le fond de plan'),
+                ),
+              ),
             ]),
           ),
         );
@@ -516,6 +534,10 @@ class _CarteState extends State<_Carte> {
                   maxNativeZoom: _fond.zoomMax,
                   userAgentPackageName: 'fr.nge.esplorer',
                   tileProvider: _tuiles(app.annulerTuilesObsoletes),
+                  // tuile en échec : oubliée hors de la vue (redemandée au retour), fond rechargé ensuite
+                  evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
+                  errorTileCallback: (_, _, _) => _tuileEnEchec(),
+                  reset: _rechargementFond.stream,
                 ),
                 PolylineLayer(polylines: [
                   for (final l in affiches.where((o) => o.classe == Classe.lin)) _trait(l, ref),
