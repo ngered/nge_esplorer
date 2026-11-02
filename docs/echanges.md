@@ -63,6 +63,13 @@ chiffré et cloisonné ».
 Licences : pas de téléchargement massif des tuiles OSM publiques ; préférer la Géoplateforme IGN (licence ouverte)
 ou des tuiles générées en interne.
 
+Couverture (1er novembre 2026) : l'IGN ne couvre que la France ; hors de France (Maroc notamment), le fond livré
+dans le paquet est généré en interne à partir des données OSM (extraits Geofabrik, licence ODbL), jamais aspiré du
+serveur public ; imagerie hors de France : source à trouver. Google (Map Tiles API) n'est jamais livré dans un
+paquet : ses règles interdisent le préchargement et l'usage hors connexion, avec ou sans clé. Comme dans FibReady,
+l'utilisateur renseigne lui-même sa clé Google dans les paramètres de l'application, sous sa responsabilité
+(facturation au-delà de la franchise) ; les fonds Google n'apparaissent qu'avec une clé.
+
 ## 5. Sécurité et révocation — principe de NGE Es'tore
 
 Réutilisation du modèle NGE Es'tore (`o:\C#\FibReady_net.10\Megatools\Deploiement\`, voir `sources/README.md`) :
@@ -123,6 +130,45 @@ et de synchronisation** avant intégration au référentiel. Outils : `ogr2ogr` 
 
 La phase 1 est la version manuelle de la phase 2 : mêmes fichiers, même format ; seul le transport s'automatise.
 
+Jeu d'essai chambres : base `c:\NoDrive\Documents\data\FOA\FTTH_OR_HEILLECOURT\FOA_HEILLECOURT.db` (version de
+schéma antérieure à `c:\NoDrive\Documents\Etudes\essonne\09_DOU_12-13_FOA_EXP.db`, qui ajoute l'occupation par
+câbles, les liaisons entre chambres et les poteaux) : 1 277 chambres importées du PIT, 51 relevées, 477 alvéoles
+(458 avec destination), 232 photos référencées (203 retrouvées sous `Chambres\ID<n>\Photos\`, les chemins en base
+pointent vers l'ancien profil), Lambert 93. Les miroirs y sont des **copies** d'alvéoles étiquetées
+`MIROIR_<chambre>_<face>`, parfois en chaîne (`MIROIR_17455_MIROIR_18426_A`) : c'est ce que le modèle à conduite
+partagée évite.
+
+### Ordre de réalisation des domaines (31 octobre 2026)
+
+1. **Chambres et poteaux** (domaines noyau, infra, chambre, poteau ; activités relevé chambres et relevé poteaux) :
+   valider le système complet sur un domaine connu. Étapes : (1) schéma BE — **fait le 31 octobre 2026**, voir
+   [schema/](../schema/README.md) ; (2) jeu d'essai sur données réelles — **fait le 31 octobre 2026**,
+   `tools/essai/charger_essai.py` → `docs/essai/projet_essai/` (non versionné), consultable dans QGIS par
+   `projet_essai.qgs` (généré par `tools/essai/projet_qgis.py`) ; (3) format GeoJSON et paquet de
+   zone — **fait le 31 octobre 2026**, [paquet.md](paquet.md), `tools/geojson/paquet.py` (paquets d'essai dans
+   `docs/essai/paquets/`, non versionnés) ; (4) terminal Flutter (web d'abord) — **premier incrément le
+   31 octobre 2026**, voir §8.
+
+Jeu d'essai (3 zones, aucun orphelin) :
+
+| Zone | Contenu chargé |
+| --- | --- |
+| HEI — Heillecourt (FOA) | 1 277 chambres (51 relevées), 99 faces, 221 conduites dont 29 vues des deux côtés, 250 positions, 203 photos (29 introuvables) |
+| ESS — Essonne DOU 12-13 (FOA) | 140 chambres, 36 destinations (poteaux, façades, BAL, immeubles), 208 conduites dont 56 vues des deux côtés, 264 positions, 216 occupations par câbles |
+| GRACE — export GraceTHD de test | 200 appuis, 26 chambres, 197 portées (angles calculés depuis la géométrie), 188 câbles portés, 31 conduites |
+
+Constats sur les sources :
+- `FOA_HEILLECOURT.db` déclare EPSG:2154 mais ses coordonnées sont en Lambert II étendu (27572) ; la base de
+  l'Essonne est déclarée et réellement en 27572 ;
+- dans FOA, les destinations « autres » (poteau, façade, BAL, immeuble) n'ont pas de géométrie : reprises comme
+  nœuds à 1 m de la chambre, position à relever ;
+- 227 copies « MIROIR » de Heillecourt non reprises (face d'accueil inconnue) : 199 conduites restent vues d'un
+  seul côté, à compléter par la fonction miroir ;
+- angles des portées GraceTHD : azimut en grades, 0 = nord, sens horaire — convention retenue pour la rosace du
+  terminal, orientée au nord (voir « Hirondelle » plus bas).
+2. **Optique**, puis **retour fin de travaux**.
+3. Immeubles / BAL, électrique : ensuite.
+
 ## 8. Développer en attendant Android
 
 La compilation **web** fonctionne sur le poste actuel (vérifié le 30/10/2026 : `flutter build web` en 43 s ;
@@ -138,6 +184,47 @@ Organisation : interfaces + implémentations par plateforme, comme `WordReposito
 
 Précautions : uniquement des **données de test** sur le web (pas de chiffrement local dans le navigateur) ; tester
 sur Android dès que possible (volumes, permissions GPS / appareil photo).
+
+Premier incrément du terminal (31 octobre 2026), web :
+- **paquet** : ouverture d'un paquet de zone (ZIP) et export du paquet de retour (objets modifiés, intervention),
+  conformes à [paquet.md](paquet.md) et vérifiés par l'implémentation de référence ;
+- **dépôt** `DataRepository` en mémoire (une entrée par objet, index d'emprise et des linéaires par nœud) ;
+  `TileSource` : Plan IGN et photographies aériennes de la Géoplateforme ;
+- **carte** (`flutter_map`) : objets de la vue seulement, poteaux, chambres, façades, adresses, portées et
+  parcours ; bandeau « Identification support » ;
+- **fiche** : identification, poteau (référence du catalogue, nature, structure, implantation, hauteur, effort),
+  contrôles du jour (FOA Explorer), visuels attendus et photos embarquées, linéaires rattachés ; chambre en
+  lecture seule ;
+- **rosace** (reprise d'Hirondelle, orientée au nord) : une aiguille par portée, orientée en la faisant glisser
+  (pas de 0,1 grade), angle prérempli par la géométrie, destination existante (nœuds à moins de 150 m) ou
+  nouvelle (position provisoire qui suit l'aiguille, à relever), longueur, câbles portés (catalogue, nappe,
+  tension, flèche et température), flèches selon la légende Hirondelle ;
+- **tests** : `flutter test` (paquet synthétique) ; `PAQUET_REEL=<paquet.zip>` ajoute la rosace de tous les poteaux
+  d'un vrai paquet (GRACE : 200 poteaux, 390 portées, angles BE et terminal concordants à moins d'un grade).
+
+Compléments (1er et 2 novembre 2026) : fonds Plan et photos IGN (défaut en France), OpenStreetMap (défaut ailleurs),
+Google Plan / Satellite / Hybride avec la clé de l'utilisateur (paramètres) ; tuiles par le serveur en usage
+courant, cache pour la fluidité et en secours sans connexion (sauf Google) ; cadrage sur l'emprise de la zone à
+chaque paquet chargé.
+
+**Protocole des modifications non exportées** (validé le 2 novembre 2026, à maintenir sur Android) : un paquet
+chargé remplace le précédent ; tant que des modifications n'ont pas été exportées depuis la dernière écriture,
+ouvrir un autre paquet demande confirmation (exporter le retour, abandonner les modifications ou annuler) et
+quitter l'application est signalé (web : avertissement du navigateur) ; un export annulé ne compte pas comme
+exporté.
+
+**Retour à la carte** (2 novembre 2026) : depuis tout écran plein (fiche, rosace, paramètres) dont la carte n'est pas
+l'écran précédent, un bouton « Revenir à la carte » ferme les écrans un par un, comme des retours arrière : chaque
+saisie non enregistrée demande confirmation et le retour s'arrête si l'utilisateur reste ; pas de raccourci dans les
+dialogues et feuilles modales, qui se ferment d'abord ; le retour arrière garde son sens (écran précédent).
+
+**Écrans de saisie** (2 novembre 2026, `widgets/saisie.dart`) : bouton flottant « Enregistrer » en bas à droite,
+visible seulement s'il y a quelque chose à enregistrer ; après l'enregistrement, on reste sur l'écran (message
+« Enregistré ») ; quitter avec une saisie en cours demande « Quitter sans enregistrer ? » (Rester / Quitter). Les
+interrupteurs des paramètres s'appliquent immédiatement.
+
+Suites prévues : prise de photos (socle « visuels »), saisie des masques de chambre en grille, persistance locale
+(Drift ; SQLCipher sur Android), boussole pour orienter la rosace, connexion par jeton abonné.
 
 ## 9. Environnement de développement
 
@@ -332,16 +419,156 @@ Règles qui en découlent :
 3. journal `DELETE` ou `TRUNCATE`, pas WAL : un relevé écrit à la fois dans le noyau et dans un module ;
 4. dépendances explicites dans le manifeste ; un module ne référence que les modules qu'il déclare.
 
-Graphe de dépendances (à préciser) :
+Graphe de dépendances des domaines (à préciser) :
 
 ```
-noyau (PRJ_NOE, PRJ_LINEAIRE, DEF_TYPE, adresses)
- ├─ infra (conduites, sous-tubage)
+noyau (PRJ_NOE, PRJ_LINEAIRE, DEF_TYPE, adresses, interventions)
+ ├─ infra (parcours souterrain : conduites, sous-tubage ; parcours aérien : portées)
  │   ├─ chambre (PRJ_CHB, masques, MAT_CHAMBRE)
  │   ├─ poteau (PRJ_POT, MAT_POTEAU, COMAC)
  │   └─ optique (câbles, boîtiers, MAT_CABLE…) — dépend aussi de chambre et poteau
- └─ immeuble (…)
+ ├─ adresse / immeuble / BAL
+ └─ électrique (à définir)
 ```
+
+### Maquette Figma (analysée le 31 octobre 2026)
+
+[infraExp](https://www.figma.com/design/RyUPQF7cUKdUyqV9J6kpcZ/infraExp) (copie locale `docs/infraExp.fig`) :
+46 écrans en 360 × 800 (smartphone vertical ; pas encore d'écran tablette). Exemples sur Limours.
+
+| Écran | Contenu |
+| --- | --- |
+| `Login`, `Logged out` | Connexion (compte NGE) |
+| `Map_00` et variantes | Carte : poteaux `P…` (carrés verts), chambres `C…` (carrés violets pointillés), adresses `A…` (orange) ; couches Aérien / Souterrain / Administratif ; bandeau « Identification support » |
+| `support_sout_main`, `support_aer_main` | **Visuels** du support : une photo par vue (chambre : Boîtier optique, Environnement, Vue A à D ; poteau : Boîtier optique, Vue d'ensemble, Vue tête de poteau), chacune avec trois actions : validée, action propre au module (grille de masque pour la chambre, rosace pour le poteau), ajout de photo |
+| `support_sout_saisie`, `support_saisie_caracteristiques` | Caractéristiques. Chambre : identifiant, coordonnées, date, adresse, type (P3T), largeur, longueur, hauteur, implantation, équipements, commentaire. Poteau : identifiant, coordonnées, date, adresse, type (BS7), nature (bois), hauteur, implantation, référence (« Bois BS7 Bois simple »), structure (couplé), matériel sur appui, commentaire |
+| `support_sout_saisie_grid` | Masque d'une face en plein écran : grille plus grande que l'écran (déplacement), alvéoles X / M / XR |
+| `support_saisie_rosace_01` / `_02` | **Rosace des portées** : rapporteur gradué en grades (0–400), une flèche par destination — appuis télécom (vert), façade (vert pointillé), appui BT (orange) ; liste des câbles portés : destination [longueur], type de câble (5/9, 98-14-6, L1092-1-A), pose ; détail : type de câble, longueur, appui de destination, nappe, hauteur de flèche, température de relevé |
+| `support_*photos*`, `*mesure*` | Prise et détail des photos, photos de mesure |
+| `support_saisie_optique*`, `support_route_optique*` | Optique : boîtier (BPE / PBO), cassettes, routage (domaine ultérieur) |
+| `admin_*` | Adresses / immeubles : vue d'ensemble, parcours et colonne en photos (domaine ultérieur) |
+
+Enseignements :
+- **socle commun « visuels »** identique pour tous les supports : liste de vues photographiées, validation,
+  action propre au module, ajout de photo ;
+- **poteau** : la rosace décrit les **portées** (linéaires aériens vers les destinations, angle en grades au
+  poteau) et les **câbles portés** (type de câble du catalogue, nappe, flèche, température : données COMAC) — pendant
+  aérien de l'occupation des alvéoles ; les couleurs correspondent aux types d'implantation GraceTHD (aérien
+  télécom, aérien énergie, façade) ;
+- **chambre** : grille de masque en plein écran avec déplacement, conforme à la décision sur les grandes faces.
+
+Décisions poteau (31 octobre 2026) :
+- **contrôles à prévoir** (absents de la maquette) : ceux de FOA Explorer — visuel, percussion, secousse, pointe
+  carrée, tête de poteau, environnement (surplomb, élagage, nacelle, bitume), sécurité (voisinage ERDF, flambement,
+  verticalité, étiquette, utilisable) ;
+- **destination d'une portée** = un nœud du modèle ; le numéro d'appui Orange (ex. 437991) en est l'étiquette.
+
+Précisions (guide Enedis-MOP-RES_010E, avril 2024, études mécaniques COMAC) :
+- **nappe** = câbles d'une même traverse sur une portée (3 traverses télécom au plus par appui Enedis, espacées
+  de 0,10 m au moins) → numéro de traverse ;
+- **standard** = tension de pose standard selon la zone (Agglomération ou Écart), sans relevé de flèche ; pour
+  une portée molle, flèche réelle relevée avec la température ambiante (COMAC en déduit le paramètre à 40 °C).
+
+Implantations des supports validées : chaussée, trottoir, accotement, terre-plein, domaine privé, façade, autre.
+Table COMAC des câbles optiques : à compléter plus tard. Question ouverte : la longueur se rapporte-t-elle au
+câble ou à la portée (deux câbles vers 437991 : 31 m et 32 m) ?
+
+### Hirondelle : rosace de l'application Excel (2014–2016)
+
+Hirondelle (`FOA/FTTH_OR_HEILLECOURT/Hirondelle/install/model.xlsm`) est une macro VBA appelée depuis la « Fiche
+de relevés d'appui FT » (modèles `FICHE FT.xltm`, `Fiche BT.xltm`). Le formulaire « Saisie des portées » est
+dessiné avec le contrôle ActiveX VeCAD. Son interface a donné satisfaction : elle sert de **référence pour la
+rosace du terminal**.
+
+Interaction :
+- **rosace plein cadre** : rapporteur en grades (un trait par grade, un trait long tous les 2, une valeur tous
+  les 10), deux couronnes de chiffres (extérieure en sens horaire, intérieure en sens inverse) ;
+- **poteau au centre** : symbole selon le type (simple, jumelé, haubané, EDF, CF), orientable en le faisant
+  glisser (axe) ;
+- **une aiguille par direction** (« Ajout angle ») : talon contre le poteau, poignée, pointe sur le bord ; elle
+  tourne en suivant le pointeur, avec la valeur affichée en direct (« Angle : 221,9 ») ;
+- **étiquette de destination** sur chaque aiguille (« DEST. » par défaut) : déplaçable, modifiée par double-clic
+  (n° d'appui FT, façade, ERDF…) ;
+- **types de portée** : l'aiguille sélectionnée ouvre un menu latéral de quatre boutons-bascules. Chaque type
+  donne au plus une flèche, placée à côté des autres le long de l'aiguille. Le menu propose aussi « Suppr
+  angle ». Sens des types d'après la légende du modèle `Fiche BT.xltm` :
+
+  | Code | Flèche | Câbles |
+  | --- | --- | --- |
+  | 1 | bleu tireté | branchement ERDF ou éclairage public |
+  | 2 | bleu plein | réseau ERDF (T70, T150, cuivre nu) |
+  | 3 | vert tireté | branchement FT (5/9, 5/10) |
+  | 4 | vert plein | réseau FT (98-14-6, 98-28-6…) |
+
+  La couleur donne le réseau (bleu = électrique, vert = télécom) et le trait l'usage (plein = réseau,
+  tireté = branchement). Le tireté ne désigne pas une façade. La même légende donne la forme du poteau sur la
+  rosace : rectangle pour un poteau béton rectangulaire, rond pour un poteau rond (béton, bois, métal) ;
+- **manipulation directe** : on sélectionne en touchant, on déplace en faisant glisser et on désélectionne en
+  touchant ailleurs, sans aucune boîte de dialogue. Ce fonctionnement se transpose tel quel au tactile ;
+- **Valider** : rendu épuré (flèches fines en éventail autour de chaque aiguille), image insérée dans la fiche
+  (zone `ZONE_ROSACE`) ; un clic sur l'image rouvre la saisie.
+
+Données : `POTEAUX` (axe, type), `ANGLES` (aiguille, angle, destination, position de l'étiquette, angle en
+grades), `PORTEES` (aiguille, type 1 à 4). La rosace ne porte que la géométrie. Les câbles sont décrits dans le
+tableau de la fiche : type (liste de 38 références, de 5/9 à L1092), longueur, nappe (sur réhausse, standard,
+basse), nombre de câbles de branchement, appui de destination.
+
+**Convention d'angle** (lue dans le code) : grades, 0 à droite de la rosace, sens horaire (100 en bas, 300 en
+haut). Sur le terrain, la rosace était orientée au nord, haut du dessin vers le nord. Le nord se lit donc 300, et
+l'azimut d'une valeur Hirondelle vaut (angle + 100) mod 400. La colonne `ROTATION_ROSACE` des fiches est
+une constante de dessin (90°), pas une orientation relevée.
+
+À ne pas reproduire : l'axe du poteau est affiché et enregistré en degrés alors que les angles sont en grades ; un
+pointeur exactement horizontal donne 360 (calcul par arc tangente sans `atan2`).
+
+Pour le terminal, l'interaction Hirondelle est reprise et complétée par la maquette Figma et le modèle :
+- la destination est un nœud du modèle (voisin proposé sur la carte, ou nœud créé « à relever ») ; quand sa
+  position est connue, l'angle est prérempli par l'azimut de la géométrie ;
+- **la rosace est orientée au nord** (nord en haut, aidé par la boussole du terminal) et l'angle enregistré est
+  l'azimut : grades, 0 = nord, sens horaire. C'est la convention des angles calculés depuis GraceTHD
+  (`PRT_ANG1`, `PRT_ANG2`) ; la couronne affiche 0 en haut ;
+- les câbles portés se saisissent sous chaque portée (la maquette Figma les liste par destination) ;
+- les types de flèche ne sont pas une donnée à saisir. Un même linéaire d'infra porte plusieurs câbles, de
+  réseaux éventuellement différents (`INF_PORTEE_CABLE`), et chaque câble porté donne une flèche :
+  - couleur = réseau, déduit du catalogue (`MAT_CABLE.CAB_TYPE` : N et I = BT, Telecom, FO et Fibre = télécom) ;
+  - trait = usage (réseau ou branchement), donné à titre indicatif par `MAT_CABLE.CAB_USAGE` (rempli à
+    l'import d'après la légende Hirondelle ; non renseigné pour les câbles optiques).
+
+  La maquette Figma, qui colore selon l'implantation de la destination (façade en vert pointillé, appui BT en
+  orange), est à aligner sur la légende Hirondelle.
+
+### Domaines et activités (31 octobre 2026)
+
+Deux axes distincts :
+- **domaine** = ce qui est décrit (données) : noyau, infra, chambre, poteau, adresse / immeuble / BAL, optique,
+  électrique. Côté BE, un fichier attaché par domaine ; côté terminal, un espace `properties.<domaine>`.
+- **activité** = ce que fait le technicien : écrans, enchaînement, règles de complétude côté terminal ; contrôles
+  et sorties côté BE. L'abonnement dit ce que le technicien peut faire (activités) et où (zones).
+
+| Activité | Domaines modifiés | Domaines lus |
+| --- | --- | --- |
+| Relevé chambres | chambre, infra (parcours souterrain) | noyau, poteau (destinations) |
+| Relevé poteaux | poteau, infra (parcours aérien : portées) | noyau, chambre |
+| Relevé BAL | adresse / immeuble / BAL | noyau |
+| Relevé immeubles | adresse / immeuble / BAL | noyau |
+| Retour fin de travaux | infra, chambre, poteau, optique, immeuble… | tous |
+| Maintenance optique | optique | infra, chambre, poteau |
+| Travaux réseaux électriques | électrique (à définir) | noyau, infra |
+
+Les activités dialoguent par les données, sans appel direct de l'une à l'autre :
+1. **le noyau partagé** : chambres et poteaux sont des nœuds du même `PRJ_NOE`, reliés par des linéaires (ex.
+   remontée aéro-souterraine) ;
+2. **la carte du socle** : dans une mission combinant plusieurs activités (ex. relevé chambres + poteaux + autres
+   supports), toucher un nœud ouvre l'écran de l'activité correspondant à son type ;
+3. **les tâches transmises** : une destination vers un poteau inexistant crée le nœud, marqué « à relever » pour
+   l'activité poteaux.
+
+Ajouts au modèle :
+- **intervention** dans le noyau : qui, quand, mission (commande), objets touchés. Nécessaire au retour de fin de
+  travaux (prévu / réalisé, avancement et statut GraceTHD), à la maintenance et au sas de contrôle, qui valide une
+  intervention plutôt que des objets isolés ;
+- **deux manifestes** : domaine (tables, référentiels, correspondance GraceTHD) et activité (domaines lus et
+  modifiés, écrans, complétude, sorties).
 
 ### Applications desktop
 
@@ -369,7 +596,8 @@ sans règles divergentes d'une application à l'autre.
 
 - Réponses de la DSI : synthèse + complément NgeEsPlorer, évolution de la VM.
 - Note de vision d'ensemble (finalité, mode de fonctionnement, choix techniques) — à venir.
-- Spécification du format GeoJSON de la phase 1 (propriétés communes, identifiants, statuts, versions, exemple par
-  module).
+- Format du paquet (version 0.1.0, [paquet.md](paquet.md)) : chiffrement par la clé de zone, paquet de fonds de
+  plan, paquets différentiels ; intégration d'un retour dans le sas (implémentation de référence à écrire).
 - Terminaux des sous-traitants : mobiles NGE gérés (Intune / MDM ?) → effacement à distance possible.
+- Catalogue des câbles : usage (réseau ou branchement) des câbles optiques, non renseigné.
 - Références existantes dans `docs/` : `Besoins_KIZEO.xlsx`, `exemple_fiche_KIZEO.zip`, maquette `infraExp.fig`.

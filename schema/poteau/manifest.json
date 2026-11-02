@@ -1,0 +1,41 @@
+{
+  "code": "poteau",
+  "version": "0.1.0",
+  "libelle": "Poteaux : caractéristiques et contrôles",
+  "fichier": "poteau.sqlite",
+  "spatial": false,
+  "dependances": ["noyau", "infra"],
+  "espace_geojson": "pot",
+  "scripts": ["schema.sql"],
+  "tables": ["DEF_POT_NAT", "DEF_POT_STRUCT", "DEF_POT_CARAC", "MAT_POTEAU", "POT_POTEAU", "POT_CONTROLE"],
+  "referentiels_foa": [
+    {"cible": "DEF_POT_NAT", "source": "DEF_POT_NAT", "colonnes": {"NAT_ID": "DEF_ID", "NAT_LIB": "DEF_LIB"}},
+    {"cible": "DEF_POT_STRUCT", "source": "DEF_POT_TYPE", "colonnes": {"STRUCT_ID": "DEF_ID", "STRUCT_LIB": "DEF_LIB"}},
+    {"cible": "DEF_POT_CARAC", "source": "DEF_POT_CARAC", "colonnes": {"CARAC_ID": "DEF_ID", "CARAC_LIB": "DEF_LIB"}},
+    {"cible": "MAT_POTEAU", "source": "MAT_POTEAU"}
+  ],
+  "references": [
+    {"table": "POT_POTEAU", "colonne": "NOE_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
+    {"table": "POT_POTEAU", "colonne": "PROPRIO_KEY", "cible": "noyau.DEF_ORGANISME.ORG_ID"},
+    {"table": "POT_POTEAU", "colonne": "GEST_KEY", "cible": "noyau.DEF_ORGANISME.ORG_ID"},
+    {"table": "POT_POTEAU", "colonne": "IMPS_KEY", "cible": "infra.DEF_SUPPORT_IMPLANT.IMPS_ID"}
+  ],
+  "types": [
+    {"id": 13, "code": "POT", "lib": "Poteau", "parent": 3, "geom": "POINT", "grace": "A"},
+    {"id": 14, "code": "POT-FT", "lib": "Poteau télécom", "parent": 13, "geom": "POINT", "grace": "A"},
+    {"id": 15, "code": "POT-BT", "lib": "Poteau BT (énergie)", "parent": 13, "geom": "POINT", "grace": "A"}
+  ],
+  "entites": [
+    {"table": "POT_POTEAU", "lib": "Poteau"},
+    {"table": "POT_CONTROLE", "lib": "Contrôle de poteau"}
+  ],
+  "vues": [
+    {"type": "POT", "code": "BOITIER", "lib": "Boîtier optique", "ordre": 1, "obligatoire": "NON"},
+    {"type": "POT", "code": "ENSEMBLE", "lib": "Vue d'ensemble", "ordre": 2, "obligatoire": "OUI"},
+    {"type": "POT", "code": "TETE", "lib": "Vue tête de poteau", "ordre": 3, "obligatoire": "OUI", "action": "ROSACE"}
+  ],
+  "completude": "À définir : vues obligatoires, caractéristiques, portées et contrôles.",
+  "grace": {
+    "POT_POTEAU": "t_ptech (pt_typephy A ; pt_a_haut, pt_a_struc, pt_nature = MAT_POTEAU.MAT_LIB)"
+  }
+}

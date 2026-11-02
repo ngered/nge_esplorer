@@ -1,0 +1,46 @@
+{
+  "code": "chambre",
+  "version": "0.1.0",
+  "libelle": "Chambres : faces, masques, positions des conduites",
+  "fichier": "chambre.sqlite",
+  "spatial": false,
+  "dependances": ["noyau", "infra"],
+  "espace_geojson": "chb",
+  "scripts": ["schema.sql"],
+  "tables": ["MAT_CHAMBRE", "CHB_CHAMBRE", "CHB_FACE", "CHB_MASQUE_LOGIQUE", "CHB_POSITION"],
+  "referentiels_foa": [
+    {"cible": "MAT_CHAMBRE", "source": "MAT_CHAMBRE"}
+  ],
+  "references": [
+    {"table": "MAT_CHAMBRE", "colonne": "FAB_KEY", "cible": "noyau.DEF_FABRICANT.FAB_ID"},
+    {"table": "MAT_CHAMBRE", "colonne": "POSE_KEY", "cible": "infra.DEF_POSE.POSE_ID"},
+    {"table": "CHB_CHAMBRE", "colonne": "NOE_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
+    {"table": "CHB_CHAMBRE", "colonne": "PROPRIO_KEY", "cible": "noyau.DEF_ORGANISME.ORG_ID"},
+    {"table": "CHB_CHAMBRE", "colonne": "GEST_KEY", "cible": "noyau.DEF_ORGANISME.ORG_ID"},
+    {"table": "CHB_CHAMBRE", "colonne": "IMPS_KEY", "cible": "infra.DEF_SUPPORT_IMPLANT.IMPS_ID"},
+    {"table": "CHB_POSITION", "colonne": "CD_KEY", "cible": "infra.INF_CONDUITE.CD_ID"}
+  ],
+  "types": [
+    {"id": 16, "code": "CHB", "lib": "Chambre", "parent": 3, "geom": "POINT", "grace": "C"},
+    {"id": 17, "code": "CHB-FT", "lib": "Chambre FT", "parent": 16, "geom": "POINT", "grace": "C"},
+    {"id": 18, "code": "CHB_SAT", "lib": "Chambre SAT", "parent": 16, "geom": "POINT", "grace": "C"}
+  ],
+  "entites": [
+    {"table": "CHB_CHAMBRE", "lib": "Chambre"}
+  ],
+  "vues": [
+    {"type": "CHB", "code": "BOITIER", "lib": "Boîtier optique", "ordre": 1, "obligatoire": "NON"},
+    {"type": "CHB", "code": "ENV", "lib": "Environnement", "ordre": 2, "obligatoire": "OUI"},
+    {"type": "CHB", "code": "DESSUS", "lib": "Dessus", "ordre": 3, "obligatoire": "OUI"},
+    {"type": "CHB", "code": "A", "lib": "Vue A", "ordre": 4, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "B", "lib": "Vue B", "ordre": 5, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "C", "lib": "Vue C", "ordre": 6, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "D", "lib": "Vue D", "ordre": 7, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "MES", "lib": "Mesures", "ordre": 8, "obligatoire": "OUI"}
+  ],
+  "completude": "Complète : environnement, dessus, au moins une mesure, et une photo par face ayant des positions (FOA Explorer : 1 masque renseigné = 1 photo).",
+  "grace": {
+    "CHB_CHAMBRE": "t_ptech (pt_typephy C, pt_nature = MAT_CHAMBRE.MAT_LIB)",
+    "CHB_POSITION": "t_masque (mq_face, mq_col, mq_ligne, mq_cd_code)"
+  }
+}

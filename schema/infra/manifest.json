@@ -1,0 +1,45 @@
+{
+  "code": "infra",
+  "version": "0.1.0",
+  "libelle": "Infrastructure : parcours souterrain et aérien, matériel sur support",
+  "fichier": "infra.sqlite",
+  "spatial": false,
+  "dependances": ["noyau"],
+  "espace_geojson": "inf",
+  "scripts": ["schema.sql", "referentiels.sql"],
+  "tables": ["DEF_CD_ETAT", "DEF_SUPPORT_IMPLANT", "DEF_POSE", "MAT_CAB_COMAC", "MAT_CABLE", "MAT_EQUIP",
+             "INF_CONDUITE", "INF_CD_CABLE", "INF_PORTEE", "INF_PORTEE_CABLE", "INF_EQUIPEMENT"],
+  "referentiels_foa": [
+    {"cible": "DEF_POSE", "source": "DEF_POSEMODE"},
+    {"cible": "MAT_CAB_COMAC", "source": "MAT_CAB_COMAC",
+     "colonnes": {"COMAC_ID": "rowid", "COMAC_CODE": "CODE", "COMAC_NOM": "NOM", "COMAC_TYPE": "TYPE", "COMAC_VOLT": "VOLT"}},
+    {"cible": "MAT_CABLE", "source": "MAT_CABLE",
+     "colonnes": {"COMAC_FOA": "COMAC_KEY", "COD_COUL_FOA": "COD_COUL_KEY", "FIBTYPE_FOA": "FIBTYPE_KEY", "FIC_FOA": "FIC_KEY"}},
+    {"cible": "MAT_EQUIP", "source": "MAT_EQUIP", "colonnes": {"TYPE_FOA": "TYPE_KEY"}}
+  ],
+  "references": [
+    {"table": "MAT_CABLE", "colonne": "FAB_KEY", "cible": "noyau.DEF_FABRICANT.FAB_ID"},
+    {"table": "MAT_EQUIP", "colonne": "FAB_KEY", "cible": "noyau.DEF_FABRICANT.FAB_ID"},
+    {"table": "INF_CONDUITE", "colonne": "LIN_KEY", "cible": "noyau.PRJ_LINEAIRE.LIN_ID"},
+    {"table": "INF_PORTEE", "colonne": "LIN_KEY", "cible": "noyau.PRJ_LINEAIRE.LIN_ID"},
+    {"table": "INF_EQUIPEMENT", "colonne": "NOE_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"}
+  ],
+  "types": [
+    {"id": 30, "code": "FAC", "lib": "Ancrage façade", "parent": 3, "geom": "POINT", "grace": "F"},
+    {"id": 1001, "code": "LIN-SOUT", "lib": "Parcours souterrain", "parent": 1000, "geom": "LINESTRING", "grace": "7"},
+    {"id": 1002, "code": "LIN-AER", "lib": "Portée aérienne", "parent": 1000, "geom": "LINESTRING", "grace": "0"},
+    {"id": 1003, "code": "LIN-FAC", "lib": "Parcours en façade", "parent": 1000, "geom": "LINESTRING", "grace": "2"}
+  ],
+  "entites": [
+    {"table": "INF_CONDUITE", "lib": "Conduite"},
+    {"table": "INF_PORTEE", "lib": "Portée"},
+    {"table": "INF_EQUIPEMENT", "lib": "Équipement sur support"}
+  ],
+  "vues": [],
+  "grace": {
+    "INF_CONDUITE": "t_conduite + t_cond_chem (cd_cd_code pour le sous-tubage)",
+    "INF_CD_CABLE": "cd_nbcable / cd_occup (agrégés)",
+    "INF_PORTEE": "t_cheminement aérien (cm_typ_imp 0 ou 1)",
+    "INF_EQUIPEMENT": "t_ebp (boîtiers) — à préciser avec le domaine optique"
+  }
+}

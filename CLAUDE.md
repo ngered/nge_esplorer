@@ -8,6 +8,8 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
 
 - **Flutter** 3.41+ / Dart 3.11+ — package `nge_esplorer`, identifiant Android `fr.nge.esplorer`
 - **Cibles** : Android (production), web (développement en attendant Android), Windows (possible)
+- Maquette : Figma [infraExp](https://www.figma.com/design/RyUPQF7cUKdUyqV9J6kpcZ/infraExp) (fileKey
+  `RyUPQF7cUKdUyqV9J6kpcZ`, lisible par le connecteur Figma ; analyse dans docs/echanges.md §11)
 - Carte : `flutter_map` ou `maplibre_gl` ; géométries `geobase` ; projections `proj4dart` ;
   base locale chiffrée Drift + `sqlcipher_flutter_libs` (Android)
 
@@ -29,6 +31,20 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   en C# (famille FibReady) ; base BE SpatiaLite puis PostGIS, schéma commun `PRJ_NOE` / `PRJ_LINEAIRE` + schémas
   métiers ; modèle mixte GraceTHD v2 (séparation géométrie / métier) et FOA Explorer (`XXX_ID` / `XXX_KEY`, tables
   `MAT_*`). Terminal : SQLite chiffrée, une ligne par objet GeoJSON complet (voir docs/echanges.md §11).
+- **Schéma BE** : [schema/](schema/README.md) (un dossier par domaine : manifeste + SQL) ; construction et essai
+  par `tools/schema/projet.py` (implémentation de référence de la bibliothèque noyau C#) ; jeu d'essai sur données
+  réelles par `tools/essai/charger_essai.py` (Heillecourt, Essonne, GraceTHD de test) ; projet QGIS de
+  consultation par `tools/essai/projet_qgis.py` (Python de QGIS : `python-qgis.bat`).
+- **Paquet de zone** : [docs/paquet.md](docs/paquet.md) (ZIP : `paquet.json`, `objets.geojson`,
+  `referentiels.json`, photos) ; publication et vérification par `tools/geojson/paquet.py` (référence côté BE).
+- **Terminal** (`lib/`) : `data/` (objet GeoJSON, paquet, `DataRepository` + implémentation mémoire), `carte/`
+  (`TileSource` : Plan et photos IGN (fond par défaut en France), OSM (ailleurs, Maroc), Google Plan / Satellite /
+  Hybride par la Map Tiles API avec la clé renseignée par l'utilisateur dans les paramètres, sous sa responsabilité,
+  comme dans FibReady ; tuiles : serveur en usage courant, cache selon les en-têtes HTTP pour la fluidité, secours
+  sans connexion sauf Google (règles de la Map Tiles API : ni usage hors connexion, logo et copyright de la vue
+  obligatoires) ; calculs d'azimut en grades), `data/reglages.dart` (paramètres conservés : Keystore sur Android), `providers/` (`AppProvider`, provider + ChangeNotifier comme cruci),
+  `screens/` (carte, fiche), `modules/<module>/` (futurs paquets Dart : poteau avec la rosace, chambre, infra).
+  Tests : `flutter test` ; `PAQUET_REEL=<zip>` pour un vrai paquet.
 - **Modules** : manifeste commun (BE, terminal, GeoJSON) ; côté BE, un fichier SQLite par module attaché au noyau
   (pas de clé étrangère entre bases, intégrité par l'application, journal non WAL) ; côté terminal, un paquet Dart
   et un espace `properties.<module>` par module.
