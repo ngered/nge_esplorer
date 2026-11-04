@@ -10,6 +10,8 @@ class Settings {
   static const cancelStaleTiles = 'annuler_tuiles_obsoletes';
   static const useLocalPhotoServer = 'photos_serveur_local';
   static const language = 'langue';
+  static const animateLocate = 'reperage_anime';
+  static const locateRadius = 'rayon_reperage';
 
   Future<String?> read(String name) async {
     try {

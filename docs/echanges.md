@@ -180,8 +180,50 @@ le paquet donne le chemin de chaque photo dans le projet (`FIC_CHEMIN`), lue à 
 `tools/essai/serveur_photos.py docs/essai/projet_nancy` (dossier `photos/` seul, boucle locale, CORS) quand
 l'application est ouverte avec `?photos=8090` ou compilée avec `--dart-define=SERVEUR_PHOTOS=8090` (un `&` dans les arguments du lanceur coupe la commande de flutter.bat) ; lanceur VS Code « photos de Nancy » (tâche du serveur comprise).
 Sur Android, les photos seront dans le stockage du terminal (paquet avec photos).
-2. **Optique**, puis **retour fin de travaux**.
-3. Immeubles / BAL, électrique : ensuite.
+Repris le 4 novembre 2026 par `projet.py migrer` (journal de 14 commentaires FOA, puis masques métriques : 2 268 faces
+de 0,567 × 0,54 m, 10 414 positions converties, aucune hors de sa face ; module chambre et modèle en 0.3.0) et
+republié ; contrôles indépendants conformes (bases et paquet comparés ligne à ligne, QGIS). Sauvegardes des états
+0.1.0 et 0.2.0, bases et paquet, dans `docs/essai/sauvegardes/`.
+2. **Optique**, puis **retour fin de travaux** : (1) schéma BE — **première version le 4 novembre 2026**, modules
+   optique et immeuble 0.1.0 calqués sur GraceTHD v2.0.1, voir [schema/](../schema/README.md) ; (2) jeu d'essai DOE
+   sur données réelles — **fait le 4 novembre 2026**, ci-dessous ; (3) espaces `opt` et `imb` du paquet ; (4) écrans du
+   terminal (liens fibres d'une boîte d'épissure, route optique, retour fin de travaux).
+3. Immeubles / BAL (schéma 0.1.0 posé avec le jeu d'essai DOE), électrique : ensuite.
+
+Jeu d'essai DOE Evicom (4 novembre 2026) : DOE du SRO-2-02HG (Hussigny-Godbrange, Meurthe-et-Moselle, réseau EVICOM
+2000), matériau de `docs/essai/evicom_data/in/` chargé par `tools/essai/charger_doe.py` → `docs/essai/projet_evicom/`
+(625 Mo avec photos et documents ; projet QGIS `projet_evicom.qgs`), paquet `docs/essai/paquets/EVICOM_SRO-2-02HG.zip`
+(0,16 Mo sans les photos, conforme, lu par les tests du terminal), non versionnés. Sources : export GraceTHD v2.0.1
+du pré-DOE (16 septembre 2026), référence du chargement ; relevé d'infrastructure FibReady (type d'appui, matière) ;
+études COMAC de l'APD (juillet 2025) ; photos, plans de boîte, mesures, conventions d'immeuble.
+
+| Domaine | Contenu chargé |
+| --- | --- |
+| Supports | 65 appuis (40 BT Enedis, 25 télécom ; 60 avec leur étude COMAC, 40 avec leur référence `MAT_POTEAU`, 15 études concluant à un appui insuffisant, en alerte au journal), 30 chambres (L1T à L4T), 36 façades, SRO, NRO, 15 immeubles |
+| Parcours | 146 linéaires (79 portées aériennes, 23 parcours en façade, 44 souterrains) ; 102 portées orientées, 116 câbles portés ; 78 conduites, 147 occupations |
+| Matériel | 99 boîtiers (95 PBO dont 19 à poser en immeuble, 4 BPE), baie et 6 tiroirs du SRO ; catalogues `MAT_EQUIP` et `MAT_CABLE` complétés de 11 et 13 références |
+| Optique | 99 câbles (7,2 km ; 95 au parcours complet, 183 passages ; 4 câbles de colonne), 195 lovages, 6 000 fibres, 286 cassettes, 8 583 positions (700 épissures, 2 717 passages, 4 434 attentes, 732 connecteurs), 884 routes, 438 réflectométries à 1 550 nm rattachées à leur route (1 hors seuils) |
+| BAL et immeubles | 339 adresses (436 logements, 15 locaux professionnels ; 322 pavillons, 15 immeubles), 464 locaux rattachés à leur PBO, 12 conventions d'immeuble |
+| Fichiers | 1 158 photos (182 Mo : images extraites des rapports PDF des boîtes et du tirage, appuis, SRO, photométrie, études COMAC, infrastructure tierce Evicom) ; 879 documents non publiés (rapports PDF, plans de boîte, synthèses et traces de mesure, DT-DICT, conventions) |
+
+Constats :
+- angles des portées : `charger_essai.py` les calculait dans le quadrillage Lambert 93 ; à 5,9° E, la convergence
+  des méridiens les écarte de 2,3 grades du nord géographique de la rosace du terminal (le test du paquet réel l'a
+  relevé ; rien de visible pour la zone GRACE, à 2,9° E, près du méridien central). Calcul désormais géodésique, en
+  WGS84, dans les deux chargeurs ; rosaces du projet QGIS tournées de la convergence ;
+- des rues ont deux études COMAC (Rue Carnot et Rue Carnot 1, Rue du Réservoir et Rue du Réservoir 1) et un appui
+  d'angle figure dans celles de deux rues, son nom suffixé de -IN (insuffisant) dans l'une seulement : un appui reçoit
+  toutes les études d'un même support ;
+- la capacité d'un boîtier posé (`bp_typephy`, B012) diffère de celle de son modèle (« PBO 48 fo ») : capacité du
+  modèle au catalogue, capacité utile dans `OPT_EQUIPEMENT` ;
+- l'appareil de mesure nomme la fibre par son rang au départ du SRO et le câble par la boîte d'extrémité :
+  CDI-2-02HG-1015 fibre 55 = route partant de la fibre 55 du CDI-2-02HG-1005 (288 FO) ;
+- non repris : la base FibReady (l'export GraceTHD en est tiré) et ses câbles de raccordement (non posés au DOE) ; le
+  rapport de réserves (`reserves/rapport_distribution-SRO-08LG.xls`) porte sur un autre SRO, le SRO-1-08LG
+  (168 non-conformités : point technique, criticité, thème, contrôle, statut, retour NGE) : modèle pour la levée de
+  réserves du retour fin de travaux ;
+- paquet : modules optique et immeuble non publiés (format 0.2.0) ; adresses de l'emprise de la zone et photos seules
+  publiées.
 
 ## 8. Développer en attendant Android
 
@@ -267,7 +309,7 @@ interrupteurs des paramètres s'appliquent immédiatement.
   (`Desktop/Demo/Parametrage`, `Sources/bin/.../Parametrage`) et les affaires orne et unifiber ;
 - **visuel et photo** : un **visuel** (vue attendue, `DEF_VUE`) regroupe **plusieurs photos** et porte ses
   fonctions propres (`VUE_ACTION` : visuel masque → bouton masque) ; toucher un visuel ouvre la **galerie** de ses
-  photos, que l'on organise : la photo du haut est la **photo de référence** du visuel (`FIC_RANG` 1,
+  photos, que l'on organise : la première (en haut à gauche) est la **photo de référence** du visuel (`FIC_RANG` 1,
   `FIC_PRINCIPALE`), affichée sur la carte du visuel ; la corbeille d'une photo est dans la galerie ;
 - **visuel libre** : « Ajouter » (barre basse du support) crée un visuel hors des vues attendues : titre saisi,
   puis première photo ; il existe tant qu'il a des photos, qui portent son identifiant et son titre
@@ -277,32 +319,147 @@ interrupteurs des paramètres s'appliquent immédiatement.
   obligation, fonction propre) : même nature, même galerie ; il est affiché vide, « à renseigner », dès
   l'ouverture du support (retenu le 2 novembre 2026, plutôt qu'une liste à activer par « Ajouter ») ;
 - **support** : écran d'arrivée « visuels » (une carte par visuel : photo de référence, nombre de photos ou
-  « Manquante », prendre une photo, fonction propre du visuel) ; le **crayon** de l'en-tête ouvre la saisie générale de l'entité
-  (identification, commentaire, caractéristiques, contrôles, données propres au module), pas les photos ni leur
-  titre ; barre basse commune module (Portées pour le poteau, Masques et conduites pour la chambre) ·
-  **Équipements** (remplace « Connecteurs » le 4 novembre 2026 : une boîte d'épissure y propose ses liens fibres,
+  « Manquante », prendre une photo, fonction propre du visuel) ; le **crayon** de l'en-tête (depuis le 4 novembre
+  2026, « Saisie du support » du menu ⋮) ouvre la saisie générale de l'entité (identification, commentaire,
+  caractéristiques, contrôles, données propres au module), pas les photos ni leur titre ; barre basse commune module (Portées pour le poteau, Masques et conduites pour la chambre) ·
+  **Équipements** (icône dessinée « boîtier sur câble », `assets/icons/equipment.svg`, valable pour les télécoms et
+  l'électricité, retenue parmi sept propositions ; remplace « Connecteurs » le 4 novembre 2026 : une boîte d'épissure y propose ses liens fibres,
   écrans `support_saisie_optique` / `support_route_optique`) · Carte (globe, remplace « Revenir à la carte ») ·
   Ajouter (visuel libre) ;
 - **onglets du support** (4 novembre 2026) : écrans séparés plutôt qu'un long formulaire ; saisie (crayon des
-  visuels), module (portées, masques) et équipements sont des onglets : passer de l'un à l'autre remplace l'écran au
-  lieu de l'empiler (saisie enregistrée avant ; grille ou rosace modifiée : confirmation, et l'on peut rester), le
-  retour ramène aux visuels du support, puis à la carte ; depuis la grille d'une face, Masques ramène à l'aperçu ;
+  visuels, puis « Saisie du support » du menu ⋮), module (portées, masques) et équipements sont des onglets : passer
+  de l'un à l'autre remplace l'écran au lieu de l'empiler (saisie enregistrée avant ; grille ou rosace modifiée :
+  confirmation, et l'on peut rester), le retour ramène aux visuels du support s'ils sont dessous (support ouvert par
+  « Ouvrir » de la carte), puis à la carte ; depuis la grille d'une face, Masques ramène à l'aperçu ;
+  chaque donnée n'a qu'un écran : les équipements ne sont plus dans la saisie (poteau et chambre), le nombre
+  d'équipements reste affiché sur le bouton de la barre basse ; un nouveau message remplace les précédents (pas de
+  file de confirmations) ; « Visuels du support » (d'abord un picto en haut à droite, puis une entrée du menu ⋮)
+  ramène aux visuels depuis les écrans de saisie (saisie, portées, masques, grille d'une face, équipements), saisie
+  enregistrée avant ; grille ou rosace modifiée : confirmation ;
+- **parcours suivi** (4 novembre 2026) : depuis une portée, un parcours ou une conduite, le support d'en face
+  s'ouvre sur le même linéaire, comme on chemine sur le terrain, sur le même écran des parcours, avec le carton du
+  retour (notes rep5, `follow(route: true)`) : portées du poteau (portée commune ouverte, vue de son côté, ou
+  parcours sélectionné), aperçu des masques de la chambre (parcours sélectionné), saisie des autres supports
+  (ancrage façade… : liste « Portées et parcours », linéaire sélectionné). Dans ces trois écrans, toucher un
+  parcours le sélectionne et montre son carton « Naviguer vers … » (au-dessus de la barre basse ; dans la rosace, en
+  haut du panneau, pour qu'elle garde sa taille quand il paraît) ; la saisie en cours est enregistrée avant ; l'icône
+  « ouvrir » des portées est retirée. Dans la grille, le « Vers … » du panneau de l'alvéole mène d'une touche à la
+  grille de la chambre d'en face (notes rep7 : ni carton ni infobulle), sur l'alvéole de la même conduite si elle y
+  est placée (`follow(cd:)`, base du futur miroir), sinon sur la face où le parcours arrive (ou la première), rien de
+  choisi à sa place ; ce lien est un bouton sur sa ligne, avec le pictogramme du support d'en face (celui de la carte),
+  son étiquette en gras et son type (notes rep10, `SupportLink`). Le même pictogramme précède chaque parcours de la
+  liste et l'étiquette du bouton « Naviguer vers … » du carton. Le bouton « Ouvrir » de l'aperçu sur la carte mène toujours aux visuels. « Face non relevée »
+  devient « Face vide » ;
+- **un seul support ouvert à la fois** (4 novembre 2026, notes rep8 : « fiabiliser la pile de la navigation ») :
+  d'abord empilé sur l'écran courant (le retour ramenait au support précédent), le support d'en face remplace
+  désormais le support affiché (`openAt`, pile suivie par `screenStack`). La pile est la carte puis un seul support :
+  ouvert depuis la carte, ses visuels, un onglet et ses écrans propres ; atteint par un parcours ou rouvert par le menu
+  ⋮, directement son écran d'arrivée (ses visuels seulement s'ils sont l'arrivée), comme ses portées ouvertes par
+  « Portées » de l'aperçu de la carte. Le retour mène donc à la carte (aux visuels d'abord pour un support ouvert par
+  « Ouvrir »), et « Carte » n'a jamais plus de quelques écrans à
+  fermer. Deux relectures avaient montré que l'empilement laissait sous l'écran courant des sessions de saisie aux
+  copies périmées des linéaires communs (portées, conduites), qu'un enregistrement au retour aurait écrasées : pertes de
+  données confirmées sur la rosace et les masques. Le support quitté est fermé comme par autant de retours arrière
+  (saisie enregistrée avant, ou question habituelle, et l'on peut rester). Une relecture suivante a écarté les autres
+  copies périmées : visuels relus après toute écriture, galerie dont chaque geste part du support enregistré (« Annuler »
+  ne rétablit que la photo), session de masques qui repart de la chambre du dépôt ; une portée supprimée puis
+  enregistrée ne laisse plus l'écran « modifié ». Un support supprimé n'est plus atteint par un parcours (« Naviguer
+  vers », « Vers … ») ni proposé par le menu ⋮, et le dépôt le garde abandonné même réécrit depuis une copie qui
+  l'ignorait ;
+- **menu ⋮** des écrans d'un support (visuels, saisie, portées, aperçu des masques, grille, équipements, galerie),
+  seul bouton de leur barre de titre (notes rep8 : il remplace les pictos), pour la navigation fine qui remplace la
+  pile : actions propres à l'écran (grille : photos et dimensions de la face ; galerie : prendre une photo, renommer
+  un visuel libre), écrans du support (« Visuels du support », « Saisie du support » : la saisie générale aussi
+  depuis les masques et les portées), puis les supports quittés récemment, du plus récent au plus ancien (cinq au
+  plus ; le premier « Revenir à … », intitulé à jour), chacun rouvert à la place du support affiché sur l'écran où on
+  l'a laissé (face, alvéole, parcours ou portée choisis, notés par l'écran), et « Repérer sur la carte » (« Rester »
+  sur une saisie non enregistrée retire la demande) ;
+- **repérage d'un support** (4 novembre 2026, notes rep7) : la sélection de la carte suit le support affiché (ouvert
+  depuis la carte, atteint par un parcours, rouvert par le menu ⋮) ; revenue au premier plan, la carte repère la
+  sélection si elle a changé entre-temps, ou à la demande (« Repérer sur la carte ») ; la recherche repère le support
+  trouvé. Repérage calqué sur « Repérer » de FibReady (`PlugCarto/sources/web/carte.js` : `locateZoom`,
+  `locateFlight`, `pulser`) : vol de la vue (`flyTo` de MapLibre d'après van Wijk et Nuij, courbure 1,6, vitesse 1,1,
+  saut direct au-delà de 4 s ; un geste sur la carte l'interrompt ; ouvrir le support pendant le vol l'achève
+  d'emblée), zoom d'arrivée qui montre au plus le rayon de repérage autour du support (`OPT_CARTO_ZOOM_RAYON` de
+  FibReady, 50 m par défaut : de plus loin, la carte zoome jusque-là ; de plus près, elle garde le zoom ; supports en
+  pictos au moins ; zoom de la carte porté à 22, tuiles agrandies, pour 10 m sur une tablette ; calculé sur la carte
+  entière, le clavier de la recherche la recouvrant sans la rétrécir), puis trois pulsations amorties du halo de la
+  sélection (1,8 s), dessinée même si sa couche est masquée. Paramètres : « Repérage animé » (désactivé : placement
+  direct) et « Rayon de repérage (m) » (10 à 500 m) ;
+- **écrans larges** (4 novembre 2026, notes rep6, rep8 et rep9 : tablette, paysage, Windows) : à gauche les noms des
+  faces au-dessus de la grille des masques, à droite une colonne pour la légende et l'alvéole choisie (480 dp au plus,
+  40 % de la largeur ; légende en grand, un état par ligne, dès 420 dp de hauteur ; état et diamètre de l'alvéole en
+  grandes cases, libellés entiers, les diamètres sur deux rangées de quatre, dès 560 dp, présentation compacte
+  en deçà, tablette 1024 × 600 ou téléphone en paysage ; « Retirer du masque » et « Enregistrer » toujours visibles,
+  épinglés en bas de la colonne quand le panneau défile) ; la création d'une alvéole
+  se déplie depuis la droite sur cette colonne (volet modal, grandes cases), la grille restant visible, au lieu de
+  la feuille du bas du portrait. Aperçu du support sur la carte en carton compact de 360 dp dans le coin bas droit
+  (carte de 600 dp et plus), au-dessus de l'attribution. Visuels : même carte partout (titre et état, photo de
+  référence au format 4:3, jamais étirée en bandeau, commandes en icônes à sa droite), en tuiles de 340 dp au moins :
+  une colonne sur un téléphone en portrait, deux sur une tablette en portrait ou un téléphone en paysage, trois sur
+  une tablette en paysage, davantage sur un écran très large. Galerie d'un visuel (notes rep10), sur le même principe :
+  chaque photo entière (au format 4:3, sur fond sombre, une photo prise en hauteur n'étant pas rognée), en tuiles ;
+  toucher une photo l'affiche en plein écran, agrandie au pincement ou à la molette ; un appui long la dépose sur une
+  autre tuile, qui prend sa place (« Définir comme référence » demeure). Aperçu des masques en paysage (notes rep10) :
+  les faces à gauche, en tuiles avec la miniature de leur masque (contour aux proportions réelles, cellules de 5 cm,
+  alvéoles à leur place et à l'échelle, à la couleur de l'état de leur conduite), les conduites à droite ;
 - **saisie de la chambre** (4 novembre 2026) : cartes dépliables Général (date, type, numéro, référence,
   implantation, adresse), Dimensions (une ligne par dimension : référence du catalogue, dimension relevée),
-  Équipements, Commentaires (un seul commentaire ; celui de la chambre repris de FOA seulement s'il est renseigné) ;
+  Commentaires (journal daté et signé, voir « commentaires datés et signés » plus bas) ;
   masques et conduites ne sont plus dans la saisie : le bouton Masques de la barre basse ouvre leur aperçu (une
   ligne par face : alvéoles, grille, chaque face ouvrant sa grille ; puis les conduites : parcours vers les autres
-  supports, conduites sans destination connue) ; dimension de référence en gris sous chaque champ de dimension ;
+  supports, conduites sans destination connue) ; dimension de référence en petit dans le cadre de chaque champ de
+  dimension, en bas à gauche sous la valeur (libellé toujours sur la bordure, pour ne pas la chevaucher) ;
+- **saisie du poteau** (4 novembre 2026), sur les principes de la chambre : cartes dépliables Général (date, type,
+  numéro, référence du catalogue, nature, structure, caractéristique, implantation, hauteur, effort, adresse),
+  Contrôles (contrôle du jour, sans champ libre : les commentaires sont réunis dans le journal, `CTL_COMMENT` n'est
+  plus saisi), Commentaires ; les linéaires ne sont plus dans la saisie : l'écran des Portées (barre basse) les
+  reprend, comme l'aperçu des masques reprend les conduites de la chambre : carte Portées (chaque portée s'ouvre
+  pour la modifier, ou se suit jusqu'au support d'en face, voir « parcours suivi » : les portées modifiées sont
+  d'abord enregistrées), puis carte Autres parcours (parcours souterrain…), seulement s'il y
+  en a ; dans l'interface,
+  « parcours » plutôt que « linéaire », terme du modèle (`PRJ_LINEAIRE`) : la carte des linéaires des autres
+  supports (ancrage façade…) s'intitule Portées et parcours ;
 - **adresse d'un support** (4 novembre 2026) : toucher l'adresse ouvre son écran, calqué sur « Adresse édition »
   de FibReady : sélection commune, voie, adresse parmi celles du paquet (ou nouvelle adresse), détail (numéro,
   complément, code postal, commentaire), Détacher / Annuler / Valider ; l'adresse est enregistrée avec le support.
-  Bouton de détection : géocodage inversé de la position du support comme l'adresse auto de FibReady
+  Bouton « Détection automatique » : géocodage inversé de la position du support comme l'adresse auto de FibReady
   (`GeoCodage.GetBestAdr` : Géoplateforme en France, Photon en repli ou ailleurs), rapproché des adresses du paquet
   (casse et accents ignorés) ; nouvelle adresse sinon, avec l'identifiant BAN. Demande une connexion. Entrée, type de
   bâtiment et niveaux de FibReady non repris (absents de `PRJ_ADRESSE`) ;
+- **commentaires datés et signés** (4 novembre 2026) : un journal par objet remplace les champs libres du support
+  (`NOE_COMMENT`, `CHB_COMMENT`, `POT_COMMENT`, retirés du schéma) : table noyau `PRJ_COMMENTAIRE` (rattachée à l'objet
+  comme `PRJ_FICHIER`, intervention, auteur, dates, abandon au BE), clé `commentaires` du paquet (format 0.2.0, modules
+  noyau, chambre et poteau en 0.2.0) ; types de FibReady (Alerte, Mineur, Standard, Bon point : pastille de couleur) ;
+  carte « Commentaires » commune aux supports (auteur, date et heure, texte ; ajout). Un commentaire ne se modifie ou ne
+  se retire (après confirmation) que par son auteur, tant que le paquet de retour qui le contient n'est pas exporté ;
+  ensuite il est figé, comme ceux des autres auteurs et du BE ; sur le web, le téléchargement du retour vaut export.
+  Textes existants repris comme premières entrées (auteur « FOA » ou « BE », origine déduite de la zone, datés du
+  nœud) par `tools/schema/projet.py migrer` (alias `migrer-commentaires`) pour un projet déjà construit (idempotente, annulée si une
+  base de module manque, statistiques SpatiaLite recalculées pour QGIS, modèle du projet en 0.2.0), et par le
+  chargeur d'essai (mêmes codes, auteurs, origines et dates) ; dates GraceTHD lues en heure de Paris et écrites en
+  UTC (Z) ; la base refuse un texte ou un auteur blanc. Le terminal
+  n'affiche pour l'instant que le journal des supports (ceux des linéaires et des adresses sont conservés et renvoyés) ;
+  l'intervention en cours et les commentaires exportés, gardés en mémoire, seront à conserver avec le dépôt Android ;
+- **masques aux proportions réelles** (4 novembre 2026). Conventions retrouvées dans le code de FOA Explorer
+  (`O:\c#\InfraExplorer`) : chaque face est une fenêtre fixe de 9 × 12 cellules de 6,3 × 4,5 unités, 1 unité = 1 cm (les
+  alvéoles y sont en vraie grandeur), soit 56,7 × 54 cm quelles que soient les dimensions de la chambre ; `ALV_X` / `ALV_Y`
+  = centre de l'alvéole, origine en bas à gauche ; le miroir FOA fait X' = 56,7 − X. Convention Orange
+  (`docs/Besoins_KIZEO.xlsx`) : A à gauche dos à la voie, B à droite, C côté voie, D face à la voie ; chambre le long de la
+  voie : A et B petits côtés (ils portent 88 % des alvéoles de Nancy). Dimensions souvent absentes (54 % des chambres
+  relevées de Nancy en OHN, aucune dimension relevée dans FOA). Décisions : repère métrique (positions et dimensions de
+  face en m, depuis la gauche et le haut ; grille dessinée en cellules carrées de 5 cm, alvéoles en vraie grandeur) ;
+  faces A et B à la largeur de la chambre, C et D à la longueur, hauteur = profondeur ; nouvelle face aux dimensions de la
+  chambre (relevées, sinon catalogue, sinon fenêtre FOA 0,567 × 0,54 m), modifiables en centimètres ; une face déjà
+  relevée n'est agrandie qu'à la demande, alvéoles centrées. Module chambre 0.3.0 (`FAC_LARG`, `FAC_HAUT` au lieu de
+  `FAC_NB_COL`, `FAC_NB_LIG`) ; données converties exactement (cellule FOA × 0,063 / 0,045 m) ; le terminal refuse un
+  paquet de masques à l'ancien repère. `CHB_ROTATION` est l'axe A-B du symbole PIT à 200 grades près, pas la face A ;
 - **suppression au plus près de l'élément** (au lieu de la coche de sélection et de la corbeille de la barre basse du
   Figma) : corbeille sur chaque photo de la galerie avec « Annuler » dans le message qui suit, « Supprimer ce câble » dans le
-  détail d'un câble porté, « Supprimer le support » en bas de la saisie du support, avec confirmation ;
+  détail d'un câble porté, « Supprimer le support » en bas de la saisie du support, avec confirmation ; le message
+  « … · ANNULER » (`UndoMessage`, `widgets/messages.dart`) disparaît seul au bout de 6 s, se ferme quand on quitte
+  l'écran et dès qu'une autre modification le rend caduc (4 novembre 2026 : il restait affiché d'écran en écran, et
+  son « Annuler » aurait réenregistré l'objet d'avant par-dessus les modifications suivantes) ;
 - l'action du module n'est pas répétée sur chaque vue, sauf la **grille du masque de chambre**, propre à la vue
   catégorisée (masque A, B…) ;
 - **portées** : rosace en haut, câbles portés en accordéon dessous (un seul ouvert, saisie sur place : type,
@@ -317,7 +474,8 @@ reste rattachée ; sur le web, « prendre une photo » choisit une image (appare
 L'action `ROSACE` de la vue tête de poteau n'est pas affichée (Portées dans la barre basse).
 
 Masques de chambre (2 novembre 2026, `lib/modules/chambre/`) : entrée « Masques » de la barre du support et
-bouton grille des visuels A à D ; une face en plein écran (A à D), grille de `FAC_NB_COL` × `FAC_NB_LIG` cellules
+bouton grille des visuels A à D ; une face en plein écran (A à D), grille (repère métrique depuis le 4 novembre : voir
+« masques aux proportions réelles ») de `FAC_NB_COL` × `FAC_NB_LIG` cellules
 (9 × 12 par défaut, réglable pour les grandes faces) parcourue par déplacement et zoom ; une alvéole par position,
 disque à la couleur de l'état (`DEF_CD_ETAT`), taille selon le diamètre, numéro de la conduite. Toucher la grille
 place une alvéole (parcours souterrain de la chambre, diamètre normalisé, état ; derniers choix repris pour la

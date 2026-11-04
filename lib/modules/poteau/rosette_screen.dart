@@ -6,7 +6,10 @@ import '../../data/reference_data.dart';
 import '../../lng.dart';
 import '../../providers/app_provider.dart';
 import '../../theme.dart';
+import '../../widgets/back_to_map.dart';
 import '../../widgets/bottom_bar.dart';
+import '../../widgets/fields.dart';
+import '../../widgets/linear_list.dart';
 import '../../widgets/support_bar.dart';
 import '../../widgets/entry_screen.dart';
 import '../../widgets/screen_title.dart';
@@ -14,14 +17,25 @@ import '../infra/cables.dart';
 import '../completion.dart';
 import 'rosette_editor.dart';
 import 'rosette_view.dart';
+import '../../widgets/messages.dart';
 
 /// Rosace des portées d'un poteau (maquette Figma) : rosace en haut, portées puis câbles portés en accordéon
-/// dessous ; directions (angles), destinations et câbles. Barre commune du support, Portées active ; « Direction »
-/// ajoute une portée.
+/// dessous ; directions (angles), destinations et câbles. Sous les portées, les autres parcours du poteau (parcours
+/// souterrain…), comme les conduites sous les masques de la chambre. Une portée choisie (son détail) ou un autre
+/// parcours sélectionné montre son carton « Naviguer vers », en haut du panneau : le suivre ouvre le support d'en
+/// face à la place du poteau, sur son écran des parcours (portées, aperçu des masques), avec le carton du retour.
+/// Barre commune du support, Portées active ; « Direction » ajoute une portée.
 class RosetteScreen extends StatefulWidget {
-  const RosetteScreen({super.key, required this.pole});
+  const RosetteScreen({super.key, required this.pole, this.span, this.linear});
 
   final GeoObject pole;
+
+  /// Portée ouverte à l'arrivée (identifiant du linéaire) : parcours suivi depuis un autre support, poteau rouvert
+  /// par le menu ⋮.
+  final String? span;
+
+  /// Autre parcours (hors portée) sélectionné à l'arrivée, avec son carton.
+  final String? linear;
 
   @override
   State<RosetteScreen> createState() => _RosetteScreenState();
@@ -29,12 +43,62 @@ class RosetteScreen extends StatefulWidget {
 
 class _RosetteScreenState extends State<RosetteScreen> {
   late final RosetteEditor _editor;
+  Route<dynamic>? _route;
+
+  /// Linéaires du poteau hors rosace, et nœuds à leur autre extrémité.
+  Linears _others = (linears: const [], ends: const {});
+
+  /// Autre parcours sélectionné (identifiant du linéaire), quand aucune portée ne l'est.
+  late String? _selectedOther = widget.linear;
 
   @override
   void initState() {
     super.initState();
     final app = context.read<AppProvider>();
-    _editor = RosetteEditor(app.repo, widget.pole, author: app.author)..load();
+    _editor = RosetteEditor(app.repo, widget.pole, author: app.author, intervention: () => app.intervention)
+      ..addListener(_onEditor);
+    _editor.load().then((_) {
+      final s = _editor.spans.where((p) => p.id == widget.span).firstOrNull;
+      if (mounted && s != null) _editor.select(s);
+    });
+    _loadOthers();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+    _note();
+  }
+
+  /// Portée choisie (par la liste, l'aiguille ou une nouvelle direction) : elle seule a son carton.
+  void _onEditor() {
+    if (_editor.selection != null && _selectedOther != null) setState(() => _selectedOther = null);
+    _note();
+  }
+
+  void _selectOther(String? id) {
+    setState(() => _selectedOther = id);
+    _note();
+  }
+
+  /// Portée ou autre parcours choisi, noté pour rouvrir le poteau dans le même état (menu ⋮).
+  void _note() {
+    final r = _route;
+    if (r != null) screenStack.note(r, tab: 'portees', selection: _editor.selection?.id ?? _selectedOther);
+  }
+
+  Future<void> _loadOthers() async {
+    final l = await loadLinears(context.read<AppProvider>().repo, widget.pole);
+    if (mounted) setState(() => _others = (linears: [...l.linears.where((x) => !isSpan(x))], ends: l.ends));
+  }
+
+  /// « Naviguer vers » : suit une portée ou un parcours jusqu'au support d'en face, qui remplace le poteau sur son
+  /// écran des parcours ([follow], route) ; les portées modifiées sont d'abord enregistrées (comme la saisie avant un
+  /// onglet).
+  Future<void> _follow(GeoObject linear, GeoObject other) async {
+    if (_editor.changed) await _save();
+    if (mounted) await follow(context, linear, other, route: true);
   }
 
   @override
@@ -64,15 +128,36 @@ class _RosetteScreenState extends State<RosetteScreen> {
       listenable: _editor,
       builder: (context, _) {
         final n = _editor.activeSpans.length;
+        // carton : la portée choisie (son détail), sinon l'autre parcours sélectionné
+        final span = _editor.selection;
+        final other = span == null ? _others.linears.where((l) => l.id == _selectedOther).firstOrNull : null;
+        final card = span != null
+            ? RouteCard(
+                linear: span.linear,
+                other: span.destination,
+                referenceData: ref,
+                onNavigate: _follow,
+                onClose: () => _editor.select(null),
+              )
+            : other == null
+                ? null
+                : RouteCard(
+                    linear: other,
+                    other: _others.ends[other.noe1 == widget.pole.id ? other.noe2 : other.noe1],
+                    referenceData: ref,
+                    onNavigate: _follow,
+                    onClose: () => _selectOther(null),
+                  );
         return EntryScreen(
           changed: _editor.changed,
           message: tr('Les portées modifiées ne seront pas enregistrées.'),
           child: Scaffold(
             appBar: AppBar(
               title: ScreenTitle(
-                widget.pole.lib ?? widget.pole.id,
+                widget.pole.lib ?? tr('Sans étiquette'),
                 trn(n, 'portées · {0} direction', 'portées · {0} directions'),
               ),
+              actions: [SupportMenu(object: widget.pole)],
             ),
             bottomNavigationBar: SupportBar(
               object: widget.pole,
@@ -91,7 +176,20 @@ class _RosetteScreenState extends State<RosetteScreen> {
                       padding: const EdgeInsets.all(8),
                       child: Center(child: RosetteView(editor: _editor, referenceData: ref)),
                     );
-                    final panel = _Panel(editor: _editor, referenceData: ref);
+                    // carton en haut du panneau, dans le corps : la rosace garde sa taille quand il paraît (aiguille
+                    // choisie en la faisant glisser), et le bouton « Enregistrer » ne le couvre pas
+                    final panel = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      ?card,
+                      Expanded(
+                        child: _Panel(
+                          editor: _editor,
+                          referenceData: ref,
+                          others: _others,
+                          selectedOther: _selectedOther,
+                          onSelectOther: (l) => _selectOther(l?.id),
+                        ),
+                      ),
+                    ]);
                     if (c.maxWidth > c.maxHeight) {
                       return Row(children: [
                         Expanded(flex: 3, child: rosette),
@@ -138,7 +236,7 @@ Future<void> addSpan(BuildContext context, RosetteEditor editor, ReferenceData r
           for (final (o, d) in nearby)
             ListTile(
               leading: const Icon(Icons.place_outlined),
-              title: Text(o.lib ?? o.id),
+              title: Text(o.lib ?? tr('Sans étiquette')),
               subtitle: Text('${referenceData.typeLabel(o.typeKey)} · ${d.round()} m'),
               onTap: () => Navigator.pop(c, o),
             ),
@@ -155,19 +253,31 @@ Future<void> addSpan(BuildContext context, RosetteEditor editor, ReferenceData r
   }
 }
 
-/// Panneau sous (ou à côté de) la rosace : liste des portées, ou détail de la portée sélectionnée avec ses câbles
-/// portés en accordéon (un seul ouvert à la fois).
+/// Panneau sous (ou à côté de) la rosace : cartes Portées et Autres parcours, ou détail de la portée
+/// sélectionnée avec ses câbles portés en accordéon (un seul ouvert à la fois). Le carton « Naviguer vers » de la
+/// portée choisie ou de l'autre parcours sélectionné est tenu par l'écran, au-dessus du panneau.
 class _Panel extends StatefulWidget {
-  const _Panel({required this.editor, required this.referenceData});
+  const _Panel({
+    required this.editor,
+    required this.referenceData,
+    required this.others,
+    required this.selectedOther,
+    required this.onSelectOther,
+  });
 
   final RosetteEditor editor;
   final ReferenceData referenceData;
+  final Linears others;
+
+  /// Autre parcours sélectionné ; [onSelectOther] le change (null : aucun).
+  final String? selectedOther;
+  final void Function(GeoObject? linear) onSelectOther;
 
   @override
   State<_Panel> createState() => _PanelState();
 }
 
-class _PanelState extends State<_Panel> {
+class _PanelState extends State<_Panel> with UndoMessage<_Panel> {
   /// Câble ouvert dans l'accordéon (rang), pour la portée [_span].
   int? _expanded;
   String? _span;
@@ -198,31 +308,42 @@ class _PanelState extends State<_Panel> {
   Widget _list(BuildContext context) {
     final spans = editor.activeSpans.toList()..sort((a, b) => a.angle.compareTo(b.angle));
     return ListView(
-      padding: const EdgeInsets.only(top: 8, bottom: fabMargin),
+      // clés distinctes de la liste et du détail : le détail s'ouvre en haut, la liste retrouve sa position
+      key: const PageStorageKey('portées'),
+      padding: const EdgeInsets.only(bottom: fabMargin),
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
+        Section(title: tr('Portées'), children: [
+          Text(
             spans.isEmpty
                 ? tr('Aucune portée. « Direction » en ajoute une ; orientez ensuite l\'aiguille en la faisant glisser.')
                 : tr('Touchez une aiguille ou une portée pour la modifier.'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          for (final p in spans)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _Dots(span: p, referenceData: referenceData),
+              title: Text(p.destinationLabel),
+              subtitle: Text('${p.angle.toStringAsFixed(1)} gr'
+                  '${p.surveyedAngle == null ? ' (${tr('géométrie')})' : ''}'
+                  ' · ${trn(p.cables.length, '{0} câble', '{0} câbles')}'
+                  '${editor.newNodes.containsKey(p.destinationId) ? ' · ${tr('destination nouvelle')}' : ''}'),
+              // la portée choisie montre son détail et son carton « Naviguer vers » (tenu par l'écran)
+              trailing: p.changed ? const Icon(Icons.edit, size: 16) : null,
+              onTap: () {
+                widget.onSelectOther(null);
+                editor.select(p);
+              },
+            ),
+        ]),
+        LinearList(
+          node: editor.pole,
+          data: widget.others,
+          referenceData: referenceData,
+          title: tr('Autres parcours'),
+          selected: widget.selectedOther,
+          onSelect: (l) => widget.onSelectOther(l.id == widget.selectedOther ? null : l),
         ),
-        for (final p in spans)
-          ListTile(
-            leading: _Dots(span: p, referenceData: referenceData),
-            title: Text(p.destinationLabel),
-            subtitle: Text('${p.angle.toStringAsFixed(1)} gr'
-                '${p.surveyedAngle == null ? ' (${tr('géométrie')})' : ''}'
-                ' · ${trn(p.cables.length, '{0} câble', '{0} câbles')}'
-                '${editor.newNodes.containsKey(p.destinationId) ? ' · ${tr('destination nouvelle')}' : ''}'),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (p.changed) const Icon(Icons.edit, size: 16),
-              const Icon(Icons.chevron_right),
-            ]),
-            onTap: () => editor.select(p),
-          ),
       ],
     );
   }
@@ -232,6 +353,7 @@ class _PanelState extends State<_Panel> {
     final lng = (p.span['PRT_LNG'] as num?)?.toDouble();
     final cables = [...p.cables]..sort((a, b) => (a['PCB_RANG'] as int).compareTo(b['PCB_RANG'] as int));
     return ListView(
+      key: ValueKey('portée ${p.id}'),
       padding: const EdgeInsets.fromLTRB(12, 4, 12, fabMargin),
       children: [
         Row(children: [
@@ -241,14 +363,25 @@ class _PanelState extends State<_Panel> {
         ]),
         Row(children: [
           Text(tr('Angle')),
-          const Spacer(),
-          for (final step in [-1.0, -0.1]) _stepButton(p, step),
-          SizedBox(
-            width: 72,
-            child: Text('${p.angle.toStringAsFixed(1)} gr',
-                textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          // réduits plutôt que rognés dans un panneau étroit (téléphone en paysage)
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  for (final step in [-1.0, -0.1]) _stepButton(p, step),
+                  SizedBox(
+                    width: 72,
+                    child: Text('${p.angle.toStringAsFixed(1)} gr',
+                        textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  for (final step in [0.1, 1.0]) _stepButton(p, step),
+                ]),
+              ),
+            ),
           ),
-          for (final step in [0.1, 1.0]) _stepButton(p, step),
         ]),
         if (p.surveyedAngle == null)
           Text(tr('Angle calculé depuis la géométrie : orientez l\'aiguille pour le relever.'), style: t.bodySmall),
@@ -259,10 +392,10 @@ class _PanelState extends State<_Panel> {
           value: lng,
           onChanged: (v) => editor.setLength(p, v),
         ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(4, 16, 4, 8),
-          child: Text('CÂBLES PORTÉS',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Nge.petrolBlue)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+          child: Text(tr('Câbles portés').toUpperCase(),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Nge.petrolBlue)),
         ),
         for (final cable in cables) _cableTile(context, p, cable),
         if (cables.isEmpty) Padding(padding: const EdgeInsets.all(4), child: Text(tr('Aucun câble porté.'), style: t.bodySmall)),
@@ -402,12 +535,7 @@ class _PanelState extends State<_Panel> {
                   final previous = Map.of(cable);
                   editor.removeCable(p, rank);
                   setState(() => _expanded = null);
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(SnackBar(
-                      content: Text(tr('Câble supprimé')),
-                      action: SnackBarAction(label: 'ANNULER', onPressed: () => editor.setCable(p, previous)),
-                    ));
+                  showUndo(tr('Câble supprimé'), () => editor.setCable(p, previous));
                 },
                 icon: const Icon(Icons.delete_outline),
                 label: Text(tr('Supprimer ce câble')),

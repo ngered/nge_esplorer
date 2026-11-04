@@ -1,0 +1,60 @@
+{
+  "code": "optique",
+  "version": "0.1.0",
+  "libelle": "Optique : matériel optique, câbles et parcours, lovages, fibres, cassettes et positions, routes, mesures",
+  "fichier": "optique.sqlite",
+  "spatial": false,
+  "dependances": ["noyau", "infra"],
+  "espace_geojson": "opt",
+  "scripts": ["schema.sql", "referentiels.sql"],
+  "tables": ["DEF_OPT_EQUIP_TYPE", "DEF_CAB_FONCTION", "DEF_FO_COULEUR", "DEF_CASSETTE_TYPE", "DEF_POS_FONCTION",
+             "DEF_MES_METHODE", "OPT_EQUIPEMENT", "OPT_CABLE", "OPT_PASSAGE", "OPT_LOVE", "OPT_FIBRE", "OPT_CASSETTE",
+             "OPT_POSITION", "OPT_ROUTE", "OPT_ROUTE_FIBRE", "OPT_MESURE"],
+  "referentiels_foa": [],
+  "references": [
+    {"table": "OPT_EQUIPEMENT", "colonne": "EQU_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"},
+    {"table": "OPT_EQUIPEMENT", "colonne": "AVCT_KEY", "cible": "noyau.DEF_AVANCEMENT.AVCT_ID"},
+    {"table": "OPT_EQUIPEMENT", "colonne": "PROPRIO_KEY", "cible": "noyau.DEF_ORGANISME.ORG_ID"},
+    {"table": "OPT_CABLE", "colonne": "MAT_KEY", "cible": "infra.MAT_CABLE.MAT_ID"},
+    {"table": "OPT_CABLE", "colonne": "NOE1_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
+    {"table": "OPT_CABLE", "colonne": "NOE2_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
+    {"table": "OPT_CABLE", "colonne": "EQU1_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"},
+    {"table": "OPT_CABLE", "colonne": "EQU2_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"},
+    {"table": "OPT_CABLE", "colonne": "AVCT_KEY", "cible": "noyau.DEF_AVANCEMENT.AVCT_ID"},
+    {"table": "OPT_CABLE", "colonne": "PROPRIO_KEY", "cible": "noyau.DEF_ORGANISME.ORG_ID"},
+    {"table": "OPT_PASSAGE", "colonne": "LIN_KEY", "cible": "noyau.PRJ_LINEAIRE.LIN_ID"},
+    {"table": "OPT_PASSAGE", "colonne": "PCB_KEY", "cible": "infra.INF_PORTEE_CABLE.PCB_ID"},
+    {"table": "OPT_PASSAGE", "colonne": "CDC_KEY", "cible": "infra.INF_CD_CABLE.CDC_ID"},
+    {"table": "OPT_LOVE", "colonne": "NOE_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
+    {"table": "OPT_CASSETTE", "colonne": "EQU_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"},
+    {"table": "OPT_MESURE", "colonne": "EQU_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"}
+  ],
+  "types": [
+    {"id": 40, "code": "SIT", "lib": "Site technique", "parent": 3, "geom": "POINT", "grace": "ST"},
+    {"id": 41, "code": "SIT-NRO", "lib": "Nœud de raccordement optique", "parent": 40, "geom": "POINT", "grace": "NRO"},
+    {"id": 42, "code": "SIT-SRO", "lib": "Sous-répartiteur optique", "parent": 40, "geom": "POINT", "grace": "SRO"}
+  ],
+  "entites": [
+    {"table": "OPT_CABLE", "lib": "Câble optique"},
+    {"table": "OPT_MESURE", "lib": "Mesure optique"}
+  ],
+  "vues": [
+    {"type": "SIT", "code": "FERME", "lib": "Armoire fermée", "ordre": 1, "obligatoire": "OUI"},
+    {"type": "SIT", "code": "OUVERT", "lib": "Armoire ouverte", "ordre": 2, "obligatoire": "OUI"},
+    {"type": "SIT", "code": "ETIQUETTE", "lib": "Étiquettes", "ordre": 3, "obligatoire": "OUI"},
+    {"type": "SIT", "code": "TIROIR", "lib": "Tiroirs", "ordre": 4, "obligatoire": "NON"},
+    {"type": "SIT", "code": "FOURREAU", "lib": "Arrivée des fourreaux", "ordre": 5, "obligatoire": "NON"},
+    {"type": "SIT", "code": "TERRE", "lib": "Mise à la terre", "ordre": 6, "obligatoire": "NON"}
+  ],
+  "completude": "À définir avec l'activité retour fin de travaux (boîtiers posés, câbles tirés, épissures, mesures).",
+  "grace": {
+    "OPT_EQUIPEMENT": "t_ebp (bp_typelog, bp_typephy, bp_pt_code ou bp_lt_code), t_baie, t_tiroir",
+    "OPT_CABLE": "t_cable (cb_nd1, cb_nd2) + t_cable_patch201 (cb_bp1, cb_bp2, cb_ba1, cb_ba2)",
+    "OPT_PASSAGE": "t_cab_cond + t_cond_chem (conduite AER ou NC d'un cheminement aérien : câble porté)",
+    "OPT_LOVE": "t_love",
+    "OPT_FIBRE": "t_fibre (fo_nincab, fo_numtub, fo_nintub, fo_color, fo_reper)",
+    "OPT_CASSETTE": "t_cassette (cs_bp_code) + t_cassette_patch201 (cs_ti_code)",
+    "OPT_POSITION": "t_position (ps_1, ps_2, ps_fonct, ps_type, ps_comment)",
+    "OPT_ROUTE": "t_ropt (rt_code, rt_fo_code, rt_fo_ordr)"
+  }
+}

@@ -37,7 +37,7 @@ class NumberField extends StatelessWidget {
       required this.onChanged,
       this.integer = false,
       this.unit,
-      this.helper});
+      this.note});
 
   final Map<String, dynamic> m;
   final String column;
@@ -48,20 +48,47 @@ class NumberField extends StatelessWidget {
   /// Unité affichée après la valeur (m, mm…).
   final String? unit;
 
-  /// Aide en gris sous le champ, à gauche (valeur de référence…).
-  final String? helper;
+  /// Indication en petit et en gris dans le cadre du champ, en bas à gauche sous la valeur (valeur de référence…).
+  final String? note;
 
   @override
-  Widget build(BuildContext context) => TextFormField(
-        initialValue: m[column]?.toString().replaceAll('.', ',') ?? '',
-        keyboardType: TextInputType.numberWithOptions(decimal: !integer),
-        decoration: InputDecoration(labelText: label, suffixText: unit, helperText: helper),
-        onChanged: (t) {
-          final s = t.replaceAll(',', '.').trim();
-          GeoObject.put(m, column, integer ? int.tryParse(s) : double.tryParse(s));
-          onChanged();
-        },
-      );
+  Widget build(BuildContext context) {
+    final field = TextFormField(
+      initialValue: m[column]?.toString().replaceAll('.', ',') ?? '',
+      keyboardType: TextInputType.numberWithOptions(decimal: !integer),
+      // avec une indication : valeur en haut du cadre, indication dessous ; libellé toujours sur la bordure (au
+      // repos, centré dans le cadre, il chevaucherait l'indication)
+      textAlignVertical: note == null ? null : TextAlignVertical.top,
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: unit,
+        floatingLabelBehavior: note == null ? null : FloatingLabelBehavior.always,
+        contentPadding: note == null ? null : const EdgeInsets.fromLTRB(12, 12, 12, 28),
+      ),
+      onChanged: (t) {
+        final s = t.replaceAll(',', '.').trim();
+        GeoObject.put(m, column, integer ? int.tryParse(s) : double.tryParse(s));
+        onChanged();
+      },
+    );
+    if (note == null) return field;
+    return Stack(children: [
+      field,
+      Positioned(
+        // aligné sur la valeur, à 16 du bord du cadre
+        left: 16,
+        right: 16,
+        bottom: 8,
+        // le toucher passe au champ
+        child: IgnorePointer(
+          child: Text(note!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, height: 1.2, color: Nge.secondaryText)),
+        ),
+      ),
+    ]);
+  }
 }
 
 /// Liste déroulante sur un référentiel (lignes `{cleId: …, colLib: …}`).

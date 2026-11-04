@@ -14,7 +14,7 @@ import 'package:nge_esplorer/modules/infra/cables.dart';
 import 'package:nge_esplorer/modules/poteau/rosette_editor.dart';
 
 /// Petit paquet de publication : un poteau, un voisin à l'est (portée relevée) et un au nord (portée sans angle).
-Uint8List testBundle({String version = '0.1.0'}) {
+Uint8List testBundle({String version = '0.1.0', Map<String, String>? modules}) {
   final header = {
     'format': 'nge-esplorer-paquet',
     'version': version,
@@ -22,7 +22,7 @@ Uint8List testBundle({String version = '0.1.0'}) {
     'date': '2026-10-31T08:00:00Z',
     'projet': {'code': 'TEST', 'lib': 'Test', 'modele': '0.1.0'},
     'zone': {'code': 'Z1', 'lib': 'Zone 1', 'emprise': [2.0, 45.0, 2.01, 45.01]},
-    'modules': {'noyau': '0.1.0', 'infra': '0.1.0', 'poteau': '0.1.0'},
+    'modules': modules ?? {'noyau': '0.1.0', 'infra': '0.1.0', 'poteau': '0.1.0'},
   };
   Map<String, dynamic> node(String id, String lib, double lon, double lat) => {
         'type': 'Feature',
@@ -130,6 +130,30 @@ void main() {
     test('version majeure inconnue refusée', () {
       expect(() => Bundle.read(testBundle(version: '1.0.0')), throwsFormatException);
     });
+
+    test('version mineure : un paquet 0.1.0 (sans commentaires) reste lisible', () {
+      expect(Bundle.version, '0.2.0');
+      for (final v in ['0.1.0', '0.2.0']) {
+        expect(Bundle.read(testBundle(version: v)).objects, hasLength(5));
+      }
+    });
+
+    test('module chambre antérieur à 0.3.0 refusé : masques dans l\'ancien repère, paquet à republier', () {
+      Bundle read(String chambre) =>
+          Bundle.read(testBundle(modules: {'noyau': '0.2.0', 'infra': '0.1.0', 'chambre': chambre, 'poteau': '0.2.0'}));
+      for (final v in ['0.1.0', '0.2.0', '0.2.9']) {
+        expect(
+          () => read(v),
+          throwsA(isA<FormatException>().having((e) => e.message, 'message',
+              'module chambre en version $v, antérieure à 0.3.0 (positions des masques dans l\'ancien repère) : '
+                  'paquet à republier')),
+        );
+      }
+      for (final v in ['0.3.0', '0.3.1', '0.4.0']) {
+        expect(read(v).objects, hasLength(5));
+      }
+      expect(() => read('1.0.0'), throwsFormatException);
+    });
   });
 
   group('Dépôt et rosace', () {
@@ -153,7 +177,7 @@ void main() {
     });
 
     test('angles : relevé sinon géométrie, du bon côté du linéaire', () async {
-      final ed = RosetteEditor(repo, (await repo.object('P1'))!, author: 'essai');
+      final ed = RosetteEditor(repo, (await repo.object('P1'))!, author: 'essai', intervention: () => 'i1');
       await ed.load();
       final east = ed.spans.firstWhere((p) => p.id == 'L1');
       final north = ed.spans.firstWhere((p) => p.id == 'L2');
@@ -166,7 +190,7 @@ void main() {
     });
 
     test('orienter, ajouter, câbles, valider : statuts et paquet de retour', () async {
-      final ed = RosetteEditor(repo, (await repo.object('P1'))!, author: 'essai');
+      final ed = RosetteEditor(repo, (await repo.object('P1'))!, author: 'essai', intervention: () => 'i1');
       await ed.load();
       final north = ed.spans.firstWhere((p) => p.id == 'L2');
       ed.orient(north, 398.04);
@@ -181,6 +205,11 @@ void main() {
       final dest = ed.newNodes.values.single;
       expect(Geo.distance(ed.pole.point!, dest.point!), closeTo(20, 0.1));
       expect(Geo.azimuthGrads(ed.pole.point!, dest.point!), closeTo(250, 0.1));
+      // texte automatique du nœud créé : commentaire signé de l'auteur et de l'intervention
+      final note = dest.comments.single;
+      expect([note['COM_TEXTE'], note['COM_TYPE'], note['COM_AUTEUR'], note['INT_CODE_EXT']],
+          ['Créé depuis la rosace de 100 : position à relever', 'standard', 'essai', 'i1']);
+      expect(dest.props.keys, isNot(contains('NOE_COMMENT')));
 
       ed.abandon(ed.spans.firstWhere((p) => p.id == 'L1'));
       await ed.validate();
@@ -226,7 +255,7 @@ void main() {
     await repo.load(p);
     var poles = 0, spans = 0, withoutAngle = 0;
     for (final o in p.objects.where((o) => p.referenceData.familyCode(o.typeKey) == 'POT')) {
-      final ed = RosetteEditor(repo, o, author: 'essai');
+      final ed = RosetteEditor(repo, o, author: 'essai', intervention: () => 'i1');
       await ed.load();
       poles++;
       spans += ed.spans.length;
@@ -248,20 +277,28 @@ void main() {
     final repo = MemoryRepository();
     await repo.load(p);
     var chambers = 0, bores = 0;
-    final withoutDuct = <String>[];
+    final withoutDuct = <String>[], outside = <String>[];
+    final sizes = <String, int>{};
     for (final o in p.objects.where((o) => p.referenceData.familyCode(o.typeKey) == 'CHB')) {
       if ((o.namespace('chb')?['faces'] as List?)?.isEmpty ?? true) continue;
       final ed = MaskEditor(repo, o, author: 'essai');
       await ed.load();
       chambers++;
-      for (final a in [for (final f in chamberFaces) ...ed.bores(f)]) {
-        bores++;
-        if (a.duct == null) withoutDuct.add('${o.lib} ${a.cd}');
+      for (final f in chamberFaces) {
+        ed.selectFace(f);
+        if (ed.bores().isNotEmpty) sizes.update(faceSizeLabel(ed.width, ed.height), (n) => n + 1, ifAbsent: () => 1);
+        for (final a in ed.bores()) {
+          bores++;
+          if (a.duct == null) withoutDuct.add('${o.lib} ${a.cd}');
+          // repère métrique : centre dans la face (m)
+          if (a.x < 0 || a.x > ed.width || a.y < 0 || a.y > ed.height) outside.add('${o.lib} $f ${a.cd} (${a.x}, ${a.y})');
+        }
       }
     }
     // ignore: avoid_print
-    print('${p.zone} : $chambers chambres relevées, $bores alvéoles, ${withoutDuct.length} sans conduite');
+    print('${p.zone} : $chambers chambres relevées, $bores alvéoles, ${withoutDuct.length} sans conduite ; faces : $sizes');
     expect(withoutDuct.length, lessThan(bores / 100 + 1), reason: withoutDuct.take(10).join(', '));
+    expect(outside, isEmpty, reason: outside.take(10).join(', '));
   }, skip: realBundle == null ? 'PAQUET_REEL non défini' : false);
 
   test('style des flèches (légende Hirondelle)', () {

@@ -8,8 +8,8 @@ import '../providers/app_provider.dart';
 import '../widgets/back_to_map.dart';
 import '../widgets/entry_screen.dart';
 
-/// Paramètres de l'application : langue, fonds de plan (clé Google, annulation des tuiles obsolètes) ; sur le web, photos
-/// au serveur local.
+/// Paramètres de l'application : langue, fonds de plan (clé Google, annulation des tuiles obsolètes), repérage d'un
+/// support sur la carte (animation, rayon) ; sur le web, photos au serveur local.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -135,6 +135,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               value: app.cancelStaleTiles,
               onChanged: app.setCancelStaleTiles,
+            ),
+            const Divider(height: 32),
+            Text(tr('Repérage d\'un support'), style: t.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              tr('Support trouvé par la recherche, support quitté pour la carte après avoir suivi un parcours, '
+                 '« Repérer sur la carte » du menu ⋮ : la carte va jusqu\'au support, qui pulse à l\'arrivée.'),
+              style: t.bodySmall,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(tr('Repérage animé')),
+              subtitle: Text(tr('La vue s\'élève, survole et redescend sur le support ; désactivé, elle s\'y place '
+                  'directement.')),
+              value: app.animateLocate,
+              onChanged: app.setAnimateLocate,
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<double>(
+              initialValue: app.locateRadius,
+              decoration: InputDecoration(labelText: tr('Rayon de repérage (m)'), border: const OutlineInputBorder()),
+              items: [
+                for (final r in {...AppProvider.locateRadii, app.locateRadius}.toList()..sort())
+                  DropdownMenuItem(value: r, child: Text('${r.round()} m')),
+              ],
+              onChanged: (r) {
+                if (r != null) app.setLocateRadius(r);
+              },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              tr('La vue d\'arrivée montre au plus ce rayon autour du support (de plus loin, la carte zoome '
+                 'jusque-là ; de plus près, elle garde le zoom).'),
+              style: t.bodySmall,
             ),
             if (kIsWeb) ...[
               const Divider(height: 32),

@@ -8,11 +8,11 @@ import '../data/geocoding.dart';
 import '../data/reference_data.dart';
 import '../lng.dart';
 import '../modules/chambre/chamber_sheet.dart';
-import '../modules/infra/equipment.dart';
 import '../modules/poteau/pole_sheet.dart';
 import '../providers/app_provider.dart';
 import '../theme.dart';
 import '../widgets/support_bar.dart';
+import '../widgets/comments.dart';
 import '../widgets/fields.dart';
 import '../widgets/back_to_map.dart';
 import '../widgets/entry_screen.dart';
@@ -20,18 +20,23 @@ import '../widgets/linear_list.dart';
 import '../widgets/screen_title.dart';
 import 'address_screen.dart';
 
-/// Saisie d'un support (crayon des visuels) : identification et commentaire (noyau), caractéristiques et contrôles
-/// du module selon le type, linéaires rattachés, suppression. Les photos sont dans les visuels.
-/// Chambre : cartes dépliables Général, Dimensions, Équipements, Commentaires ; les masques et les conduites sont
-/// dans l'aperçu des masques (barre basse).
+/// Saisie d'un support (crayon des visuels) : identification (noyau), caractéristiques et contrôles du module selon
+/// le type, commentaires (journal daté et signé), linéaires rattachés, suppression. Les photos sont dans les visuels.
+/// Chambre : cartes dépliables Général, Dimensions, Commentaires. Les équipements, les masques et les conduites ont
+/// leurs onglets (barre basse). Poteau : cartes dépliables Général, Contrôles, Commentaires ; les portées et les
+/// autres parcours sont dans l'onglet Portées.
 /// La saisie travaille sur une copie, écrite dans le dépôt à l'enregistrement.
 class ObjectScreen extends StatefulWidget {
-  const ObjectScreen({super.key, required this.object, this.geocoder});
+  const ObjectScreen({super.key, required this.object, this.geocoder, this.linear});
 
   final GeoObject object;
 
   /// Détection de l'adresse (par défaut Géoplateforme et Photon).
   final Geocoder? geocoder;
+
+  /// Portée ou parcours sélectionné à l'ouverture, avec son carton (autres supports : arrivée d'un parcours suivi,
+  /// support rouvert par le menu ⋮).
+  final String? linear;
 
   @override
   State<ObjectScreen> createState() => _ObjectScreenState();
@@ -41,18 +46,34 @@ class _ObjectScreenState extends State<ObjectScreen> {
   late GeoObject _o = widget.object.copy();
   bool _changed = false;
   Linears _linears = (linears: const [], ends: const {});
+
+  /// Portée ou parcours sélectionné dans la liste des autres supports (façades…) : son carton « Naviguer vers ».
+  late String? _selectedLinear = widget.linear;
+  Route<dynamic>? _route;
   GeoObject? _address;
 
   /// Adresse choisie ou modifiée dans l'écran de l'adresse, enregistrée avec le support.
   GeoObject? _pendingAddress;
 
-  /// Équipements ajoutés depuis le dernier enregistrement (retirés tout à fait, sinon abandonnés).
-  final Set<String> _newEquipment = {};
-
   @override
   void initState() {
     super.initState();
     _loadLinears();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+    _select(_selectedLinear);
+  }
+
+  /// Sélectionne la portée ou le parcours [id] (null : aucun), noté avec le support tel qu'il est enregistré (son
+  /// intitulé à jour) pour rouvrir la saisie dans le même état (menu ⋮).
+  void _select(String? id) {
+    if (id != _selectedLinear) setState(() => _selectedLinear = id);
+    final r = _route;
+    if (r != null) screenStack.note(r, tab: 'saisie', selection: id, object: _changed ? null : _o.copy());
   }
 
   Future<void> _loadLinears() async {
@@ -92,9 +113,9 @@ class _ObjectScreenState extends State<ObjectScreen> {
     setState(() {
       _o = fresh!.copy();
       _changed = false;
-      _newEquipment.clear();
       _pendingAddress = null;
     });
+    _select(_selectedLinear);
     showSaved(context);
   }
 
@@ -104,11 +125,19 @@ class _ObjectScreenState extends State<ObjectScreen> {
     return mounted;
   }
 
+  /// « Naviguer vers » : la saisie en cours est enregistrée, puis le support d'en face s'ouvre à la place de celui-ci,
+  /// sur son écran des parcours (portées, aperçu des masques).
+  Future<void> _navigate(GeoObject linear, GeoObject other) async {
+    if (!await _previous() || !mounted) return;
+    await follow(context, linear, other, route: true);
+  }
+
   /// Ensuite : l'objet a pu changer (orientation, photos), les linéaires aussi.
   Future<void> _next() async {
     final fresh = await context.read<AppProvider>().repo.object(_o.id);
     if (!mounted || fresh == null) return;
     setState(() => _o = fresh.copy());
+    _select(_selectedLinear);
     await _loadLinears();
   }
 
@@ -131,12 +160,15 @@ class _ObjectScreenState extends State<ObjectScreen> {
       ),
     );
     if (ok != true || !mounted) return;
+    final id = _o.id;
     await context.read<AppProvider>().save(_o, abandon: true);
     if (!mounted) return;
     setState(() => _changed = false);
     showSaved(context, tr('Support supprimé'));
     await WidgetsBinding.instance.endOfFrame; // l'écran ne demande plus confirmation avant de se fermer
     if (mounted) await backToMap(context);
+    // le support quitté n'est plus proposé par le menu ⋮
+    screenStack.forget(id);
   }
 
   @override
@@ -144,45 +176,55 @@ class _ObjectScreenState extends State<ObjectScreen> {
     final app = context.watch<AppProvider>();
     final ref = app.referenceData;
     final family = ref.familyCode(_o.typeKey);
-    final equipment = SupportEquipment(
-      node: _o,
-      referenceData: ref,
-      author: app.author,
-      newIds: _newEquipment,
-      onChanged: _change,
-      expanded: family == 'CHB' ? true : null,
-    );
+    final selected = family == 'CHB' || family == 'POT'
+        ? null
+        : _linears.linears.where((l) => l.id == _selectedLinear).firstOrNull;
     return EntryScreen(
       changed: _changed,
       child: Scaffold(
         appBar: AppBar(
           title: ScreenTitle(
             _o.lib ?? tr('Sans étiquette'),
-            [tr('saisie du support'), if (_o.status == 'C') 'créé', if (_o.status == 'M') 'modifié'].join(' · '),
+            [tr('saisie du support'), if (_o.status == 'C') tr('créé'), if (_o.status == 'M') tr('modifié')].join(' · '),
           ),
+          actions: [SupportMenu(object: _o, previous: _previous, entry: false)],
         ),
-        bottomNavigationBar: SupportBar(object: _o, previous: _previous, next: _next),
+        bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (selected != null)
+            RouteCard(
+              linear: selected,
+              other: _linears.ends[selected.noe1 == _o.id ? selected.noe2 : selected.noe1],
+              referenceData: ref,
+              onNavigate: _navigate,
+              onClose: () => _select(null),
+            ),
+          SupportBar(object: _o, previous: _previous, next: _next),
+        ]),
         floatingActionButton: saveButton(visible: _changed, onPressed: _save),
         body: ListView(
           padding: const EdgeInsets.only(bottom: fabMargin),
           children: [
             if (family == 'CHB') ...[
-              // cartes dépliables ; masques et conduites par la barre basse
+              // cartes dépliables ; équipements, masques et conduites par la barre basse
               _general(ref, family, [ChamberReference(node: _o, referenceData: ref, onChanged: _change)]),
               ChamberDimensions(node: _o, referenceData: ref, onChanged: _change),
-              equipment,
-              Section(title: tr('Commentaires'), expanded: true, spacing: 12, children: [
-                _comment(),
-                ?chamberComment(opened: widget.object, node: _o, onChanged: _change),
-              ]),
+              CommentsCard(object: _o, onChanged: _change, expanded: true),
+            ] else if (family == 'POT') ...[
+              // cartes dépliables ; équipements et portées (avec les autres parcours) par la barre basse
+              _general(ref, family, [PoleSpecs(node: _o, referenceData: ref, onChanged: _change)]),
+              PoleChecks(node: _o, onChanged: _change),
+              CommentsCard(object: _o, onChanged: _change, expanded: true),
             ] else ...[
               _identification(ref, family),
-              if (family == 'POT') ...[
-                PoleSpecs(node: _o, referenceData: ref, onChanged: _change),
-                equipment,
-                PoleChecks(node: _o, onChanged: _change),
-              ],
-              LinearList(node: _o, data: _linears, referenceData: ref, title: tr('Linéaires')),
+              CommentsCard(object: _o, onChanged: _change),
+              LinearList(
+                node: _o,
+                data: _linears,
+                referenceData: ref,
+                title: tr('Portées et parcours'),
+                selected: _selectedLinear,
+                onSelect: (l) => _select(l.id == _selectedLinear ? null : l.id),
+              ),
             ],
             if (_o.objectClass == ObjectClass.noe && !_o.outOfZone)
               Padding(
@@ -257,8 +299,6 @@ class _ObjectScreenState extends State<ObjectScreen> {
     );
   }
 
-  Widget _comment() => StringField(m: _o.props, column: 'NOE_COMMENT', label: tr('Commentaire'), rows: 2, onChanged: _change);
-
   /// Position, état particulier et identifiant ; la date de modification si [withDate].
   Widget _infoLine({bool withDate = true}) {
     final p = _o.point;
@@ -280,7 +320,6 @@ class _ObjectScreenState extends State<ObjectScreen> {
         ?_typeField(ref, family),
         StringField(m: _o.props, column: 'NOE_LIB', label: tr('Étiquette (n° d\'appui, de chambre…)'), onChanged: _change),
         ?_addressLine(),
-        _comment(),
         _infoLine(),
       ]);
 

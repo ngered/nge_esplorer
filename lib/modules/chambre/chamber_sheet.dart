@@ -6,8 +6,9 @@ import '../../lng.dart';
 import '../../widgets/fields.dart';
 
 /// Fiche de la chambre (espace `chb` du nœud), comme « Chambre - édition des informations » de FOA Explorer, répartie
-/// dans les cartes de la saisie du support : référence et implantation (Général), dimensions, commentaire.
-/// L'aperçu des masques s'ouvre par la barre basse (mask_overview_screen.dart).
+/// dans les cartes de la saisie du support : référence et implantation (Général), dimensions. Les commentaires sont
+/// le journal commun des supports (widgets/comments.dart) ; l'aperçu des masques s'ouvre par la barre basse
+/// (mask_overview_screen.dart).
 
 /// Référence du catalogue et implantation (carte Général).
 class ChamberReference extends StatelessWidget {
@@ -34,7 +35,7 @@ class ChamberReference extends StatelessWidget {
 }
 
 /// Dimensions : une ligne par dimension, la dimension relevée (saisie seulement si elle diffère) avec la référence
-/// du catalogue (intérieur) en gris sous le champ.
+/// du catalogue (intérieur) en petit dans le cadre du champ.
 class ChamberDimensions extends StatelessWidget {
   const ChamberDimensions({super.key, required this.node, required this.referenceData, required this.onChanged});
 
@@ -68,19 +69,10 @@ class ChamberDimensions extends StatelessWidget {
           column: column,
           label: tr(label),
           unit: 'm',
-          helper: tr('référence : {0}',
+          note: tr('référence : {0}',
               [((mat?[refColumn] as num?) ?? 0) > 0 ? '${_m(mat![refColumn])} m' : tr('non renseignée')]),
           onChanged: onChanged,
         ),
     ]);
   }
 }
-
-/// Commentaire propre à la chambre (`CHB_COMMENT`, repris de FOA Explorer) : proposé seulement si la chambre l'avait
-/// à l'ouverture de la saisie ([opened]), le commentaire du support suffisant sinon.
-Widget? chamberComment({required GeoObject opened, required GeoObject node, required VoidCallback onChanged}) =>
-    opened.namespace('chb')?['CHB_COMMENT'] == null
-        ? null
-        : StringField(
-            m: node.namespace('chb', create: true)!, column: 'CHB_COMMENT', label: tr('Commentaire chambre (FOA)'),
-            rows: 2, onChanged: onChanged);

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../map/colors.dart';
@@ -43,6 +44,15 @@ class _RosetteViewState extends State<RosetteView> {
     return (angle, d.distance / (size.shortestSide / 2));
   }
 
+  /// Angle et rayon relatif sous le point [global] de l'écran, d'après la rosace telle qu'elle est dessinée à cet
+  /// instant : sa taille ou sa place peut changer pendant un glissement (le geste garde sinon le repère du toucher
+  /// initial, et l'aiguille ne suivrait plus le doigt).
+  (double, double) _polarAt(Offset global, Size fallback, Offset local) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return _polar(local, fallback);
+    return _polar(box.globalToLocal(global), box.size);
+  }
+
   PoleSpan? _nearest(double angle, double radius) {
     if (radius < 0.1) return null;
     PoleSpan? best;
@@ -64,6 +74,9 @@ class _RosetteViewState extends State<RosetteView> {
       child: LayoutBuilder(builder: (context, c) {
         final size = Size(c.maxWidth, c.maxHeight);
         return GestureDetector(
+          // l'aiguille saisie est celle sous le doigt au toucher, et non là où le glissement est reconnu (une
+          // trentaine de pixels plus loin le long de l'arc, hors de la tolérance)
+          dragStartBehavior: DragStartBehavior.down,
           onTapUp: (d) {
             final (a, r) = _polar(d.localPosition, size);
             widget.editor.select(_nearest(a, r));
@@ -79,7 +92,7 @@ class _RosetteViewState extends State<RosetteView> {
           onPanUpdate: (d) {
             final p = _dragged;
             if (p == null) return;
-            final (a, _) = _polar(d.localPosition, size);
+            final (a, _) = _polarAt(d.globalPosition, size, d.localPosition);
             widget.editor.orient(p, a);
           },
           onPanEnd: (_) => _dragged = null,

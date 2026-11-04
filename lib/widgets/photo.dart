@@ -32,20 +32,22 @@ ImageProvider? photoImage(AppProvider app, Map f) {
       width: 1280, policy: ResizeImagePolicy.fit);
 }
 
-/// Photo cadrée ; à défaut, le cadre [NoPhoto] avec [missingText] (ou « Photo introuvable » si la lecture échoue).
+/// Photo cadrée ([fit] : remplissant le cadre, ou entière dans la galerie) ; à défaut, le cadre [NoPhoto] avec
+/// [missingText] (ou « Photo introuvable » si la lecture échoue).
 class Photo extends StatelessWidget {
-  const Photo({super.key, required this.image, required this.missingText, this.label});
+  const Photo({super.key, required this.image, required this.missingText, this.label, this.fit = BoxFit.cover});
 
   final ImageProvider? image;
   final String missingText;
   final String? label;
+  final BoxFit fit;
 
   @override
   Widget build(BuildContext context) {
     if (image == null) return NoPhoto(text: missingText);
     return Image(
       image: image!,
-      fit: BoxFit.cover,
+      fit: fit,
       semanticLabel: label,
       loadingBuilder: (context, child, progress) =>
           progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2)),

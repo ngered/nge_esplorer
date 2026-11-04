@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../lng.dart';
+import 'messages.dart';
 
 /// Conventions communes des écrans de saisie (fiche, rosace, paramètres) : bouton « Enregistrer » flottant en bas
 /// à droite, visible seulement s'il y a quelque chose à enregistrer ; après l'enregistrement, on reste sur l'écran ;
@@ -47,5 +48,6 @@ Widget? saveButton({required bool visible, required VoidCallback onPressed}) => 
 /// Marge à laisser sous le contenu défilant pour que le bouton flottant n'en masque pas la fin.
 const fabMargin = 96.0;
 
-void showSaved(BuildContext context, [String? text]) =>
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text ?? tr('Enregistré'))));
+/// Message d'enregistrement ; il remplace les messages affichés ou en attente (pas de file de confirmations périmées).
+void showSaved(BuildContext context, [String? text]) => ScaffoldMessenger.of(context)
+  .replaceSnackBar(SnackBar(content: Text(text ?? tr('Enregistré'))));

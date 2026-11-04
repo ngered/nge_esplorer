@@ -4,7 +4,7 @@ import '../data/data_repository.dart';
 import '../data/geo_object.dart';
 import '../data/reference_data.dart';
 import '../data/visuals.dart';
-import 'poteau/rosette_editor.dart' show aerialSpanType, facadeRunType;
+import 'poteau/rosette_editor.dart' show isSpan;
 
 /// Statut de renseignement d'un support, sur le principe de FOA Explorer (NOE_STATUT) : couleur du picto et du cadre
 /// de l'étiquette sur la carte. [level] : valeur de `POT_NIVEAU` / `CHB_NIVEAU` (0 non relevé, 1 partiel,
@@ -48,10 +48,7 @@ Future<Completion?> completionOf(GeoObject o, ReferenceData ref, DataRepository 
     final checks = [for (final c in (pot['controles'] as List?) ?? const []) (c as Map).cast<String, dynamic>()]
       ..sort((a, b) => '${a['DATE_CTL']}'.compareTo('${b['DATE_CTL']}'));
     if (checks.isNotEmpty && checks.last['SEC_UTILISABLE'] == 0) return Completion.defect;
-    final spans = [
-      for (final l in await repo.linearsOf(o.id))
-        if (l.typeKey == aerialSpanType || l.typeKey == facadeRunType) l,
-    ];
+    final spans = [for (final l in await repo.linearsOf(o.id)) if (isSpan(l)) l];
     final oriented = spans.where((l) {
       final p = l.namespace('inf')?['portee'] as Map?;
       return p?[l.noe1 == o.id ? 'PRT_ANG1' : 'PRT_ANG2'] != null;

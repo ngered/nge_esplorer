@@ -4,10 +4,15 @@ import 'package:uuid/uuid.dart';
 import '../../map/geo.dart';
 import '../../data/data_repository.dart';
 import '../../data/geo_object.dart';
+import '../../lng.dart';
 
 /// Types de linéaires portés par la rosace (manifeste infra).
 const aerialSpanType = 1002;
 const facadeRunType = 1003;
+
+/// Linéaire porté par la rosace (portée aérienne, parcours en façade) ; les autres (parcours souterrain…) ne sont
+/// que listés sous les portées.
+bool isSpan(GeoObject l) => l.typeKey == aerialSpanType || l.typeKey == facadeRunType;
 
 /// Types de nœuds proposés pour une destination nouvelle.
 const destinationTypes = {14: 'Poteau télécom', 15: 'Poteau BT', 30: 'Ancrage façade', 999: 'Autre point'}; // tr
@@ -51,16 +56,20 @@ class PoleSpan {
     return l.cast<Map<String, dynamic>>();
   }
 
-  String get destinationLabel => destination?.lib ?? destinationId ?? '?';
+  /// Intitulé de la destination ; « ? » si elle est absente du paquet.
+  String get destinationLabel => destination == null ? '?' : destination!.lib ?? tr('Sans étiquette');
 }
 
 /// Session d'édition de la rosace d'un poteau : rien n'est écrit dans le dépôt avant [validate].
 class RosetteEditor extends ChangeNotifier {
-  RosetteEditor(this.repo, this.pole, {required this.author});
+  RosetteEditor(this.repo, this.pole, {required this.author, required this.intervention});
 
   final DataRepository repo;
   final GeoObject pole;
   final String author;
+
+  /// Intervention en cours (`INT_CODE_EXT`), qui signe le commentaire d'un nœud créé ; commencée à la demande.
+  final ValueGetter<String> intervention;
   final List<PoleSpan> spans = [];
 
   /// Nœuds de destination créés pendant la session (position provisoire, à relever).
@@ -72,14 +81,22 @@ class RosetteEditor extends ChangeNotifier {
 
   Iterable<PoleSpan> get activeSpans => spans.where((p) => !p.abandoned);
 
+  /// Charge les portées du dépôt, ou les relit (au retour d'un autre support) : la session repart de zéro, sans
+  /// sélection ni nœud créé.
   Future<void> load() async {
+    final read = <PoleSpan>[];
     for (final l in await repo.linearsOf(pole.id)) {
-      if (l.typeKey != aerialSpanType && l.typeKey != facadeRunType) continue;
+      if (!isSpan(l)) continue;
       final p = PoleSpan(l.copy(), isStart: l.noe1 == pole.id);
       p.destination = await repo.object(p.destinationId ?? '');
-      spans.add(p);
+      read.add(p);
     }
-    spans.sort((a, b) => a.angle.compareTo(b.angle));
+    spans
+      ..clear()
+      ..addAll(read)
+      ..sort((a, b) => a.angle.compareTo(b.angle));
+    newNodes.clear();
+    selection = null;
     loaded = true;
     notifyListeners();
   }
@@ -144,9 +161,14 @@ class RosetteEditor extends ChangeNotifier {
         'TYPE_KEY': newType ?? 999,
         if (pole.props['ZONE_KEY'] != null) 'ZONE_KEY': pole.props['ZONE_KEY'],
         'GEOL_MOD_KEY': 8, // indéterminé : position à relever
-        'NOE_COMMENT': 'Créé depuis la rosace de ${pole.lib ?? pole.id} : position à relever',
       });
       GeoObject.put(dest.props, 'NOE_LIB', newLabel);
+      // texte écrit dans les données : en français
+      dest.addComment(
+        text: 'Créé depuis la rosace de ${pole.lib ?? pole.id} : position à relever',
+        author: author,
+        intervention: intervention(),
+      );
       newNodes[dest.id] = dest;
     }
     final end = dest.point!;
@@ -201,18 +223,21 @@ class RosetteEditor extends ChangeNotifier {
   int nextRank(PoleSpan p) =>
       p.cables.fold<int>(0, (m, c) => (c['PCB_RANG'] as int? ?? 0) > m ? c['PCB_RANG'] as int : m) + 1;
 
-  /// Écrit les linéaires modifiés et les nœuds créés dans le dépôt.
+  /// Écrit les linéaires modifiés et les nœuds créés dans le dépôt ; les portées supprimées, une fois abandonnées
+  /// (le linéaire tel qu'il est dans le dépôt), quittent la session : elle n'a plus rien à enregistrer.
   Future<void> validate() async {
     for (final p in spans) {
       final created = newNodes[p.destinationId];
       if (p.abandoned) {
-        if (await repo.object(p.id) != null) await repo.save(p.linear, author: author, abandon: true);
+        final stored = await repo.object(p.id);
+        if (stored != null) await repo.save(stored.copy(), author: author, abandon: true);
         continue;
       }
       if (!p.changed) continue;
       if (created != null) await repo.save(created, author: author);
       await repo.save(p.linear, author: author);
     }
+    spans.removeWhere((p) => p.abandoned);
     for (final p in spans) {
       p.changed = false;
     }

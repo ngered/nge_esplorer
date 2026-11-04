@@ -1,0 +1,37 @@
+{
+  "code": "immeuble",
+  "version": "0.1.0",
+  "libelle": "Immeubles et BAL : logements, locaux, conventions",
+  "fichier": "immeuble.sqlite",
+  "spatial": false,
+  "dependances": ["noyau", "infra"],
+  "espace_geojson": "imb",
+  "scripts": ["schema.sql", "referentiels.sql"],
+  "tables": ["DEF_IMB_HABITAT", "DEF_IMB_ETAT", "DEF_LOC_TYPE", "DEF_LOC_RACCO", "IMB_ADRESSE", "IMB_LOCAL"],
+  "referentiels_foa": [],
+  "references": [
+    {"table": "IMB_ADRESSE", "colonne": "ADR_KEY", "cible": "noyau.PRJ_ADRESSE.ADR_ID"},
+    {"table": "IMB_ADRESSE", "colonne": "IMPL_KEY", "cible": "noyau.DEF_IMPLANTATION.IMPL_ID"},
+    {"table": "IMB_ADRESSE", "colonne": "GEST_KEY", "cible": "noyau.DEF_ORGANISME.ORG_ID"},
+    {"table": "IMB_LOCAL", "colonne": "ADR_KEY", "cible": "noyau.PRJ_ADRESSE.ADR_ID"},
+    {"table": "IMB_LOCAL", "colonne": "EQU_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"}
+  ],
+  "types": [
+    {"id": 12, "code": "IMM", "lib": "Immeuble", "parent": 3, "geom": "POINT", "grace": "BAT"}
+  ],
+  "entites": [
+    {"table": "IMB_LOCAL", "lib": "Local"}
+  ],
+  "vues": [
+    {"type": "IMM", "code": "ENSEMBLE", "lib": "Vue d'ensemble", "ordre": 1, "obligatoire": "OUI"},
+    {"type": "IMM", "code": "BAL", "lib": "Boîtes aux lettres", "ordre": 2, "obligatoire": "OUI"},
+    {"type": "IMM", "code": "BOITIER", "lib": "Boîtier optique", "ordre": 3, "obligatoire": "NON"},
+    {"type": "IMM", "code": "COLONNE", "lib": "Colonne montante", "ordre": 4, "obligatoire": "NON"}
+  ],
+  "completude": "À définir avec les activités relevé BAL et relevé immeubles.",
+  "grace": {
+    "IMB_ADRESSE": "t_adresse (ad_itypeim, ad_ietat, ad_nblhab, ad_nblpro, ad_nbprhab, ad_nbprpro, ad_imneuf, ad_batcode, ad_nombat, ad_racc, ad_gest, ad_idatsgn, ad_iaccgst)",
+    "IMB_LOCAL": "t_suf (sf_type, sf_racco, sf_escal, sf_etage, sf_local, sf_zp_code → t_zpbo_patch201.zp_bp_code)",
+    "PRJ_NOE IMM": "t_sitetech (st_typephy BAT) et son nœud"
+  }
+}

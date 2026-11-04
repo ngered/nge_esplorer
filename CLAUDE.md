@@ -34,7 +34,9 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
 - **Schéma BE** : [schema/](schema/README.md) (un dossier par domaine : manifeste + SQL) ; construction et essai
   par `tools/schema/projet.py` (implémentation de référence de la bibliothèque noyau C#) ; jeu d'essai sur données
   réelles par `tools/essai/charger_essai.py` (Heillecourt, Essonne, GraceTHD de test ; `--foa` pour un projet
-  d'une seule base FOA, ex. Nancy) ; projet QGIS de
+  d'une seule base FOA, ex. Nancy) ; jeu d'essai DOE complet (poteaux, chambres, BAL, immeubles, matériel, câbles,
+  optique, mesures) par `tools/essai/charger_doe.py` (Evicom SRO-2-02HG, `docs/essai/evicom_data/in/` ; modules
+  `optique` et `immeuble` 0.1.0, pas encore publiés dans le paquet) ; projet QGIS de
   consultation par `tools/essai/projet_qgis.py` (Python de QGIS : `python-qgis.bat`).
 - **Paquet de zone** : [docs/paquet.md](docs/paquet.md) (ZIP : `paquet.json`, `objets.geojson`,
   `referentiels.json`, photos) ; publication et vérification par `tools/geojson/paquet.py` (référence côté BE).
@@ -48,7 +50,22 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   `screens/` (carte, visuels du support et galerie, saisie du support, adresse avec détection par géocodage inversé
   `data/geocoding.dart`), `modules/<module>/` (futurs paquets Dart : poteau avec la rosace, chambre avec l'aperçu
   et la grille des masques, infra avec les équipements) ; saisie, module et équipements sont des onglets du support
-  (`openTab` de `widgets/support_bar.dart` : remplacés, non empilés).
+  (`openTab` de `widgets/support_bar.dart` : remplacés, non empilés ; `openVisuals` : « Visuels du support ») ; un seul
+  support ouvert à la fois au-dessus de la carte (`openAt`, pile suivie par `screenStack` de
+  `widgets/back_to_map.dart`, sans supports empilés : leurs copies périmées écrasaient les linéaires communs) : un
+  parcours suivi (`follow`) remplace le support affiché par celui d'en face (aperçu des masques, rosace, saisie des
+  autres supports : carton « Naviguer vers » (`RouteCard`), même écran à l'arrivée ; alvéole : « Vers … », d'une
+  touche : grille de la chambre d'en face, portées d'un poteau, visuels sinon ; support supprimé : jamais ouvert) ;
+  menu ⋮ (`SupportMenu`), seul bouton des barres de titre d'un support (pictos remplacés) : actions de l'écran,
+  visuels et saisie du support, supports quittés rouverts dans l'état noté par l'écran (`screenStack.note`),
+  « Repérer sur la carte » ; un écran qui écrit un objet entier part de l'objet relu au dépôt (visuels relus à chaque
+  `AppProvider.revision`, galerie) ; la sélection de la carte suit le support affiché, repérage façon « Repérer » de
+  FibReady (`map/flight.dart` ; animation et rayon dans les Paramètres) ;
+  journal des commentaires datés et signés
+  (`widgets/comments.dart`, règle de modification `AppProvider.canEditComment` : l'auteur, tant que le retour qui
+  les contient n'est pas exporté ; table BE `PRJ_COMMENTAIRE`) ; masques en repère métrique (faces `FAC_LARG` ×
+  `FAC_HAUT` et positions en m, grille de 5 cm). Projet existant mis à jour par `projet.py migrer <projet> <QGIS bin>`
+  (étapes en attente : commentaires 0.2.0, masques 0.3.0 ; sauvegardes de Nancy dans `docs/essai/sauvegardes/`).
   Tests : `flutter test` ; `PAQUET_REEL=<zip>` pour un vrai paquet.
 - **Nommage du code** (comme FibReady) : identifiants et fichiers en anglais (types, méthodes, champs, paramètres,
   locales) ; commentaires et textes d'interface en français. Conservés : termes métier abrégés calqués sur les

@@ -12,10 +12,17 @@ class Bundle {
   Bundle({required this.header, required this.objects, required this.referenceData, this.files = const {}});
 
   static const format = 'nge-esplorer-paquet';
-  static const version = '0.1.0';
+  static const version = '0.2.0';
 
   /// Versions majeures des modules que l'application sait lire.
   static const knownModules = {'noyau': 0, 'infra': 0, 'chambre': 0, 'poteau': 0};
+
+  /// Version minimale d'un module dont les paquets plus anciens portent des données que l'application ne lit plus,
+  /// avec la raison : avant la 0.3.0 du module chambre, positions des masques en cellules FOA au lieu de mètres. Pas
+  /// de conversion sur le terminal (le retour recopierait la version du module) : le paquet est à republier.
+  static const minimumModules = {
+    'chambre': ('0.3.0', 'positions des masques dans l\'ancien repère'), // tr
+  };
 
   final Map<String, dynamic> header;
   final List<GeoObject> objects;
@@ -50,6 +57,11 @@ class Bundle {
       final known = knownModules[m.key];
       if (known == null) throw FormatException(tr('module inconnu : {0}', [m.key]));
       if (_major(m.value) != known) throw FormatException(tr('module {0} en version {1} non prise en charge', [m.key, m.value]));
+      final minimum = minimumModules[m.key];
+      if (minimum != null && _compare(m.value, minimum.$1) < 0) {
+        throw FormatException(tr('module {0} en version {1}, antérieure à {2} ({3}) : paquet à republier',
+            [m.key, m.value, minimum.$1, tr(minimum.$2)]));
+      }
     }
     final objects = [
       for (final f in (json('objets.geojson')['features'] as List)) GeoObject.fromFeature((f as Map).cast()),
@@ -94,6 +106,17 @@ class Bundle {
   }
 
   static int _major(Object? v) => int.tryParse('$v'.split('.').first) ?? -1;
+
+  /// Compare deux versions « majeure.mineure.correctif » (partie absente : 0, illisible : -1).
+  static int _compare(Object? a, String b) {
+    List<int> parts(Object? v) => [for (final p in '$v'.split('.')) int.tryParse(p) ?? -1];
+    final x = parts(a), y = parts(b);
+    for (var i = 0; i < x.length || i < y.length; i++) {
+      final c = (i < x.length ? x[i] : 0).compareTo(i < y.length ? y[i] : 0);
+      if (c != 0) return c;
+    }
+    return 0;
+  }
 
   /// Date ISO 8601 UTC à la seconde, comme au BE.
   static String timestamp([DateTime? d]) => '${(d ?? DateTime.now()).toUtc().toIso8601String().split('.').first}Z';

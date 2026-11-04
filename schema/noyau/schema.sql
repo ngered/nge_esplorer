@@ -1,5 +1,5 @@
 -- Noyau NgeEsPlorer : projet, référentiels communs, géométries (zones, adresses, nœuds, linéaires),
--- interventions et fichiers. Base SpatiaLite (mod_spatialite chargé), Lambert 93 (EPSG:2154).
+-- interventions, fichiers et commentaires. Base SpatiaLite (mod_spatialite chargé), Lambert 93 (EPSG:2154).
 -- Conventions : XXX_ID clé primaire (entier long auto-incrémenté), XXX_KEY clé étrangère,
 -- XXX_CODE_EXT identifiant stable unique dans le projet, XXX_LIB libellé. Dates ISO 8601 UTC.
 
@@ -138,7 +138,6 @@ CREATE TABLE PRJ_NOE (
     ADR_KEY         INTEGER REFERENCES PRJ_ADRESSE (ADR_ID),
     ZONE_KEY        INTEGER REFERENCES PRJ_ZONE (ZONE_ID),
     AVCT_KEY        INTEGER REFERENCES DEF_AVANCEMENT (AVCT_ID),
-    NOE_COMMENT     TEXT,
     GEOL_QLT        REAL,           -- précision estimée (m)
     GEOL_MOD_KEY    INTEGER REFERENCES DEF_GEOL_MODE (GMOD_ID),
     GEOL_CLASSE_KEY INTEGER REFERENCES DEF_GEOL_CLASSE (CLASSE_ID),
@@ -232,6 +231,33 @@ CREATE TABLE PRJ_FICHIER (
 -- une seule photo principale par objet et par vue
 CREATE UNIQUE INDEX UX_FICHIER_PRINCIPALE ON PRJ_FICHIER (ENT_KEY, OBJ_KEY, VUE_KEY) WHERE FIC_PRINCIPALE = 1;
 
+-- Commentaires (journal daté et signé) --------------------------------------------------------
+
+-- Remplace les champs libres du support (NOE_COMMENT, CHB_COMMENT, POT_COMMENT jusqu'à la version 0.1.0).
+-- Types de FibReady, par gravité décroissante : alert (Alerte), minor (Mineur), standard, great (Bon point).
+-- Une entrée n'est modifiable ou supprimable que par son auteur, tant que le paquet de retour qui la contient
+-- n'est pas exporté ; elle est ensuite figée. Au BE, une entrée se retire par abandon (DATE_ABD, SRC_ABD).
+-- Texte et auteur non blancs, comme le contrôle du paquet (tools/geojson/paquet.py verifier) : blancs = espace,
+-- tabulation, saut de ligne, retour chariot, tabulation verticale, saut de page, espace insécable.
+CREATE TABLE PRJ_COMMENTAIRE (
+    COM_ID          INTEGER PRIMARY KEY AUTOINCREMENT,
+    COM_CODE_EXT    TEXT NOT NULL UNIQUE,    -- UUID stable
+    ENT_KEY         INTEGER NOT NULL REFERENCES DEF_ENTITE (ENT_ID),
+    OBJ_KEY         INTEGER NOT NULL,        -- objet commenté (PRJ_NOE, PRJ_LINEAIRE, PRJ_ADRESSE), comme PRJ_FICHIER
+    INT_KEY         INTEGER REFERENCES PRJ_INTERVENTION (INT_ID),   -- intervention terrain qui l'a saisi
+    COM_TYPE        TEXT NOT NULL DEFAULT 'standard' CHECK (COM_TYPE IN ('alert', 'minor', 'standard', 'great')),
+    COM_TEXTE       TEXT NOT NULL,
+    COM_AUTEUR      TEXT NOT NULL,           -- nom de l'utilisateur ; « FOA » ou « BE » pour un texte repris
+    COM_ORIGINE     TEXT,                    -- vide : saisi ; 'FOA', 'GRACE', 'BE' : texte repris ; 'CTRL_n' : contrôle
+    DATE_CREA       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    DATE_MODIF      TEXT,
+    SRC_MODIF       TEXT,
+    DATE_ABD        TEXT,
+    SRC_ABD         TEXT,
+    CHECK (trim(COM_TEXTE, char(32, 9, 10, 13, 11, 12, 160)) <> ''),
+    CHECK (trim(COM_AUTEUR, char(32, 9, 10, 13, 11, 12, 160)) <> '')
+);
+
 -- Index des clés étrangères ----------------------------------------------------------------------
 
 CREATE INDEX IX_TYPE_PARENT ON DEF_TYPE (TYPE_PARENT_KEY);
@@ -246,6 +272,8 @@ CREATE INDEX IX_LIN_ZONE ON PRJ_LINEAIRE (ZONE_KEY);
 CREATE INDEX IX_IOB_INT ON PRJ_INT_OBJET (INT_KEY);
 CREATE INDEX IX_IOB_OBJ ON PRJ_INT_OBJET (ENT_KEY, OBJ_KEY);
 CREATE INDEX IX_FIC_OBJ ON PRJ_FICHIER (ENT_KEY, OBJ_KEY);
+CREATE INDEX IX_COM_OBJ ON PRJ_COMMENTAIRE (ENT_KEY, OBJ_KEY);
+CREATE INDEX IX_COM_INT ON PRJ_COMMENTAIRE (INT_KEY);
 
 SELECT CreateSpatialIndex('PRJ_ZONE', 'GEOMETRY');
 SELECT CreateSpatialIndex('PRJ_ADRESSE', 'GEOMETRY');

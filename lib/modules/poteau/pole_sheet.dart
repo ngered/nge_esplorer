@@ -6,6 +6,11 @@ import '../../data/reference_data.dart';
 import '../../lng.dart';
 import '../../widgets/fields.dart';
 
+/// Fiche du poteau (espace `pot` du nœud), répartie dans les cartes de la saisie du support comme celle de la
+/// chambre : caractéristiques (Général), contrôles. Les commentaires sont le journal commun des supports
+/// (widgets/comments.dart), sans champ libre au contrôle ; les portées et les autres parcours sont dans l'onglet
+/// Portées de la barre basse (rosette_screen.dart).
+
 /// Contrôles d'un poteau (FOA Explorer), par groupe.
 const poleChecks = {
   'Résultats des tests': { // tr
@@ -30,7 +35,8 @@ const poleChecks = {
   },
 };
 
-/// Caractéristiques du poteau (espace `pot` du nœud).
+/// Caractéristiques du poteau (carte Général) : référence du catalogue, nature, structure, caractéristique,
+/// implantation, hauteur et effort.
 class PoleSpecs extends StatelessWidget {
   const PoleSpecs({super.key, required this.node, required this.referenceData, required this.onChanged});
 
@@ -44,7 +50,7 @@ class PoleSpecs extends StatelessWidget {
     final catalog = referenceData.table('poteau', 'MAT_POTEAU');
     final mat = referenceData.poleMat(pot['MAT_KEY'] as int?);
     String matLabel(Map<String, dynamic> m) => [m['MAT_LIB'], m['MAT_DESC']].whereType<String>().join(' — ');
-    return Section(title: tr('Poteau'), spacing: 12, children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: 12, children: [
       Autocomplete<Map<String, dynamic>>(
         initialValue: TextEditingValue(text: mat == null ? '' : matLabel(mat)),
         displayStringForOption: matLabel,
@@ -81,12 +87,11 @@ class PoleSpecs extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(child: NumberField(m: pot, column: 'POT_EFFORT', label: tr('Effort (daN)'), onChanged: onChanged)),
       ]),
-      StringField(m: pot, column: 'POT_COMMENT', label: tr('Commentaire poteau'), rows: 2, onChanged: onChanged),
     ]);
   }
 }
 
-/// Contrôle du jour : repris s'il existe, créé à la première réponse sinon.
+/// Carte Contrôles : contrôle du jour, repris s'il existe, créé à la première réponse sinon.
 class PoleChecks extends StatelessWidget {
   const PoleChecks({super.key, required this.node, required this.onChanged});
 
@@ -107,12 +112,19 @@ class PoleChecks extends StatelessWidget {
     }
 
     final previousCount = list.length - (existing == null ? 0 : 1);
+    final [y, m, d] = day.split('-');
     return Section(
-      title: tr('Contrôles du {0}', [day]),
+      title: tr('Contrôles'),
+      expanded: true,
       children: [
-        if (previousCount > 0)
-          Text(trn(previousCount, '{0} contrôle antérieur conservé', '{0} contrôles antérieurs conservés'),
-              style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          [
+            tr('Contrôle du {0}', ['$d/$m/$y']),
+            if (previousCount > 0)
+              trn(previousCount, '{0} contrôle antérieur conservé', '{0} contrôles antérieurs conservés'),
+          ].join(' · '),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         for (final group in poleChecks.entries) ...[
           Padding(
             padding: const EdgeInsets.only(top: 8),
@@ -120,7 +132,6 @@ class PoleChecks extends StatelessWidget {
           ),
           for (final c in group.value.entries) YesNoField(m: ctl, column: c.key, label: tr(c.value), onChanged: change),
         ],
-        StringField(m: ctl, column: 'CTL_COMMENT', label: tr('Commentaire'), rows: 2, onChanged: change),
       ],
     );
   }

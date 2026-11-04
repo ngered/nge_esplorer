@@ -40,6 +40,48 @@ class AppProvider extends ChangeNotifier {
 
   /// Serveur des photos non embarquées dans le paquet (web, développement), null sinon.
   String? get photoServer => urlPhotoServer ?? (useLocalPhotoServer ? localPhotoServer : null);
+
+  /// Repérage d'un support sur la carte (recherche, retour d'un autre support, « Repérer sur la carte »), comme
+  /// « Repérer » de FibReady : vol animé de la vue ([animateLocate], sinon placement direct) ; la vue d'arrivée montre
+  /// au plus [locateRadius] m autour du support (de plus loin, la carte zoome jusque-là ; de plus près, elle garde le
+  /// zoom).
+  bool animateLocate = true;
+  double locateRadius = defaultLocateRadius;
+  static const defaultLocateRadius = 50.0;
+
+  /// Rayons de repérage proposés dans les paramètres (m).
+  static const locateRadii = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0];
+
+  /// Support sélectionné sur la carte (identifiant) : touché ou trouvé par la recherche, puis le support affiché
+  /// (ouvert depuis la carte, atteint par un parcours, rouvert par le menu ⋮) ; null : aucun.
+  String? selectedSupport;
+
+  /// Support à repérer (« Repérer sur la carte ») quand la carte reviendra au premier plan ([takeLocate]).
+  String? _locateTarget;
+
+  void selectSupport(String? id) {
+    if (id == selectedSupport) return;
+    selectedSupport = id;
+    notifyListeners();
+  }
+
+  /// Sélectionne le support [id] et demande à la carte de le repérer à son retour au premier plan.
+  void locate(String id) {
+    selectedSupport = id;
+    _locateTarget = id;
+    notifyListeners();
+  }
+
+  /// Renonce au repérage demandé (on est resté sur l'écran du support).
+  void cancelLocate() => _locateTarget = null;
+
+  /// Repérage demandé, retiré : la carte le traite une fois.
+  String? takeLocate() {
+    final id = _locateTarget;
+    _locateTarget = null;
+    return id;
+  }
+
   int nbChanged = 0;
 
   /// Le retour a été exporté depuis la dernière modification.
@@ -56,6 +98,15 @@ class AppProvider extends ChangeNotifier {
 
   String? _intervention;
   String? _start;
+
+  /// Commentaires de l'intervention (`COM_CODE_EXT`) contenus dans le dernier paquet de retour préparé
+  /// ([returnBundle]), versés dans [_exportedComments] quand ce retour est exporté ([markExported]).
+  Set<String> _returnedComments = const {};
+
+  /// Commentaires de l'intervention contenus dans un paquet de retour exporté : figés ([canEditComment]). Remis à
+  /// zéro au chargement d'un paquet, comme l'intervention. L'intervention en cours et cet ensemble devront être
+  /// conservés avec le dépôt persistant prévu sur Android (aujourd'hui en mémoire, comme les données du web).
+  final _exportedComments = <String>{};
 
   bool get isOpen => repo.isOpen;
   Map<String, dynamic>? get header => repo.header;
@@ -79,6 +130,10 @@ class AppProvider extends ChangeNotifier {
       await repo.load(Bundle.read(zip));
       _intervention = null;
       _start = null;
+      _returnedComments = const {};
+      _exportedComments.clear();
+      selectedSupport = null;
+      _locateTarget = null;
       nbChanged = 0;
       _exported = false;
       warnBeforeLeaving(toExport);
@@ -105,6 +160,9 @@ class AppProvider extends ChangeNotifier {
     googleKey = await r.read(Settings.googleKey) ?? '';
     cancelStaleTiles = await r.read(Settings.cancelStaleTiles) == 'oui';
     useLocalPhotoServer = await r.read(Settings.useLocalPhotoServer) == 'oui';
+    animateLocate = await r.read(Settings.animateLocate) != 'non';
+    final radius = double.tryParse(await r.read(Settings.locateRadius) ?? '');
+    locateRadius = radius != null && radius > 0 ? radius : defaultLocateRadius;
     final language = await r.read(Settings.language);
     if (language != null && language != Lng.language) {
       await Lng.load(language);
@@ -129,6 +187,18 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setAnimateLocate(bool animated) {
+    animateLocate = animated;
+    settings?.write(Settings.animateLocate, animated ? null : 'non');
+    notifyListeners();
+  }
+
+  void setLocateRadius(double meters) {
+    locateRadius = meters;
+    settings?.write(Settings.locateRadius, meters == defaultLocateRadius ? null : '${meters.round()}');
+    notifyListeners();
+  }
+
   void setCancelStaleTiles(bool active) {
     cancelStaleTiles = active;
     settings?.write(Settings.cancelStaleTiles, active ? 'oui' : null);
@@ -141,10 +211,30 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// À appeler après toute écriture dans le dépôt (l'intervention commence à la première).
-  Future<void> afterWrite() async {
+  void _begin() {
     _intervention ??= const Uuid().v4();
     _start ??= Bundle.timestamp();
+  }
+
+  /// Intervention en cours (`INT_CODE_EXT`), commencée à la première écriture ou au premier commentaire.
+  String get intervention {
+    _begin();
+    return _intervention!;
+  }
+
+  /// Règle du journal : un commentaire ne se modifie ou ne se retire que par son auteur, pendant l'intervention qui
+  /// l'a saisi et tant qu'aucun paquet de retour exporté ne le contient ; ensuite il est figé. Ceux des autres
+  /// auteurs et ceux venus du BE sont en lecture seule. Les commentaires exportés sont retenus par leur code
+  /// ([_exportedComments]), pas par leur date de saisie, qu'un recalage de l'horloge du terminal fausserait.
+  bool canEditComment(Map<String, dynamic> c) =>
+      _intervention != null &&
+      c['INT_CODE_EXT'] == _intervention &&
+      c['COM_AUTEUR'] == author &&
+      !_exportedComments.contains(c['COM_CODE_EXT']);
+
+  /// À appeler après toute écriture dans le dépôt (l'intervention commence à la première).
+  Future<void> afterWrite() async {
+    _begin();
     nbChanged = (await repo.modifies()).length;
     _exported = false;
     warnBeforeLeaving(toExport);
@@ -152,9 +242,10 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// À appeler une fois le paquet de retour enregistré.
+  /// À appeler une fois le paquet de retour enregistré : les commentaires qu'il contient sont figés.
   void markExported() {
     _exported = true;
+    _exportedComments.addAll(_returnedComments);
     warnBeforeLeaving(toExport);
     notifyListeners();
   }
@@ -181,6 +272,13 @@ class AppProvider extends ChangeNotifier {
         if (o.props.containsKey('pot') || o.namespace('inf')?['portee'] != null) 'RELEVE_POT',
         if (o.props.containsKey('chb') || o.namespace('inf')?['conduites'] != null) 'RELEVE_CHB',
       ],
+    };
+    // commentaires de l'intervention contenus dans ce retour : figés s'il est exporté
+    _returnedComments = {
+      if (_intervention != null)
+        for (final o in objects)
+          for (final c in o.comments)
+            if (c['INT_CODE_EXT'] == _intervention && c['COM_CODE_EXT'] is String) c['COM_CODE_EXT'] as String,
     };
     final date = Bundle.timestamp();
     final intervention = {

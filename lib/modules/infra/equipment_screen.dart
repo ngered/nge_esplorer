@@ -64,7 +64,10 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
     return EntryScreen(
       changed: _changed,
       child: Scaffold(
-        appBar: AppBar(title: ScreenTitle(_o.lib ?? tr('Sans étiquette'), tr('équipements'))),
+        appBar: AppBar(
+          title: ScreenTitle(_o.lib ?? tr('Sans étiquette'), tr('équipements')),
+          actions: [SupportMenu(object: _o, previous: _previous)],
+        ),
         bottomNavigationBar: SupportBar(object: _o, inEquipment: true, previous: _previous, next: _next),
         floatingActionButton: saveButton(visible: _changed, onPressed: _save),
         body: ListView(
@@ -76,7 +79,6 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
               author: app.author,
               newIds: _newEquipment,
               onChanged: () => setState(() => _changed = true),
-              fibreLinks: true,
             ),
           ],
         ),

@@ -79,6 +79,8 @@ flutter:
     - assets/fibready/noe/
     # catalogues de traduction de l'interface (lib/lng.dart, tools/lang/lng_extract.dart)
     - assets/lang/
+    # icônes dessinées pour NgeEsPlorer (lib/widgets/svg_icon.dart)
+    - assets/icons/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

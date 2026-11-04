@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:ui' show Color;
 
 import 'package:latlong2/latlong.dart';
+import 'package:uuid/uuid.dart';
 
 import '../lng.dart';
+import 'bundle.dart';
 
 /// Classe d'un objet du paquet : nœud (Point), linéaire (LineString) ou adresse (Point).
 enum ObjectClass {
@@ -17,11 +20,28 @@ enum ObjectClass {
       values.firstWhere((c) => c.code == code, orElse: () => throw FormatException(tr('classe inconnue : {0}', [code])));
 }
 
+/// Type d'un commentaire (`COM_TYPE`, repris de la table COMMENTS de FibReady) : code, libellé, couleur de la
+/// pastille. L'ordre est celui de la gravité, de l'alerte au bon point ; Standard par défaut.
+enum CommentType {
+  alert('alert', 'Alerte', Color(0xFFE53935)), // tr
+  minor('minor', 'Mineur', Color(0xFFFB8C00)), // tr
+  standard('standard', 'Standard', Color(0xFF4FC3F7)), // tr
+  great('great', 'Bon point', Color(0xFF43A047)); // tr
+
+  const CommentType(this.code, this.lib, this.color);
+  final String code;
+  final String lib;
+  final Color color;
+
+  /// Type du commentaire [c] ; un code absent ou inconnu vaut Standard.
+  static CommentType of(Map<String, dynamic> c) => values.firstWhere((t) => t.code == c['COM_TYPE'], orElse: () => standard);
+}
+
 /// Objet GeoJSON du paquet (docs/paquet.md) : l'unité de stockage, de modification et de conflit.
 ///
 /// Les propriétés restent sous forme de carte JSON : colonnes BE en majuscules, structure du format en
-/// minuscules (`classe`, `statut`, `pot`, `chb`, `inf`, `fichiers`…). Les écrans des modules les lisent et les
-/// écrivent par des accesseurs dédiés.
+/// minuscules (`classe`, `statut`, `pot`, `chb`, `inf`, `fichiers`, `commentaires`…). Les écrans des modules les
+/// lisent et les écrivent par des accesseurs dédiés.
 class GeoObject {
   GeoObject({required this.id, required this.objectClass, this.geometry, Map<String, dynamic>? props})
       : props = props ?? {'classe': objectClass.code};
@@ -72,6 +92,67 @@ class GeoObject {
     } else {
       m[key] = value;
     }
+  }
+
+  // -- commentaires ----------------------------------------------------------------------------
+  // Journal daté et signé de l'objet (`commentaires`, PRJ_COMMENTAIRE). Seul un commentaire saisi pendant
+  // l'intervention en cours et pas encore exporté se modifie ou se retire (règle tenue par AppProvider) : retiré, il
+  // disparaît, n'ayant jamais quitté le terminal. Au BE, un commentaire se retire par abandon (`DATE_ABD`).
+
+  /// Liste des commentaires, normalisée une fois (mêmes cartes d'un appel à l'autre).
+  List<Map<String, dynamic>> get _commentList {
+    final l = props['commentaires'];
+    if (l is List<Map<String, dynamic>>) return l;
+    final res = [for (final c in (l as List?) ?? const []) Map<String, dynamic>.from(c as Map)];
+    if (l != null) props['commentaires'] = res;
+    return res;
+  }
+
+  /// Commentaires du plus ancien au plus récent (`DATE_CREA`, puis ordre du paquet), abandonnés exclus.
+  List<Map<String, dynamic>> get comments {
+    final l = _commentList;
+    return [
+      for (final c in l)
+        if (c['DATE_ABD'] == null) c,
+    ]..sort((a, b) {
+        final d = '${a['DATE_CREA'] ?? ''}'.compareTo('${b['DATE_CREA'] ?? ''}');
+        return d != 0 ? d : l.indexOf(a).compareTo(l.indexOf(b));
+      });
+  }
+
+  /// Ajoute un commentaire signé de [author], saisi pendant l'intervention [intervention] (`INT_CODE_EXT`).
+  Map<String, dynamic> addComment({
+    required String text,
+    required String author,
+    required String intervention,
+    CommentType type = CommentType.standard,
+  }) {
+    final c = <String, dynamic>{
+      'COM_CODE_EXT': const Uuid().v4(),
+      'COM_TYPE': type.code,
+      'COM_TEXTE': text.trim(),
+      'COM_AUTEUR': author,
+      'INT_CODE_EXT': intervention,
+      'DATE_CREA': Bundle.timestamp(),
+    };
+    props['commentaires'] = [..._commentList, c];
+    return c;
+  }
+
+  /// Modifie le texte et le type du commentaire [c] ; pose la date et l'auteur de la modification.
+  void editComment(Map<String, dynamic> c, {required String text, required CommentType type, required String author}) {
+    c['COM_TEXTE'] = text.trim();
+    c['COM_TYPE'] = type.code;
+    c['DATE_MODIF'] = Bundle.timestamp();
+    c['SRC_MODIF'] = author;
+  }
+
+  /// Retire le commentaire [c] (la clé `commentaires` part avec le dernier).
+  void removeComment(Map<String, dynamic> c) {
+    final l = _commentList;
+    final i = l.indexWhere((e) => e['COM_CODE_EXT'] == c['COM_CODE_EXT']);
+    if (i >= 0) l.removeAt(i);
+    if (l.isEmpty) props.remove('commentaires');
   }
 
   // -- géométrie -------------------------------------------------------------------------------

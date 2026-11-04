@@ -1,6 +1,7 @@
 -- Domaine poteau : poteau (métier porté par un nœud) et contrôles. Les portées et les câbles portés relèvent
 -- du domaine infra (INF_PORTEE, INF_PORTEE_CABLE). Fichier attaché au noyau sous le nom « poteau ».
--- Références vers le noyau et l'infra : voir manifest.json.
+-- Références vers le noyau et l'infra : voir manifest.json. Commentaires du poteau : journal du noyau
+-- (PRJ_COMMENTAIRE), rattaché au nœud.
 
 CREATE TABLE DEF_POT_NAT (              -- FOA DEF_POT_NAT : nature (bois, métal…)
     NAT_ID          INTEGER PRIMARY KEY,
@@ -58,7 +59,6 @@ CREATE TABLE POT_POTEAU (
     POT_ANG_CARTO   REAL,               -- axe du poteau (azimut en grades), pour son symbole
     POT_GESPOT_MAJ  INTEGER CHECK (POT_GESPOT_MAJ IN (0, 1)),
     POT_NIVEAU      INTEGER NOT NULL DEFAULT 0 CHECK (POT_NIVEAU IN (0, 1, 2)),
-    POT_COMMENT     TEXT,
     DATE_CREA       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     DATE_MODIF      TEXT,
     SRC_MODIF       TEXT,

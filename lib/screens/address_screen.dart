@@ -10,6 +10,7 @@ import '../providers/app_provider.dart';
 import '../theme.dart';
 import '../widgets/fields.dart';
 import '../widgets/screen_title.dart';
+import '../widgets/messages.dart';
 
 /// Adresse choisie : celle du paquet (copie, éventuellement modifiée), une nouvelle, ou aucune (détachée).
 typedef AddressChoice = ({GeoObject? address});
@@ -130,8 +131,7 @@ class _AddressScreenState extends State<AddressScreen> {
 
   void _message(String text) =>
       ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(text)));
+        .replaceSnackBar(SnackBar(content: Text(text)));
 
   Future<void> _detect() async {
     final p = widget.node.point;
@@ -263,7 +263,7 @@ class _AddressScreenState extends State<AddressScreen> {
             icon: _busy
                 ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.my_location),
-            label: Text(tr('Détecter l\'adresse à la position du support')),
+            label: Text(tr('Détection automatique')),
           ),
         ),
         Section(title: tr('Sélection'), spacing: 12, children: [

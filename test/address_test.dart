@@ -173,7 +173,7 @@ void main() {
     }
 
     Future<void> detect(WidgetTester t) async {
-      await t.tap(find.text('Détecter l\'adresse à la position du support'));
+      await t.tap(find.text('Détection automatique'));
       await t.pumpAndSettle();
     }
 

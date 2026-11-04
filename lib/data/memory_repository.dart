@@ -111,6 +111,12 @@ class MemoryRepository implements DataRepository {
       o.props['SRC_ABD'] = author;
       // un objet créé puis abandonné avant tout retour n'a pas à remonter au BE
       o.props['statut'] = existing?.status == 'C' ? 'C' : 'A';
+    } else if (existing != null && existing.abandoned) {
+      // un objet abandonné le reste, même réécrit depuis une copie qui ne le savait pas : le retour le déclare
+      // abandonné, pas modifié
+      o.props['DATE_ABD'] = existing.props['DATE_ABD'];
+      GeoObject.put(o.props, 'SRC_ABD', existing.props['SRC_ABD']);
+      o.props['statut'] = existing.status;
     } else {
       o.props['statut'] = existing == null || existing.status == 'C' ? 'C' : 'M';
     }

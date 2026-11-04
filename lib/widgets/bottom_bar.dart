@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'svg_icon.dart';
 
 /// Barre basse des écrans (maquette Figma) : bande bleue, entrées icône et libellé, entrée de l'écran courant en
 /// jaune. Ce sont des actions, pas des onglets : chaque entrée ouvre un écran ou un panneau.
@@ -16,7 +17,11 @@ class BottomBar extends StatelessWidget {
           top: false,
           child: SizedBox(
             height: 72,
-            child: Row(children: [for (final e in items) Expanded(child: e)]),
+            // libellés agrandis avec la taille du texte, dans la limite de la barre (débordait à 200 %)
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.5,
+              child: Row(children: [for (final e in items) Expanded(child: e)]),
+            ),
           ),
         ),
       );
@@ -25,14 +30,18 @@ class BottomBar extends StatelessWidget {
 class BarItem extends StatelessWidget {
   const BarItem({
     super.key,
-    required this.icon,
+    this.icon,
+    this.svg,
     required this.label,
     this.onPressed,
     this.active = false,
     this.badge,
-  });
+  }) : assert((icon == null) != (svg == null), 'une icône Material ou un dessin SVG');
 
-  final IconData icon;
+  final IconData? icon;
+
+  /// Icône dessinée (assets/icons, voir [SvgIcon]) à la place d'une icône Material.
+  final String? svg;
   final String label;
 
   /// Absent : entrée grisée.
@@ -65,9 +74,10 @@ class BarItem extends StatelessWidget {
               Badge(
                 isLabelVisible: n > 0,
                 label: Text('$n'),
-                backgroundColor: Nge.yellow,
-                textColor: Nge.slateDark,
-                child: Icon(icon, size: 26, color: color),
+                // inversée sur l'entrée active, jaune elle aussi
+                backgroundColor: active ? Nge.slateDark : Nge.yellow,
+                textColor: active ? Nge.yellow : Nge.slateDark,
+                child: icon != null ? Icon(icon, size: 26, color: color) : SvgIcon(svg!, size: 26, color: color),
               ),
               const SizedBox(height: 4),
               Text(

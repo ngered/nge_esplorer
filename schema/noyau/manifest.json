@@ -1,7 +1,7 @@
 {
   "code": "noyau",
-  "version": "0.1.0",
-  "libelle": "Noyau : projet, référentiels communs, nœuds, linéaires, interventions, fichiers",
+  "version": "0.2.0",
+  "libelle": "Noyau : projet, référentiels communs, nœuds, linéaires, interventions, fichiers, commentaires",
   "fichier": "noyau.sqlite",
   "spatial": true,
   "dependances": [],
@@ -9,7 +9,8 @@
   "scripts": ["schema.sql", "referentiels.sql"],
   "tables": ["SYS_PROJET", "SYS_MODULE", "DEF_ENTITE", "DEF_TYPE", "DEF_AVANCEMENT", "DEF_IMPLANTATION",
              "DEF_GEOL_CLASSE", "DEF_GEOL_MODE", "DEF_ORGANISME", "DEF_FABRICANT", "DEF_VUE", "PRJ_ZONE",
-             "PRJ_ADRESSE", "PRJ_NOE", "PRJ_LINEAIRE", "PRJ_INTERVENTION", "PRJ_INT_OBJET", "PRJ_FICHIER"],
+             "PRJ_ADRESSE", "PRJ_NOE", "PRJ_LINEAIRE", "PRJ_INTERVENTION", "PRJ_INT_OBJET", "PRJ_FICHIER",
+             "PRJ_COMMENTAIRE"],
   "referentiels_foa": [
     {"cible": "DEF_FABRICANT", "source": "DEF_FABRICANTS", "colonnes": {"FAB_ID": "FAB_ID", "FAB_LIB": "FAB_NAME"}}
   ],

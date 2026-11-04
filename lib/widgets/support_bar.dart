@@ -1,23 +1,54 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/geo_object.dart';
 import '../lng.dart';
+import '../modules/chambre/mask_editor.dart';
 import '../modules/chambre/mask_overview_screen.dart';
+import '../modules/chambre/mask_screen.dart';
 import '../modules/infra/equipment_screen.dart';
+import '../modules/poteau/rosette_editor.dart';
 import '../modules/poteau/rosette_screen.dart';
 import '../providers/app_provider.dart';
+import '../screens/object_screen.dart';
 import '../screens/visuals_screen.dart';
 import 'bottom_bar.dart';
+import 'messages.dart';
+import 'svg_icon.dart';
 import 'back_to_map.dart';
 
-/// Écrans d'un support et leur pile : les visuels (arrivée, route `support:<id>`), puis un onglet à la fois
-/// (saisie, portées ou masques, équipements : route `onglet:<id>:<onglet>`), et ses écrans propres (grille d'une
-/// face, galerie). Passer d'un onglet à l'autre remplace l'onglet au lieu de l'empiler : le retour ramène aux
-/// visuels, puis à la carte.
+/// Écrans d'un support et leur pile : les visuels (arrivée par « Ouvrir » de la carte, route `support:<id>`), puis
+/// un onglet à la fois (saisie, portées ou masques, équipements : route `onglet:<id>:<onglet>`), et ses écrans
+/// propres (grille d'une face, galerie). Passer d'un onglet à l'autre remplace l'onglet au lieu de l'empiler : le
+/// retour ramène aux visuels s'ils sont dessous, puis à la carte. Un seul support est ouvert à la fois : suivre un
+/// parcours ([follow]) ou rouvrir un support quitté (menu ⋮, [SupportMenu]) remplace le support affiché ([openAt])
+/// par son écran d'arrivée, directement au-dessus de la carte (comme « Portées » de l'aperçu de la carte).
 String supportRoute(GeoObject o) => 'support:${o.id}';
 
 String tabRoute(GeoObject o, String tab) => 'onglet:${o.id}:$tab';
+
+/// Route des visuels de [o] ; l'objet en argument (intitulé des supports quittés, menu ⋮).
+RouteSettings supportSettings(GeoObject o) => RouteSettings(name: supportRoute(o), arguments: o);
+
+/// Route de l'onglet [tab] de [o] (`masques:<face>` : la grille d'une face).
+RouteSettings tabSettings(GeoObject o, String tab) => RouteSettings(name: tabRoute(o, tab), arguments: o);
+
+/// Écrans de [o] en haut de la pile (ses visuels, ses onglets et leurs écrans propres, sans nom) : rang de ses
+/// visuels et de son premier onglet, -1 si absents.
+(int, int) _top(GeoObject o) {
+  final stack = screenStack.stack;
+  var firstTab = -1;
+  for (var i = stack.length - 1; i >= 0; i--) {
+    final name = stack[i].settings.name;
+    if (name == supportRoute(o)) return (i, firstTab);
+    if (name == null) continue;
+    if (!name.startsWith('onglet:${o.id}:')) break;
+    firstTab = i;
+  }
+  return (-1, firstTab);
+}
 
 /// Ouvre l'onglet [tab] de [o] sur l'objet relu dans le dépôt : les écrans au-dessus des visuels du support sont
 /// fermés comme par autant de retours arrière (une saisie non enregistrée pose sa question ; si l'on y reste,
@@ -27,12 +58,245 @@ Future<void> openTab(BuildContext context, GeoObject o, String tab, Widget Funct
   final fresh = await context.read<AppProvider>().repo.object(o.id) ?? o;
   // saisie enregistrée juste avant (previous) : l'écran ne demande plus confirmation
   await WidgetsBinding.instance.endOfFrame;
-  final stack = screenStack.stack;
-  final firstTab = stack.indexWhere((r) => r.settings.name?.startsWith('onglet:${o.id}:') ?? false);
-  final base = stack.lastIndexWhere((r) => r.settings.name == supportRoute(o));
-  final keep = firstTab >= 0 ? firstTab : (base >= 0 ? base + 1 : stack.length);
-  if (!await popTo(nav, keep)) return;
-  await nav.push(MaterialPageRoute(settings: RouteSettings(name: tabRoute(o, tab)), builder: (_) => builder(fresh)));
+  final (visuals, firstTab) = _top(o);
+  final keep = firstTab >= 0 ? firstTab : (visuals >= 0 ? visuals + 1 : screenStack.stack.length);
+  Future<void>? opened;
+  screenStack.hold();
+  try {
+    if (await popTo(nav, keep)) {
+      opened = nav.push(MaterialPageRoute(settings: tabSettings(fresh, tab), builder: (_) => builder(fresh)));
+    }
+  } finally {
+    screenStack.release();
+  }
+  if (opened != null) await opened;
+}
+
+/// Revient aux visuels de [o] (« Visuels du support » du menu ⋮) : s'ils sont sous ses onglets, en fermant ceux-ci comme
+/// autant de retours arrière ; sinon (support ouvert sur un onglet), à la place de ses onglets.
+Future<void> openVisuals(BuildContext context, GeoObject o) async {
+  final nav = Navigator.of(context);
+  final fresh = await context.read<AppProvider>().repo.object(o.id) ?? o;
+  // saisie enregistrée juste avant (previous) : l'écran ne demande plus confirmation
+  await WidgetsBinding.instance.endOfFrame;
+  final (visuals, firstTab) = _top(o);
+  screenStack.hold();
+  try {
+    if (visuals >= 0) {
+      await popTo(nav, visuals + 1);
+    } else if (firstTab < 0 || await popTo(nav, firstTab)) {
+      unawaited(nav.push(MaterialPageRoute(settings: supportSettings(fresh), builder: (_) => VisualsScreen(object: fresh))));
+    }
+  } finally {
+    screenStack.release();
+  }
+}
+
+/// Écran d'arrivée sur un support : l'onglet (son nom de route) et son écran ; écran null : les visuels.
+typedef Arrival = (String tab, Widget? screen);
+
+/// Ouvre [o], relu dans le dépôt, à la place du support affiché : celui-ci est fermé comme par autant de retours
+/// arrière jusqu'à la carte (une saisie non enregistrée pose sa question ; si l'on y reste, rien ne change, et le
+/// résultat est faux), puis l'écran d'[arrival] s'ouvre au-dessus de la carte. Un seul support est ainsi ouvert à la
+/// fois, sans pile de supports dont les copies vieilliraient : le retour ramène à la carte (aux visuels d'abord s'ils
+/// sont l'arrivée), le menu ⋮ rouvre les supports quittés.
+Future<bool> openAt(BuildContext context, GeoObject o, Arrival Function(GeoObject fresh) arrival) async {
+  final nav = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final fresh = await context.read<AppProvider>().repo.object(o.id) ?? o;
+  // un support supprimé ne s'ouvre plus : une écriture l'aurait déclaré modifié au retour
+  if (fresh.abandoned) {
+    messenger.replaceSnackBar(SnackBar(content: Text(tr('{0} a été supprimé', [fresh.lib ?? tr('Le support')]))));
+    return false;
+  }
+  // saisie enregistrée juste avant : l'écran ne demande plus confirmation
+  await WidgetsBinding.instance.endOfFrame;
+  screenStack.hold();
+  try {
+    if (!await popTo(nav, 1)) return false;
+    final (tab, screen) = arrival(fresh);
+    unawaited(nav.push(MaterialPageRoute(
+      settings: screen == null ? supportSettings(fresh) : tabSettings(fresh, tab),
+      builder: (_) => screen ?? VisualsScreen(object: fresh),
+    )));
+    return true;
+  } finally {
+    screenStack.release();
+  }
+}
+
+/// Écran de l'onglet [tab] de [o] ('support' : null, ses visuels), [selection] choisie (alvéole d'une grille,
+/// parcours de l'aperçu des masques, portée ou autre parcours de la rosace) : réouverture d'un support quitté.
+Widget? tabScreen(GeoObject o, String tab, [String? selection]) {
+  if (tab.startsWith('masques:')) {
+    final face = tab.substring('masques:'.length);
+    return MaskScreen(chamber: o, face: chamberFaces.contains(face) ? face : null, selection: selection);
+  }
+  return switch (tab) {
+    'saisie' => ObjectScreen(object: o, linear: selection),
+    'portees' when o.point != null => RosetteScreen(pole: o, span: selection, linear: selection),
+    'masques' => MaskOverviewScreen(chamber: o, linear: selection),
+    'equipements' => EquipmentScreen(object: o),
+    _ => null,
+  };
+}
+
+/// Suit le linéaire [linear] jusqu'au support [other], qui remplace le support affiché ([openAt]) : pour un poteau,
+/// ses portées, la portée commune ouverte, ou depuis un écran des parcours ([route]) l'autre parcours sélectionné,
+/// avec son carton « Naviguer vers » du retour ; pour une chambre, depuis une alvéole ([cd]), directement la grille
+/// de la face où le parcours arrive, sur l'alvéole de la même conduite si elle y est placée, sinon son aperçu des
+/// masques, le parcours sélectionné avec son carton ; pour un autre support, depuis un écran des parcours, sa
+/// saisie (liste des portées et parcours), le linéaire sélectionné avec son carton, sinon ses visuels. L'écran de
+/// départ doit avoir enregistré sa saisie.
+Future<void> follow(BuildContext context, GeoObject linear, GeoObject other, {String? cd, bool route = false}) async {
+  final ref = context.read<AppProvider>().referenceData;
+  await openAt(context, other, (o) {
+    switch (ref.familyCode(o.typeKey)) {
+      case 'POT' when o.point != null:
+        return (
+          'portees',
+          RosetteScreen(
+            pole: o,
+            span: isSpan(linear) ? linear.id : null,
+            linear: route && !isSpan(linear) ? linear.id : null,
+          ),
+        );
+      case 'CHB' when cd != null:
+        final a = MaskEditor.arrival(o, linear, cd: cd);
+        final face = a?.face ?? MaskEditor.firstFace(o);
+        return ('masques:$face', MaskScreen(chamber: o, face: face, selection: a?.cd));
+      case 'CHB':
+        return ('masques', MaskOverviewScreen(chamber: o, linear: linear.id));
+      default:
+        return route ? ('saisie', ObjectScreen(object: o, linear: linear.id)) : ('support', null);
+    }
+  });
+}
+
+/// Intitulé de l'écran [tab] d'un support (menu ⋮).
+String tabLabel(String tab) {
+  if (tab.startsWith('masques:')) {
+    final face = tab.substring('masques:'.length);
+    return chamberFaces.contains(face) ? tr('masque {0}', [face]) : tr('masques');
+  }
+  return switch (tab) {
+    'saisie' => tr('saisie du support'),
+    'portees' => tr('portées'),
+    'masques' => tr('masques'),
+    'equipements' => tr('équipements'),
+    _ => tr('visuels'),
+  };
+}
+
+/// Action propre à un écran dans son menu ⋮ ([SupportMenu]).
+typedef MenuAction = ({IconData icon, String label, VoidCallback onSelected});
+
+/// Supports quittés proposés par le menu ⋮.
+const maxMenuVisits = 5;
+
+/// Menu ⋮ des écrans d'un support, seul bouton de leur barre de titre (notes rep8 : il remplace les pictos) : actions
+/// propres à l'écran ([actions]), les écrans du support ([visuals] : ses visuels, [entry] : sa saisie générale, sauf
+/// sur ces écrans eux-mêmes), puis les supports quittés récemment, du plus récent au plus ancien (le premier :
+/// « Revenir à … »), chacun rouvert à la place du support affiché sur l'écran où on l'a laissé (face, alvéole,
+/// parcours ou portée choisis), et « Repérer sur la carte » (retour à la carte, qui vole jusqu'au support).
+/// [previous] : avant de quitter l'écran (enregistrer la saisie en cours), faux pour y rester ; sinon, une saisie
+/// non enregistrée pose sa question habituelle.
+class SupportMenu extends StatelessWidget {
+  const SupportMenu({
+    super.key,
+    required this.object,
+    this.actions = const [],
+    this.previous,
+    this.visuals = true,
+    this.entry = true,
+  });
+
+  final GeoObject object;
+  final List<MenuAction> actions;
+  final Future<bool> Function()? previous;
+  final bool visuals;
+  final bool entry;
+
+  Future<bool> _leave(BuildContext context) async =>
+      (previous == null || await previous!()) && context.mounted;
+
+  Future<void> _visuals(BuildContext context) async {
+    if (await _leave(context) && context.mounted) await openVisuals(context, object);
+  }
+
+  Future<void> _entry(BuildContext context) async {
+    if (await _leave(context) && context.mounted) {
+      await openTab(context, object, 'saisie', (o) => ObjectScreen(object: o));
+    }
+  }
+
+  Future<void> _reopen(BuildContext context, SupportScreen v) async {
+    if (!await _leave(context) || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final o = await context.read<AppProvider>().repo.object(v.id);
+    if (!context.mounted) return;
+    if (o == null) {
+      messenger.replaceSnackBar(SnackBar(content: Text(tr('Support absent du paquet'))));
+      return;
+    }
+    await openAt(context, o, (o) => (v.tab, tabScreen(o, v.tab, v.selection)));
+  }
+
+  /// Retour à la carte, qui repère le support ; demande retirée si l'on reste sur un écran (saisie non enregistrée).
+  Future<void> _locate(BuildContext context) async {
+    if (!await _leave(context) || !context.mounted) return;
+    final app = context.read<AppProvider>()..locate(object.id);
+    if (!await backToMap(context)) app.cancelLocate();
+  }
+
+  static Widget _item(IconData icon, String title, [String? subtitle]) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon),
+        title: Text(title),
+        subtitle: subtitle == null ? null : Text(subtitle),
+      );
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<VoidCallback>(
+        tooltip: tr('Plus d\'actions'),
+        icon: const Icon(Icons.more_vert),
+        onSelected: (action) => action(),
+        itemBuilder: (menuContext) {
+          final visits = [
+            for (final v in screenStack.visits)
+              if (v.id != object.id && !(v.object?.abandoned ?? false)) v,
+          ].take(maxMenuVisits).toList();
+          return [
+            for (final a in actions) PopupMenuItem(value: a.onSelected, child: _item(a.icon, a.label)),
+            if (visuals)
+              PopupMenuItem<VoidCallback>(
+                value: () => _visuals(context),
+                child: _item(Icons.photo_library_outlined, tr('Visuels du support')),
+              ),
+            if (entry)
+              PopupMenuItem<VoidCallback>(
+                value: () => _entry(context),
+                child: _item(Icons.edit_outlined, tr('Saisie du support')),
+              ),
+            if (actions.isNotEmpty || visuals || entry) const PopupMenuDivider(),
+            for (final (i, v) in visits.indexed)
+              PopupMenuItem<VoidCallback>(
+                value: () => _reopen(context, v),
+                child: _item(
+                  i == 0 ? Icons.undo : Icons.history,
+                  i == 0 ? tr('Revenir à {0}', [v.object?.lib ?? tr('Sans étiquette')]) : v.object?.lib ?? tr('Sans étiquette'),
+                  tabLabel(v.tab),
+                ),
+              ),
+            if (visits.isNotEmpty) const PopupMenuDivider(),
+            PopupMenuItem<VoidCallback>(
+              value: () => _locate(context),
+              enabled: object.point != null,
+              child: _item(Icons.my_location, tr('Repérer sur la carte')),
+            ),
+          ];
+        },
+      );
 }
 
 /// Barre basse commune des écrans d'un support : module (Portées du poteau, aperçu des Masques de la chambre),
@@ -98,7 +362,7 @@ class SupportBar extends StatelessWidget {
           onPressed: _tab(context, 'masques', (o) => MaskOverviewScreen(chamber: o)),
         ),
       BarItem(
-        icon: Icons.inventory_2_outlined,
+        svg: SvgIcon.equipment,
         label: tr('Équipements'),
         active: inEquipment,
         badge: ((object.namespace('inf')?['equipements'] as List?) ?? const [])

@@ -7,11 +7,13 @@ import '../../data/reference_data.dart';
 import '../../lng.dart';
 import '../../theme.dart';
 import '../../widgets/fields.dart';
+import '../../widgets/messages.dart';
+import '../../widgets/svg_icon.dart';
 
 /// Équipements d'un support (espace `inf.equipements` du nœud : INF_EQUIPEMENT, catalogue MAT_EQUIP) : boîtes,
 /// manchons… Retirer un équipement venu du dépôt l'abandonne (`DATE_ABD`) ; un équipement ajouté pendant la saisie
-/// ([newIds]) disparaît. Dans l'écran des équipements ([fibreLinks]), une boîte d'épissure (capacité d'épissures au
-/// catalogue) propose ses liens fibres.
+/// ([newIds]) disparaît. Une boîte d'épissure (capacité d'épissures au catalogue) propose ses liens fibres.
+/// Affiché par l'écran des équipements (onglet de la barre basse), seul endroit où on les modifie.
 class SupportEquipment extends StatelessWidget {
   const SupportEquipment({
     super.key,
@@ -20,8 +22,6 @@ class SupportEquipment extends StatelessWidget {
     required this.author,
     required this.newIds,
     required this.onChanged,
-    this.expanded,
-    this.fibreLinks = false,
   });
 
   final GeoObject node;
@@ -31,10 +31,6 @@ class SupportEquipment extends StatelessWidget {
   /// `EQU_CODE_EXT` des équipements ajoutés pendant la saisie (tenu par l'écran).
   final Set<String> newIds;
   final VoidCallback onChanged;
-
-  /// Carte dépliable (voir [Section.expanded]).
-  final bool? expanded;
-  final bool fibreLinks;
 
   static bool isSpliceBox(Map<String, dynamic>? mat) => ((mat?['MAT_CAPAEPIS'] as num?) ?? 0) > 0;
 
@@ -81,7 +77,7 @@ class SupportEquipment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final presents = _list.where((e) => e['DATE_ABD'] == null).toList();
-    return Section(title: tr('Équipements'), expanded: expanded, children: [
+    return Section(title: tr('Équipements'), children: [
       if (presents.isEmpty) Text(tr('Aucun équipement'), style: Theme.of(context).textTheme.bodySmall),
       for (final e in presents)
         Builder(builder: (context) {
@@ -89,17 +85,16 @@ class SupportEquipment extends StatelessWidget {
           return ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.inventory_2_outlined),
+            leading: const SvgIcon(SvgIcon.equipment),
             title: Text(m == null ? tr('Matériel {0}', [e['MAT_KEY'] ?? tr('inconnu')]) : label(m)),
             subtitle: (e['EQU_QTE'] as int? ?? 1) > 1 ? Text(tr('Quantité : {0}', [e['EQU_QTE']])) : null,
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (fibreLinks && isSpliceBox(m))
+              if (isSpliceBox(m))
                 IconButton(
                   tooltip: tr('Liens fibres'),
                   icon: const Icon(Icons.cable_outlined),
                   onPressed: () => ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(SnackBar(content: Text(tr('Liens fibres de la boîte : à venir')))),
+                    .replaceSnackBar(SnackBar(content: Text(tr('Liens fibres de la boîte : à venir')))),
                 ),
               IconButton(
                 tooltip: tr('Retirer l\'équipement'),

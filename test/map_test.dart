@@ -1,0 +1,451 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:nge_esplorer/data/bundle.dart';
+import 'package:nge_esplorer/data/geo_object.dart';
+import 'package:nge_esplorer/data/memory_repository.dart';
+import 'package:nge_esplorer/data/reference_data.dart';
+import 'package:nge_esplorer/map/flight.dart';
+import 'package:nge_esplorer/modules/chambre/mask_screen.dart';
+import 'package:nge_esplorer/providers/app_provider.dart';
+import 'package:nge_esplorer/screens/map_screen.dart';
+import 'package:nge_esplorer/theme.dart';
+import 'package:nge_esplorer/widgets/back_to_map.dart';
+import 'package:provider/provider.dart';
+
+/// Paquet d'essai (Heillecourt : fond Plan IGN) : une chambre et un poteau ; [linked] : reliés par un parcours
+/// souterrain.
+Bundle bundle({bool linked = false}) => Bundle(
+      header: {
+        'format': Bundle.format,
+        'version': Bundle.version,
+        'date': '2026-11-04T08:00:00Z',
+        'projet': {'code': 'TEST'},
+        'zone': {'code': 'Z1', 'lib': 'Zone 1', 'emprise': [6.190, 48.650, 6.194, 48.652]},
+        'modules': {'noyau': '0.2.0'},
+      },
+      objects: [
+        GeoObject.fromFeature({
+          'type': 'Feature',
+          'id': 'C1',
+          'geometry': {'type': 'Point', 'coordinates': [6.191, 48.651]},
+          'properties': {'classe': 'NOE', 'NOE_LIB': '5011', 'TYPE_KEY': 16},
+        }),
+        GeoObject.fromFeature({
+          'type': 'Feature',
+          'id': 'P1',
+          'geometry': {'type': 'Point', 'coordinates': [6.193, 48.651]},
+          'properties': {'classe': 'NOE', 'NOE_LIB': 'P922', 'TYPE_KEY': 14},
+        }),
+        if (linked)
+          GeoObject.fromFeature({
+            'type': 'Feature',
+            'id': 'L1',
+            'geometry': {
+              'type': 'LineString',
+              'coordinates': [
+                [6.191, 48.651],
+                [6.193, 48.651],
+              ],
+            },
+            'properties': {'classe': 'LIN', 'TYPE_KEY': 1001, 'NOE1_KEY': 'C1', 'NOE2_KEY': 'P1'},
+          }),
+      ],
+      referenceData: ReferenceData({
+        'noyau': {
+          'DEF_TYPE': [
+            {'TYPE_ID': 3, 'TYPE_CODE': 'INF', 'TYPE_LIB': 'Support'},
+            {'TYPE_ID': 13, 'TYPE_CODE': 'POT', 'TYPE_LIB': 'Poteau', 'TYPE_PARENT_KEY': 3},
+            {'TYPE_ID': 14, 'TYPE_CODE': 'POT-FT', 'TYPE_LIB': 'Poteau télécom', 'TYPE_PARENT_KEY': 13},
+            {'TYPE_ID': 16, 'TYPE_CODE': 'CHB', 'TYPE_LIB': 'Chambre', 'TYPE_PARENT_KEY': 3},
+          ],
+        },
+      }),
+    );
+
+/// Services Google simulés : session de tuiles et mention de copyright de la vue ; aucune tuile.
+final googleServices = MockClient((r) async {
+  const json = {'content-type': 'application/json; charset=utf-8'};
+  final expiry = DateTime.now().add(const Duration(days: 1)).millisecondsSinceEpoch ~/ 1000;
+  return switch (r.url.path) {
+    '/v1/createSession' => http.Response(jsonEncode({'session': 'essai', 'expiry': '$expiry'}), 200, headers: json),
+    '/tile/v1/viewport' =>
+      http.Response(jsonEncode({'copyright': 'Données cartographiques ©2026 Google'}), 200, headers: json),
+    _ => http.Response('', 404),
+  };
+});
+
+/// Carte de [size] (points logiques, comme le cadre de terminal du web), [label] choisi par la recherche du bandeau ;
+/// avec [googleKey], fond Google Plan choisi d'abord dans le panneau Couches.
+Future<void> showSelected(WidgetTester t, Size size, String label, {String? googleKey}) async {
+  t.view.physicalSize = size;
+  t.view.devicePixelRatio = 1;
+  final repo = MemoryRepository();
+  await repo.load(bundle());
+  final app = AppProvider(repo);
+  if (googleKey != null) app.setGoogleKey(googleKey);
+  // nouvel arbre à chaque appel : rien de l'essai précédent (sélection, recherche) n'est gardé
+  await t.pumpWidget(ChangeNotifierProvider.value(
+    value: app,
+    child: MaterialApp(key: UniqueKey(), theme: ngeTheme(), home: const MapScreen()),
+  ));
+  await t.pumpAndSettle();
+  if (googleKey != null) {
+    await t.tap(find.text('Couches'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Google Plan'));
+    await t.pumpAndSettle();
+    await t.tapAt(const Offset(20, 20)); // ferme le panneau
+    await t.pumpAndSettle();
+  }
+  await t.enterText(find.byType(TextField), label);
+  await t.pumpAndSettle();
+  await t.tap(find.widgetWithText(ListTile, label));
+  await t.pumpAndSettle();
+}
+
+/// Carton d'aperçu du support sélectionné, à l'écran.
+Rect card(WidgetTester t) => t.getRect(find.ancestor(of: find.text('Ouvrir'), matching: find.byType(Card)));
+
+/// Bouton [label] du carton, à l'écran.
+Rect button(WidgetTester t, String label) =>
+    t.getRect(find.ancestor(of: find.text(label), matching: find.bySubtype<ButtonStyleButton>()));
+
+void main() {
+  testWidgets('carte large (paysage, tablette) : carton compact dans le coin bas droit, Ouvrir à sa taille '
+      'naturelle, mention IGN visible sous le carton', (t) async {
+    addTearDown(t.view.reset);
+    for (final size in const [Size(1280, 800), Size(800, 1280)]) {
+      await showSelected(t, size, '5011');
+      final map = t.getRect(find.byType(FlutterMap)), c = card(t), open = button(t, 'Ouvrir');
+      final credit = t.getRect(find.text('© IGN — Géoplateforme'));
+      expect(c.width, lessThanOrEqualTo(360), reason: '$size : largeur bornée');
+      expect(c.right, map.right - 12, reason: '$size : coin droit (notes rep9)');
+      expect(c.bottom, greaterThan(map.bottom - 24), reason: '$size : en bas, juste au-dessus de l\'attribution');
+      expect(open.width, lessThan(c.width / 2), reason: '$size : Ouvrir à sa taille naturelle');
+      expect(open.right, greaterThan(c.right - 24), reason: '$size : Ouvrir à droite du carton');
+      expect(credit.top, greaterThanOrEqualTo(c.bottom), reason: '$size : mention jamais masquée par le carton');
+      expect(map.contains(credit.topLeft) && map.contains(credit.bottomRight - const Offset(1, 1)), isTrue);
+    }
+
+    // poteau : Portées puis Ouvrir, côte à côte à droite du carton, sans déborder
+    await showSelected(t, const Size(1280, 800), 'P922');
+    final c = card(t), spans = button(t, 'Portées'), open = button(t, 'Ouvrir');
+    expect(spans.right, lessThan(open.left));
+    expect(spans.left, greaterThanOrEqualTo(c.left));
+    expect(open.right, greaterThan(c.right - 24));
+  });
+
+  testWidgets('fond Google en paysage : logo et mention de la vue visibles sous le carton compact', (t) async {
+    addTearDown(t.view.reset);
+    await http.runWithClient(
+        () => showSelected(t, const Size(1280, 800), '5011', googleKey: 'cle-essai'), () => googleServices);
+    final map = t.getRect(find.byType(FlutterMap)), c = card(t);
+    expect(c.width, lessThanOrEqualTo(360));
+    for (final f in [find.bySemanticsLabel('Google Maps'), find.text('Données cartographiques ©2026 Google')]) {
+      final r = t.getRect(f);
+      expect(r.top, greaterThanOrEqualTo(c.bottom), reason: '$f sous le carton');
+      expect(r.bottom, lessThanOrEqualTo(map.bottom), reason: '$f dans la carte');
+    }
+  });
+
+  testWidgets('téléphone en portrait : carton sur toute la largeur, boutons étirés (inchangé)', (t) async {
+    addTearDown(t.view.reset);
+    await showSelected(t, const Size(360, 800), '5011');
+    var c = card(t);
+    expect([c.left, c.right], [12, 348]);
+    expect(button(t, 'Ouvrir').width, greaterThan(c.width * 0.8));
+
+    await showSelected(t, const Size(360, 800), 'P922');
+    c = card(t);
+    final spans = button(t, 'Portées'), open = button(t, 'Ouvrir');
+    expect(open.width, spans.width, reason: 'largeur du carton partagée');
+    expect(spans.width + open.width, greaterThan(c.width * 0.8));
+  });
+
+  /// Carte de téléphone (360 × 800) sur [repo], pile des écrans suivie.
+  Future<AppProvider> showMap(WidgetTester t, MemoryRepository repo) async {
+    t.view.physicalSize = const Size(360, 800);
+    t.view.devicePixelRatio = 1;
+    final app = AppProvider(repo);
+    await t.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: const MapScreen()),
+    ));
+    await t.pumpAndSettle();
+    return app;
+  }
+
+  MapCamera camera(WidgetTester t) => t.widget<FlutterMap>(find.byType(FlutterMap)).mapController!.camera;
+
+  /// Recherche de [label] dans le bandeau, résultat choisi (sans attendre la fin du repérage).
+  Future<void> search(WidgetTester t, String label) async {
+    await t.enterText(find.byType(TextField), '');
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField), label);
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(ListTile, label));
+  }
+
+  testWidgets('recherche : support repéré comme « Repérer » de FibReady (vol, zoom d\'arrivée borné par le rayon, '
+      'pulsations) ; sans animation et rayon de repérage choisis dans les Paramètres', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    final app = await showMap(t, repo);
+    double halo() => t.widget<Transform>(find.byKey(const ValueKey('halo'))).transform.getMaxScaleOnAxis();
+
+    // vol : la vue passe par des positions intermédiaires, puis arrive sur le poteau, au zoom qui montre 50 m autour
+    // de lui sur la largeur de la carte (elle était plus loin)
+    final start = camera(t);
+    final expected = locateZoom(start, const LatLng(48.651, 6.193), 50);
+    expect(expected, closeTo(zoomForWidth(100, start.nonRotatedSize.width, 48.651), 1e-9));
+    expect(expected, greaterThan(start.zoom));
+    await search(t, 'P922');
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 150));
+    final midway = camera(t).center.longitude;
+    expect(midway, greaterThan(start.center.longitude));
+    expect(midway, lessThan(6.193 - 1e-6));
+    // à l'arrivée, le halo de la sélection pulse trois fois en s'amortissant
+    var peak = 1.0;
+    for (var i = 0; i < 160 && t.binding.hasScheduledFrame; i++) {
+      await t.pump(const Duration(milliseconds: 50));
+      if (find.byKey(const ValueKey('halo')).evaluate().isNotEmpty) peak = math.max(peak, halo());
+    }
+    expect(camera(t).center.longitude, closeTo(6.193, 1e-6));
+    expect(camera(t).zoom, closeTo(expected, 1e-6));
+    expect(peak, greaterThan(1.5));
+    expect(halo(), closeTo(1, 1e-6));
+
+    // Paramètres : repérage sans animation, rayon de 200 m
+    await t.tap(find.text('Paramètres'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Repérage animé'), 200, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.text('Repérage animé'));
+    await t.pumpAndSettle();
+    expect(app.animateLocate, isFalse);
+    await t.scrollUntilVisible(find.text('50 m'), 200, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.text('50 m'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('200 m').last);
+    await t.pumpAndSettle();
+    expect(app.locateRadius, 200);
+    await t.pageBack();
+    await t.pumpAndSettle();
+
+    // sans animation, la vue se place d'emblée ; de plus près que 200 m, elle garde son zoom
+    await search(t, '5011');
+    await t.pump();
+    expect(camera(t).center.longitude, closeTo(6.191, 1e-6));
+    expect(camera(t).zoom, closeTo(expected, 1e-6));
+    await t.pumpAndSettle();
+    // de plus loin, elle zoome jusqu'à montrer 200 m autour du support
+    t.widget<FlutterMap>(find.byType(FlutterMap)).mapController!.move(const LatLng(48.66, 6.2), 13);
+    await t.pumpAndSettle();
+    await search(t, 'P922');
+    await t.pumpAndSettle();
+    expect(camera(t).center.longitude, closeTo(6.193, 1e-6));
+    expect(camera(t).zoom, closeTo(zoomForWidth(400, 360, 48.651), 1e-6));
+  });
+
+  testWidgets('la sélection suit le support affiché : parcours suivi, puis Carte, la carte vole jusqu\'au support '
+      'atteint ; « Repérer sur la carte » du menu ⋮', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle(linked: true));
+    final app = await showMap(t, repo);
+    Future<void> tap(Finder f) async {
+      await t.tap(f);
+      await t.pumpAndSettle();
+    }
+
+    Finder preview(String label) => find.descendant(of: find.byType(Card), matching: find.text(label));
+
+    await search(t, '5011');
+    await t.pumpAndSettle();
+    expect(preview('5011'), findsOneWidget);
+
+    // 5011 ouvert, son parcours suivi jusqu'à P922 : la sélection de la carte suit le support affiché
+    await tap(find.text('Ouvrir'));
+    expect(app.selectedSupport, 'C1');
+    await tap(find.text('Masques'));
+    await t.scrollUntilVisible(find.textContaining('vers P922'), 200, scrollable: find.byType(Scrollable).first);
+    await tap(find.textContaining('vers P922'));
+    await tap(find.text('Naviguer vers P922'));
+    expect(app.selectedSupport, 'P1');
+    expect(find.text('Naviguer vers 5011'), findsOneWidget);
+
+    // Carte : P922 sélectionné et repéré
+    await tap(find.text('Carte'));
+    expect(screenStack.stack, hasLength(1));
+    expect(preview('P922'), findsOneWidget);
+    expect(camera(t).center.longitude, closeTo(6.193, 1e-6));
+
+    // carte déplacée à la main, puis « Repérer sur la carte » depuis les visuels de P922 : la carte y revient, bien
+    // que la sélection n'ait pas changé
+    await t.drag(find.byType(FlutterMap), const Offset(200, 0));
+    await t.pumpAndSettle();
+    expect(camera(t).center.longitude, lessThan(6.193 - 1e-5));
+    await tap(find.text('Ouvrir'));
+    await tap(find.byTooltip('Plus d\'actions'));
+    expect(find.text('Revenir à 5011'), findsOneWidget);
+    await tap(find.text('Repérer sur la carte'));
+    expect(screenStack.stack, hasLength(1));
+    expect(preview('P922'), findsOneWidget);
+    expect(camera(t).center.longitude, closeTo(6.193, 1e-6));
+  });
+
+  testWidgets('support ouvert pendant le vol de repérage : au retour, la carte est à l\'arrivée', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    await showMap(t, repo);
+    t.widget<FlutterMap>(find.byType(FlutterMap)).mapController!.move(const LatLng(48.62, 6.13), 12);
+    await t.pumpAndSettle();
+    final expected = locateZoom(camera(t), const LatLng(48.651, 6.193), 50);
+    await search(t, 'P922');
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 250));
+    expect(camera(t).center.longitude, lessThan(6.19));
+    await t.tap(find.text('Ouvrir'));
+    await t.pumpAndSettle();
+    await t.pageBack();
+    await t.pumpAndSettle();
+    expect(camera(t).center.longitude, closeTo(6.193, 1e-6));
+    expect(camera(t).zoom, closeTo(expected, 1e-6));
+  });
+
+  testWidgets('couche masquée : le support repéré reste dessiné, avec son halo', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    await showMap(t, repo);
+    // tablette : le panneau Couches laisse voir la carte au-dessus de lui, qu'on touche pour le fermer
+    t.view.physicalSize = const Size(800, 1280);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Couches'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Souterrain'));
+    await t.pumpAndSettle();
+    await t.tapAt(const Offset(20, 20)); // ferme le panneau
+    await t.pumpAndSettle();
+    await search(t, '5011');
+    await t.pumpAndSettle();
+    expect(find.byKey(const ValueKey('halo')), findsOneWidget);
+    // le toucher, désormais dessiné, le laisse sélectionné
+    final at = camera(t).latLngToScreenOffset(const LatLng(48.651, 6.191));
+    await t.tapAt(t.getTopLeft(find.byType(FlutterMap)) + at);
+    // la carte attend un éventuel double toucher avant de traiter le toucher
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pumpAndSettle();
+    expect(find.byKey(const ValueKey('halo')), findsOneWidget);
+    expect(find.descendant(of: find.byType(Card), matching: find.text('5011')), findsOneWidget);
+  });
+
+  testWidgets('clavier ouvert pendant la recherche : le zoom d\'arrivée vaut pour la carte entière', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    t.view.physicalSize = const Size(1280, 800);
+    t.view.devicePixelRatio = 1;
+    await t.pumpWidget(ChangeNotifierProvider.value(
+      value: AppProvider(repo),
+      child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: const MapScreen()),
+    ));
+    await t.pumpAndSettle();
+    final full = camera(t).nonRotatedSize;
+    t.view.viewInsets = const FakeViewPadding(bottom: 420);
+    await t.pumpAndSettle();
+    await search(t, 'P922');
+    t.view.resetViewInsets();
+    await t.pumpAndSettle();
+    expect(camera(t).nonRotatedSize, full);
+    expect(camera(t).zoom, closeTo(zoomForWidth(100, full.shortestSide, 48.651), 1e-6));
+  });
+
+  testWidgets('tablette, rayon de 10 m : la vue montre bien 10 m autour du support (zoom jusqu\'à 22)', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    t.view.physicalSize = const Size(800, 1280);
+    t.view.devicePixelRatio = 1;
+    final app = AppProvider(repo)..setLocateRadius(10);
+    await t.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: const MapScreen()),
+    ));
+    await t.pumpAndSettle();
+    await search(t, 'P922');
+    await t.pumpAndSettle();
+    final expected = zoomForWidth(20, camera(t).nonRotatedSize.shortestSide, 48.651);
+    expect(expected, lessThan(22));
+    expect(camera(t).zoom, closeTo(expected, 1e-6));
+  });
+
+  testWidgets('carte démontée sans repérage ni sélection : aucune erreur', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    await showMap(t, repo);
+    await t.pumpWidget(const SizedBox());
+    await t.pump(const Duration(seconds: 1));
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('« Repérer sur la carte » puis « Rester » : la demande de repérage est retirée', (t) async {
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle(linked: true));
+    final app = await showMap(t, repo);
+    Future<void> tap(Finder f) async {
+      await t.tap(f);
+      await t.pumpAndSettle();
+    }
+
+    await search(t, '5011');
+    await t.pumpAndSettle();
+    await tap(find.text('Ouvrir'));
+    await tap(find.text('Masques'));
+    await tap(find.text('Face vide').first);
+    // une alvéole placée, non enregistrée
+    final grid = find.descendant(of: find.byType(MaskGrid), matching: find.byType(CustomPaint));
+    await t.tapAt(t.getTopLeft(grid) + const Offset(30, 30));
+    await t.pumpAndSettle();
+    await tap(find.text('Placer l\'alvéole'));
+    await tap(find.byTooltip('Plus d\'actions'));
+    await tap(find.text('Repérer sur la carte'));
+    expect(find.text('Quitter sans enregistrer ?'), findsOneWidget);
+    await tap(find.text('Rester'));
+    expect(find.text('masque A · 1 alvéole'), findsOneWidget);
+    expect(app.takeLocate(), isNull);
+  });
+
+  testWidgets('texte à 200 % sur un téléphone en paysage : le carton compact reste dans la carte, la barre basse ne '
+      'déborde pas', (t) async {
+    addTearDown(t.view.reset);
+    t.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    t.view.physicalSize = const Size(800, 360);
+    t.view.devicePixelRatio = 1;
+    await t.pumpWidget(ChangeNotifierProvider.value(
+      value: AppProvider(repo),
+      child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: const MapScreen()),
+    ));
+    await t.pumpAndSettle();
+    await search(t, 'P922');
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+    final map = t.getRect(find.byType(FlutterMap));
+    final card = t.getRect(find.ancestor(of: find.text('Ouvrir'), matching: find.byType(Card)));
+    expect(card.top, greaterThanOrEqualTo(map.top));
+  });
+}

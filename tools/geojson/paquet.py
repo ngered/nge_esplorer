@@ -2,15 +2,18 @@
 
 Implémentation de référence côté BE :
 - publier : extrait une zone du projet en paquet ZIP (paquet.json, objets.geojson, referentiels.json et,
-  sur option, les photos) ;
-- verifier : contrôle la structure d'un paquet (en-tête, objets, références entre objets, fichiers).
+  sur option, les photos) ; refuse un projet en retard sur son schéma, à reprendre d'abord (projet.py migrer) ;
+  ne publie que les modules décrits par le format (MODULES_PUBLIES) et, des fichiers, que les photos ; adresses des
+  nœuds publiés et de l'emprise de la zone ;
+- verifier : contrôle la structure d'un paquet (en-tête, objets, références entre objets, fichiers, commentaires,
+  masques des chambres).
 
 Usage :
   python -I tools/geojson/paquet.py publier <dossier projet> <zone> <dossier QGIS bin> <sortie.zip> [--fichiers]
   python -I tools/geojson/paquet.py verifier <paquet.zip>
 """
-import datetime, hashlib, json, os, sys, zipfile
-from collections import defaultdict
+import datetime, hashlib, json, math, os, sys, zipfile
+from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'schema'))
 import projet  # noqa: E402
@@ -18,8 +21,22 @@ import projet  # noqa: E402
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 FORMAT = 'nge-esplorer-paquet'
-FORMAT_VERSION = '0.1.0'
+FORMAT_VERSION = '0.2.0'        # 0.2.0 : journal des commentaires (NOE_COMMENT, CHB_COMMENT, POT_COMMENT retirés)
 DECIMALES = 7                   # ~1 cm en WGS84
+# Masques métriques depuis le module chambre 0.3.0 (format inchangé) : faces FAC_LARG x FAC_HAUT et positions POS_X,
+# POS_Y en m ; avant, en cellules FOA (FAC_NB_COL, FAC_NB_LIG), paquet refusé.
+VERSION_MASQUES = '0.3.0'
+# Centre d'une alvéole hors de sa face toléré jusqu'à 1 mm : le centre est borné à la face, puis arrondi au micromètre
+# au BE (conversions exactes) et au millimètre au plus sur le terminal, soit 0,5 mm de débord au plus. Au-delà, la
+# position est dans un autre repère (cellules) ou sa face a été réduite sans recentrage. C'est bien moins qu'un
+# demi-diamètre (14 mm pour la plus petite alvéole normalisée, 28 mm) : une alvéole acceptée recouvre toujours sa
+# face. Le disque, lui, peut déborder : 206 alvéoles des relevés FOA de Nancy débordent de la fenêtre FOA, aucune n'en
+# a le centre dehors.
+TOLERANCE_POSITION = 0.001      # m
+# Modules dont le format décrit l'espace GeoJSON : ceux d'un projet qui n'y figurent pas (optique, immeuble) ne sont
+# pas publiés (ni en-tête, ni référentiels) tant que le terminal ne les lit pas ; leurs types et vues, enregistrés
+# dans le noyau, le sont avec lui.
+MODULES_PUBLIES = ('noyau', 'infra', 'chambre', 'poteau')
 
 # Références vers une entité : écrites avec le CODE_EXT de la cible (colonne → table, colonne CODE_EXT).
 ENTITES = {
@@ -58,6 +75,9 @@ PORTEUR_FICHIER = {
     'POT_CONTROLE': ('NOE', 'poteau.POT_CONTROLE'), 'INF_EQUIPEMENT': ('NOE', 'infra.INF_EQUIPEMENT'),
     'INF_CONDUITE': ('LIN', 'infra.INF_CONDUITE'), 'INF_PORTEE': ('LIN', 'infra.INF_PORTEE'),
 }
+# Tables des objets commentés : le journal (PRJ_COMMENTAIRE) est porté par l'objet lui-même, sans clé ENTITE.
+PORTEUR_COMMENTAIRE = {'PRJ_NOE': 'NOE', 'PRJ_LINEAIRE': 'LIN', 'PRJ_ADRESSE': 'ADR'}
+TYPES_COMMENTAIRE = ('alert', 'minor', 'standard', 'great')     # COM_TYPE de FibReady, par gravité décroissante
 
 
 def maintenant():
@@ -150,9 +170,13 @@ class Publication:
         hors = set()
         for n1, n2 in self.con.execute('SELECT NOE1_KEY, NOE2_KEY FROM PRJ_LINEAIRE WHERE ZONE_KEY = ?', (z,)):
             hors |= {n1, n2} - noe
+        # adresses des nœuds publiés et adresses situées dans l'emprise de la zone (BAL à relever)
         adr = {r[0] for r in self.con.execute(
             f'SELECT DISTINCT ADR_KEY FROM PRJ_NOE WHERE ADR_KEY IS NOT NULL AND NOE_ID IN '
             f'({",".join(map(str, noe | hors)) or "NULL"})')}
+        adr |= {r[0] for r in self.con.execute(
+            'SELECT a.ADR_ID FROM PRJ_ADRESSE a, PRJ_ZONE z WHERE z.ZONE_ID = ? AND a.DATE_ABD IS NULL '
+            'AND Within(a.GEOMETRY, z.GEOMETRY) = 1', (z,))}
         return sorted(noe), sorted(hors), lin, sorted(adr)
 
     def geometries(self, table, pk, ids):
@@ -182,9 +206,13 @@ class Publication:
             else:
                 porteurs[table] = (classe, None)
         par_objet = defaultdict(list)
+        documents = 0
         for f in lignes(self.con, 'PRJ_FICHIER', 'ORDER BY FIC_RANG, FIC_ID'):
             table = entites.get(f['ENT_KEY'])
             if table not in porteurs:
+                continue
+            if f['FIC_TYPE'] and not f['FIC_TYPE'].startswith('image/'):
+                documents += 1          # pièce jointe (PDF, tableur, trace) : le terminal n'affiche que des photos
                 continue
             classe, correspondance = porteurs[table]
             oid = f['OBJ_KEY'] if correspondance is None else correspondance.get(f['OBJ_KEY'])
@@ -194,11 +222,46 @@ class Publication:
                 o.pop(col, None)
             o['_chemin'] = f['FIC_CHEMIN']
             par_objet[classe, oid].append(o)
+        if documents:
+            print(f'pièces jointes non publiées (hors photos) : {documents}', file=sys.stderr)
+        return par_objet
+
+    def commentaires(self):
+        """Journal PRJ_COMMENTAIRE rattaché à son objet GeoJSON, du plus ancien au plus récent (DATE_CREA puis
+        COM_ID), entrées abandonnées exclues : {(classe, id) : [commentaires]}. Sans rattachement (porté par
+        l'objet) ; intervention traduite en INT_CODE_EXT, placée avant la traçabilité. Une entrée rattachée à une
+        autre table que PRJ_NOE, PRJ_LINEAIRE ou PRJ_ADRESSE n'a pas de place dans le format : non publiée, signalée."""
+        if not self.con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'PRJ_COMMENTAIRE'").fetchone():
+            raise SystemExit('PRJ_COMMENTAIRE absente : projet construit avant la version 0.2.0 du noyau, à reprendre '
+                             '(tools/schema/projet.py migrer)')
+        entites = dict(self.con.execute('SELECT ENT_ID, ENT_TABLE FROM DEF_ENTITE'))
+        interventions = dict(self.con.execute('SELECT INT_ID, INT_CODE_EXT FROM PRJ_INTERVENTION'))
+        par_objet = defaultdict(list)
+        omis = Counter()
+        for c in lignes(self.con, 'PRJ_COMMENTAIRE', 'WHERE DATE_ABD IS NULL ORDER BY DATE_CREA, COM_ID'):
+            table = entites.get(c['ENT_KEY'])
+            classe = PORTEUR_COMMENTAIRE.get(table)
+            if classe is None:
+                omis[table or f'ENT_KEY {c["ENT_KEY"]} inconnue'] += 1
+                continue
+            o = self.proprietes('PRJ_COMMENTAIRE', c)
+            for col in ('ENT_KEY', 'OBJ_KEY', 'INT_KEY'):
+                o.pop(col, None)
+            trace = {k: o.pop(k) for k in list(o) if k.startswith(('DATE_', 'SRC_'))}
+            if interventions.get(c['INT_KEY']):
+                o['INT_CODE_EXT'] = interventions[c['INT_KEY']]
+            par_objet[classe, c['OBJ_KEY']].append(o | trace)
+        if omis:
+            n = sum(omis.values())
+            print(f'commentaires non publiés : {n} entrée{"s" * (n > 1)} du journal du projet rattachée{"s" * (n > 1)} '
+                  f'à une autre table que PRJ_NOE, PRJ_LINEAIRE ou PRJ_ADRESSE '
+                  f'({", ".join(f"{t} {k}" for t, k in sorted(omis.items()))}), à rattacher à leur objet',
+                  file=sys.stderr)
         return par_objet
 
     def objets(self):
         noe, hors, lin, adr = self.ids_zone()
-        fichiers = self.fichiers()
+        fichiers, commentaires = self.fichiers(), self.commentaires()
         features = []
 
         def feature(classe, table, pk, ids, structure, hors_zone=()):
@@ -216,6 +279,9 @@ class Publication:
                 fic = fichiers.get((classe, oid))
                 if fic:
                     props['fichiers'] = fic
+                com = commentaires.get((classe, oid))
+                if com:
+                    props['commentaires'] = com
                 features.append({'type': 'Feature', 'id': l[code], 'geometry': geo.get(oid), 'properties': props})
 
         feature('ADR', 'PRJ_ADRESSE', 'ADR_ID', adr, [])
@@ -223,9 +289,11 @@ class Publication:
         feature('LIN', 'PRJ_LINEAIRE', 'LIN_ID', lin, LINEAIRE)
         return features
 
-    def referentiels(self):
+    def referentiels(self, modules):
         out = {}
         for m in projet.manifestes():
+            if m['code'] not in modules:
+                continue
             schema = projet.schema_de(m['code'])
             tables = {}
             for t in m['tables']:
@@ -251,12 +319,30 @@ def emprise(features):
     return [min(xs), min(ys), max(xs), max(ys)] if xs else None
 
 
+def en_retard(con):
+    """Modules du projet en retard sur leur schéma (SYS_MODULE.MOD_VERSION antérieure à la version du manifeste) :
+    projet construit avec un modèle antérieur, dont le paquet ne suivrait pas le schéma (masques en cellules FOA…)."""
+    schema = {m['code']: m['version'] for m in projet.manifestes()}
+    return [(code, v, schema[code]) for code, v in con.execute('SELECT MOD_CODE, MOD_VERSION FROM SYS_MODULE '
+                                                               'ORDER BY MOD_ID').fetchall()
+            if code in schema and projet.version(v) < projet.version(schema[code])]
+
+
 def publier(dossier, zone, qgis_bin, sortie, avec_fichiers=False):
     con = projet.ouvrir(dossier, qgis_bin, integrite=False)
+    retard = en_retard(con)
+    if retard:
+        raise SystemExit('projet à reprendre avant publication (tools/schema/projet.py migrer) : '
+                         + ', '.join(f'module {code} en {v} au lieu de {attendue}' for code, v, attendue in retard))
     pub = Publication(con, zone)
     features = pub.objets()
     prj = con.execute('SELECT PRJ_CODE_EXT, PRJ_LIB, MODELE_VERSION FROM SYS_PROJET').fetchone()
     modules = dict(con.execute('SELECT MOD_CODE, MOD_VERSION FROM SYS_MODULE ORDER BY MOD_ID'))
+    omis = [code for code in modules if code not in MODULES_PUBLIES]
+    if omis:
+        print(f'modules non publiés (espace GeoJSON hors du format {FORMAT_VERSION}) : {", ".join(omis)}',
+              file=sys.stderr)
+    modules = {code: v for code, v in modules.items() if code in MODULES_PUBLIES}
     contenu = {}
     nb_fic = 0
     for f in features:
@@ -279,7 +365,7 @@ def publier(dossier, zone, qgis_bin, sortie, avec_fichiers=False):
     with zipfile.ZipFile(sortie, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('paquet.json', json.dumps(entete, ensure_ascii=False, indent=1))
         z.writestr('objets.geojson', json.dumps(geojson, ensure_ascii=False, separators=(',', ':')))
-        z.writestr('referentiels.json', json.dumps(pub.referentiels(), ensure_ascii=False, separators=(',', ':')))
+        z.writestr('referentiels.json', json.dumps(pub.referentiels(modules), ensure_ascii=False, separators=(',', ':')))
         for nom, data in contenu.items():
             z.writestr(nom, data, zipfile.ZIP_STORED)
     con.close()
@@ -287,6 +373,112 @@ def publier(dossier, zone, qgis_bin, sortie, avec_fichiers=False):
 
 
 # -- vérification ------------------------------------------------------------------------------
+
+def verifier_commentaires(oid, journal, vus, intervention):
+    """Anomalies du journal d'un objet. vus : COM_CODE_EXT déjà rencontrés dans le paquet ; intervention : celle
+    de l'en-tête d'un retour (vide pour une publication), dont les commentaires sont signés de son auteur."""
+    if journal is None:
+        return []
+    if not isinstance(journal, list):
+        return [f'{oid} : commentaires hors liste']
+    err = []
+    for c in journal:
+        if not isinstance(c, dict):
+            err.append(f'{oid} : commentaire illisible {str(c)[:60]}')
+            continue
+        code = c.get('COM_CODE_EXT')
+        nom = f'{oid} commentaire {code}'
+        if not (isinstance(code, str) and code.strip()):
+            err.append(f'{oid} : commentaire sans COM_CODE_EXT')
+        elif code in vus:
+            err.append(f'{nom} : COM_CODE_EXT en double dans le paquet')
+        else:
+            vus.add(code)
+        if not (isinstance(c.get('COM_TEXTE'), str) and c['COM_TEXTE'].strip()):
+            err.append(f'{nom} : texte vide')
+        if c.get('COM_TYPE') not in TYPES_COMMENTAIRE:
+            err.append(f'{nom} : type inattendu {c.get("COM_TYPE")}')
+        if not (isinstance(c.get('COM_AUTEUR'), str) and c['COM_AUTEUR'].strip()):
+            err.append(f'{nom} : sans auteur')
+        if not c.get('DATE_CREA'):
+            err.append(f'{nom} : sans DATE_CREA')
+        if (intervention.get('INT_CODE_EXT') and c.get('INT_CODE_EXT') == intervention['INT_CODE_EXT']
+                and c.get('COM_AUTEUR') != intervention.get('INT_AUTEUR')):
+            err.append(f'{nom} : saisi par l\'intervention du retour mais signé {c.get("COM_AUTEUR")} au lieu de '
+                       f'{intervention.get("INT_AUTEUR")}')
+    return err
+
+
+def nombre(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def verifier_masques(oid, chb):
+    """Anomalies des faces d'une chambre (espace chb), au repère métrique du module chambre 0.3.0 : FAC_LARG et
+    FAC_HAUT nombres strictement positifs (m), sans les clés de l'ancien repère ; centre de chaque position dans sa
+    face, à TOLERANCE_POSITION près. Une position abandonnée (DATE_ABD), qui n'est plus dessinée, n'est pas bornée."""
+    if chb is None:
+        return []
+    if not isinstance(chb, dict):
+        return [f'{oid} : chb illisible']
+    faces = chb.get('faces')
+    if faces is None:
+        return []
+    if not isinstance(faces, list):
+        return [f'{oid} : faces hors liste']
+    err = []
+    for face in faces:
+        if not isinstance(face, dict):
+            err.append(f'{oid} : face illisible {str(face)[:60]}')
+            continue
+        nom = f'{oid} face {face.get("FAC_CODE")}'
+        dims = {}
+        for col in ('FAC_LARG', 'FAC_HAUT'):
+            if nombre(face.get(col)) and face[col] > 0:
+                dims[col] = face[col]
+            else:
+                err.append(f'{nom} : {col} {face.get(col)} au lieu d\'une dimension en m strictement positive')
+        anciennes = [c for c in ('FAC_NB_COL', 'FAC_NB_LIG') if c in face]
+        if anciennes:
+            err.append(f'{nom} : {", ".join(anciennes)}, repère antérieur au module chambre {VERSION_MASQUES}')
+        positions = face.get('positions') or []
+        if not isinstance(positions, list):
+            err.append(f'{nom} : positions hors liste')
+            continue
+        for pos in positions:
+            if not isinstance(pos, dict):
+                err.append(f'{nom} : position illisible {str(pos)[:60]}')
+                continue
+            if pos.get('DATE_ABD'):
+                continue
+            for col, dim in (('POS_X', 'FAC_LARG'), ('POS_Y', 'FAC_HAUT')):
+                v = pos.get(col)
+                if not nombre(v):
+                    err.append(f'{nom} : position {pos.get("CD_KEY")} sans {col} numérique ({v})')
+                elif dim in dims and not -TOLERANCE_POSITION <= v <= dims[dim] + TOLERANCE_POSITION:
+                    err.append(f'{nom} : position {pos.get("CD_KEY")} hors de la face ({col} {v} m, {dim} '
+                               f'{dims[dim]} m)')
+    return err
+
+
+def verifier_version_masques(entete, objets):
+    """Module chambre de l'en-tête : 0.3.0 au moins (masques en m) ; avant, positions en cellules FOA, que le
+    terminal refuse sans les convertir."""
+    v = (entete.get('modules') or {}).get('chambre')
+    if v is None:
+        chambres = [(f.get('properties') or {}).get('chb') for f in objets.get('features', [])]
+        if any(isinstance(c, dict) and c.get('faces') for c in chambres):
+            return ['faces de chambre sans module chambre dans l\'en-tête']
+        return []
+    try:
+        lue = projet.version(str(v))
+    except ValueError:
+        return [f'module chambre en version illisible : {v}']
+    if lue < projet.version(VERSION_MASQUES):
+        return [f'module chambre {v} antérieur à {VERSION_MASQUES} : masques dans l\'ancien repère (cellules FOA), '
+                f'refusés par le terminal ; projet à reprendre (tools/schema/projet.py migrer) et paquet à republier']
+    return []
+
 
 def verifier(chemin):
     """Contrôles de structure ; renvoie la liste des anomalies (vide si le paquet est conforme)."""
@@ -318,7 +510,9 @@ def verifier(chemin):
                     err.append(f'intervention sans {cle}')
         if objets.get('type') != 'FeatureCollection':
             err.append('objets.geojson n\'est pas une FeatureCollection')
-        ids = {}
+        err += verifier_version_masques(entete, objets)
+        intervention = (entete.get('intervention') or {}) if retour else {}
+        ids, commentaires = {}, set()
         for f in objets['features']:
             p = f.get('properties') or {}
             if not f.get('id'):
@@ -337,6 +531,8 @@ def verifier(chemin):
             for fic in p.get('fichiers', []):
                 if fic.get('fichier') and fic['fichier'] not in noms:
                     err.append(f'{f["id"]} : fichier absent du paquet {fic["fichier"]}')
+            err += verifier_commentaires(f['id'], p.get('commentaires'), commentaires, intervention)
+            err += verifier_masques(f['id'], p.get('chb'))
         if retour:
             return err
         conduites = {c['CD_CODE_EXT'] for f in objets['features']

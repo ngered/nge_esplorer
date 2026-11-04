@@ -12,8 +12,20 @@ Règles de reprise FOA :
 - copies « MIROIR_… » (face d'accueil non enregistrée) : non reprises, la conduite reste à placer côté destination ;
 - destination absente ou inconnue (alvéole sans miroir, autorisée) → conduite rattachée à la chambre, sans linéaire
   ni nœud de destination ;
-- positions : grille FOA 9 x 12 cellules de 6,3 x 4,5 unités, origine en bas à gauche → colonne / ligne depuis le haut ;
-- rotation FOA en degrés → grades ; dates Unix → ISO 8601.
+- masques au repère métrique (module chambre 0.3.0) : FOA dessine chaque face dans une fenêtre fixe de 9 x 12
+  cellules de 6,3 x 4,5 unités, 1 unité = 1 cm (alvéoles en vraie grandeur), soit 56,7 x 54 cm quelles que soient les
+  dimensions de la chambre ; ALV_X / ALV_Y = centre de l'alvéole, origine en bas à gauche, y vers le haut → face de
+  0,567 x 0,54 m, POS_X = ALV_X / 100 et POS_Y = (54 - ALV_Y) / 100 (m depuis la gauche et le haut de la face) ;
+- rotation FOA en degrés → grades (CHB_ROTATION : axe A-B de la chambre à 200 grades près) ; dates Unix → ISO 8601
+  UTC.
+
+Dates GraceTHD (texte sans fuseau, heure de Paris) → ISO 8601 UTC, comme celles de FOA Explorer.
+
+Textes repris (commentaire FOA d'une chambre, destination FOA sans géométrie, nature GraceTHD d'un appui) : entrées du
+journal PRJ_COMMENTAIRE rattachées au nœud, type standard, sans intervention ; auteur et origine FOA pour FOA Explorer,
+auteur BE et origine GRACE pour GraceTHD (zone GRACE du jeu d'essai) ; code, auteur et date établis par les règles de
+la reprise d'un projet antérieur (tools/schema/projet.py migrer : code_reprise, auteur_reprise et date_reprise, date
+portée par le nœud).
 
 Usage :
   python -I tools/essai/charger_essai.py <dossier projet> <dossier QGIS bin>
@@ -21,7 +33,6 @@ Usage :
       [<dossier photos>]      (projet d'une seule base FOA, ses catalogues compris, ex. FTTH_OR_NANCY)
 """
 import hashlib, math, os, shutil, sqlite3, sys, tempfile
-from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'schema'))
@@ -31,18 +42,19 @@ HEILLECOURT = r'c:\NoDrive\Documents\data\FOA\FTTH_OR_HEILLECOURT'
 ESSONNE = r'c:\NoDrive\Documents\Etudes\essonne\09_DOU_12-13_FOA_EXP.db'
 GRACE = r'c:\NoDrive\Documents\Etudes\Auvergne\projets\test_grace\data\Export\GraceTHD\test_grace_EXP_GRACETHD.sqlite'
 
-FOA_COL, FOA_LIG, FOA_CASE_L, FOA_CASE_H = 9, 12, 6.3, 4.5
+FOA_HAUT = 54                       # hauteur de la fenêtre de dessin d'une face dans FOA Explorer (unités FOA = cm)
+FOA_PAR_M = 100                     # unités FOA par mètre
 ETAT_FOA = {None: 'V', 0: 'V', 1: 'R', 2: 'X', 12: 'XR', 3: 'M'}
 IMPLANT_FOA = {'chaussée': 'CHS', 'chaussee': 'CHS', 'trottoir': 'TRT', 'façade': 'FAC', 'facade': 'FAC'}
 VUE_FOA = {'DESSUS': 'DESSUS', 'ENV': 'ENV', 'A': 'A', 'B': 'B', 'C': 'C', 'D': 'D', 'BOITIER': 'BOITIER'}
 
 
 def iso(ts):
+    """Date d'une source en ISO 8601 UTC suffixée de Z (projet.utc) : date Unix de FOA Explorer, texte GraceTHD en
+    heure de Paris sans fuseau ; vide (None, '' ou 0 dans FOA) → None."""
     if ts in (None, '', 0):
         return None
-    if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(ts, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    return str(ts).replace(' ', 'T')
+    return projet.utc(ts)
 
 
 class Chargeur:
@@ -58,6 +70,7 @@ class Chargeur:
         self.ent = {t: i for i, t in q('SELECT ENT_ID, ENT_TABLE FROM DEF_ENTITE')}
         self.indt = q("SELECT GMOD_ID FROM DEF_GEOL_MODE WHERE GMOD_CODE = 'INDT'").fetchone()[0]
         self.mat_chb = {lib: i for i, lib in q('SELECT MAT_ID, MAT_LIB FROM chambre.MAT_CHAMBRE')}
+        self.projet = q('SELECT PRJ_CODE_EXT FROM SYS_PROJET').fetchone()[0]
 
     def un(self, sql, *p):
         r = self.con.execute(sql, p).fetchone()
@@ -71,13 +84,33 @@ class Chargeur:
         return self.dernier()
 
     def noeud(self, code, lib, type_id, geom_sql, geom_params, zone, adr=None, crea=None, modif=None,
-              geol_mod=None, comment=None):
+              geol_mod=None):
         self.con.execute(
-            f'INSERT INTO PRJ_NOE (NOE_CODE_EXT, NOE_LIB, TYPE_KEY, ADR_KEY, ZONE_KEY, NOE_COMMENT, GEOL_MOD_KEY, '
-            f'DATE_CREA, DATE_MODIF, SRC_MODIF, GEOMETRY) VALUES (?, ?, ?, ?, ?, ?, ?, '
+            f'INSERT INTO PRJ_NOE (NOE_CODE_EXT, NOE_LIB, TYPE_KEY, ADR_KEY, ZONE_KEY, GEOL_MOD_KEY, '
+            f'DATE_CREA, DATE_MODIF, SRC_MODIF, GEOMETRY) VALUES (?, ?, ?, ?, ?, ?, '
             f"COALESCE(?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), ?, 'import', {geom_sql})",
-            (code, lib, type_id, adr, zone, comment, geol_mod, crea, modif, *geom_params))
+            (code, lib, type_id, adr, zone, geol_mod, crea, modif, *geom_params))
         return self.dernier()
+
+    def commentaire(self, noe, texte, champ, origine):
+        """Texte repris d'une source → entrée standard du journal rattachée au nœud, sans intervention, comme la
+        reprise d'un projet antérieur (projet.reprendre_commentaires) : code de l'ancien champ libre (champ :
+        NOE_COMMENT, CHB_COMMENT ou POT_COMMENT, projet.code_reprise), auteur « FOA » pour FOA Explorer, « BE »
+        sinon, date portée par le nœud (DATE_MODIF, à défaut DATE_CREA : projet.date_reprise)."""
+        texte = (texte or '').strip()
+        if not texte:
+            return
+        code_noe, modif, crea = self.con.execute(
+            'SELECT NOE_CODE_EXT, DATE_MODIF, DATE_CREA FROM PRJ_NOE WHERE NOE_ID = ?', (noe,)).fetchone()
+        self.con.execute(
+            'INSERT INTO PRJ_COMMENTAIRE (COM_CODE_EXT, ENT_KEY, OBJ_KEY, COM_TEXTE, COM_AUTEUR, COM_ORIGINE, DATE_CREA) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (projet.code_reprise(self.projet, code_noe, champ), self.ent['PRJ_NOE'], noe, texte,
+             projet.auteur_reprise(origine), origine, projet.date_reprise(modif, crea)))
+
+    def nb_commentaires(self, zone):
+        return self.un('SELECT COUNT(*) FROM PRJ_COMMENTAIRE c JOIN PRJ_NOE n ON n.NOE_ID = c.OBJ_KEY '
+                       'WHERE c.ENT_KEY = ? AND n.ZONE_KEY = ?', self.ent['PRJ_NOE'], zone)
 
     def lineaire(self, code, type_code, impl, n1, n2, zone, geom_sql=None, geom_params=(), lng=None):
         geom = geom_sql or ('(SELECT MakeLine(a.GEOMETRY, b.GEOMETRY) FROM PRJ_NOE a, PRJ_NOE b '
@@ -90,7 +123,7 @@ class Chargeur:
         return self.dernier()
 
     def compter(self):
-        tables = ['PRJ_ZONE', 'PRJ_ADRESSE', 'PRJ_NOE', 'PRJ_LINEAIRE', 'PRJ_FICHIER', 'PRJ_INTERVENTION',
+        tables = ['PRJ_ZONE', 'PRJ_ADRESSE', 'PRJ_NOE', 'PRJ_LINEAIRE', 'PRJ_FICHIER', 'PRJ_COMMENTAIRE', 'PRJ_INTERVENTION',
                   'infra.INF_CONDUITE', 'infra.INF_CD_CABLE', 'infra.INF_PORTEE', 'infra.INF_PORTEE_CABLE',
                   'chambre.CHB_CHAMBRE', 'chambre.CHB_FACE', 'chambre.CHB_MASQUE_LOGIQUE', 'chambre.CHB_POSITION',
                   'poteau.POT_POTEAU']
@@ -132,11 +165,12 @@ class Chargeur:
                              adr.get(adr_k), iso(crea), iso(modif))
             mat_k = un('SELECT MAT_ID FROM chambre.MAT_CHAMBRE WHERE MAT_ID = ?', mat) if mat else None
             con.execute('INSERT INTO chambre.CHB_CHAMBRE (NOE_KEY, MAT_KEY, IMPS_KEY, CHB_LNG, CHB_LARG, CHB_HAUT, '
-                        "CHB_ROTATION, CHB_NIVEAU, CHB_COMMENT, SRC_MODIF) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'import')",
+                        "CHB_ROTATION, CHB_NIVEAU, SRC_MODIF) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'import')",
                         (noe, mat_k, self.imps.get(IMPLANT_FOA.get((implant or '').strip().lower())),
                          lng or None, larg or None, haut or None, rot * 400 / 360 if rot else None,
-                         min(max(statut or 0, 0), 2), comment or None))
+                         min(max(statut or 0, 0), 2)))
             chb[n_id], chb_noe[n_id] = self.dernier(), noe
+            self.commentaire(noe, comment, 'CHB_COMMENT', 'FOA')
 
         # autres nœuds FOA (poteaux, façades, BAL, immeubles) : destinations sans géométrie dans FOA, créées à
         # 1 m de la première chambre qui les cite (position indéterminée, à relever)
@@ -152,7 +186,9 @@ class Chargeur:
                 geo[cle] = self.noeud(
                     f'{prefixe}-G{cle[1]}-{cle[0]}', f'{pre}{foa_geo[cle] or ""}'.strip() or None, self.types[code],
                     '(SELECT MakePoint(X(GEOMETRY) + 1, Y(GEOMETRY), 2154) FROM PRJ_NOE WHERE NOE_ID = ?)', (noe_chb,),
-                    zone, geol_mod=self.indt, comment='Destination FOA sans géométrie : position à relever')
+                    zone, geol_mod=self.indt)
+                # note du chargement sur le nœud qu'il crée, datée comme lui
+                self.commentaire(geo[cle], 'Destination FOA sans géométrie : position à relever', 'NOE_COMMENT', 'FOA')
                 if code == 'POT':
                     con.execute("INSERT INTO poteau.POT_POTEAU (NOE_KEY, SRC_MODIF) VALUES (?, 'import')", (geo[cle],))
             return geo[cle]
@@ -182,9 +218,9 @@ class Chargeur:
             if c_id not in chb:
                 continue
             noe = chb_noe[c_id]
-            if (c_id, face) not in faces:
-                con.execute('INSERT INTO chambre.CHB_FACE (CHB_KEY, FAC_CODE, FAC_NB_COL, FAC_NB_LIG) VALUES (?, ?, ?, ?)',
-                            (chb[c_id], face, FOA_COL, FOA_LIG))
+            if (c_id, face) not in faces:      # fenêtre FOA : 0,567 x 0,54 m
+                con.execute('INSERT INTO chambre.CHB_FACE (CHB_KEY, FAC_CODE, FAC_LARG, FAC_HAUT) VALUES (?, ?, ?, ?)',
+                            (chb[c_id], face, *projet.FENETRE_FOA))
                 faces[(c_id, face)] = self.dernier()
             mlog_k = None
             if lnum is not None:
@@ -235,10 +271,11 @@ class Chargeur:
                     sans_destination.add(cd)
                 stats['conduites'] += 1
             conduite[a_id] = cd
+            # centre de l'alvéole en m depuis la gauche et le haut de la face (FOA : cm depuis le bas à gauche)
             con.execute('INSERT INTO chambre.CHB_POSITION (FAC_KEY, CD_KEY, POS_X, POS_Y, MLOG_KEY, POS_MIROIR, '
                         "SRC_MODIF) VALUES (?, ?, ?, ?, ?, ?, 'import')",
-                        (faces[(c_id, face)], cd, round(x / FOA_CASE_L, 3), round(FOA_LIG - y / FOA_CASE_H, 3),
-                         mlog_k, miroir))
+                        (faces[(c_id, face)], cd, round(x / FOA_PAR_M, projet.DECIMALES_MASQUE),
+                         round((FOA_HAUT - y) / FOA_PAR_M, projet.DECIMALES_MASQUE), mlog_k, miroir))
             stats['positions'] += 1
 
         # occupation par câbles
@@ -282,11 +319,17 @@ class Chargeur:
                 principales.add(cle)
                 ph += 1
 
+        hors_face = un('SELECT COUNT(*) FROM chambre.CHB_POSITION p JOIN chambre.CHB_FACE f ON f.FAC_ID = p.FAC_KEY '
+                       'JOIN chambre.CHB_CHAMBRE c ON c.CHB_ID = f.CHB_KEY JOIN PRJ_NOE n ON n.NOE_ID = c.NOE_KEY '
+                       'WHERE n.ZONE_KEY = ? AND (p.POS_X < 0 OR p.POS_X > f.FAC_LARG OR p.POS_Y < 0 '
+                       'OR p.POS_Y > f.FAC_HAUT)', zone)
         self.rapport.append(
-            f'{prefixe} : {len(chb)} chambres, {len(geo)} autres nœuds, {len(adr)} adresses, {len(faces)} faces, '
-            f'{stats["conduites"]} conduites ({stats["miroirs"]} vues des deux côtés), {stats["positions"]} positions, '
-            f'{stats["copies"]} copies « MIROIR » non reprises, {len(sans_destination)} conduites sans destination '
-            f'connue, {len(lin)} linéaires, {occ} occupations, {ph} photos ({manq} introuvables)')
+            f'{prefixe} : {len(chb)} chambres, {len(geo)} autres nœuds, {len(adr)} adresses, {len(faces)} faces '
+            f'({" x ".join(f"{v:g}" for v in projet.FENETRE_FOA)} m), {stats["conduites"]} conduites '
+            f'({stats["miroirs"]} vues des deux côtés), {stats["positions"]} positions ({hors_face} hors de leur '
+            f'face), {stats["copies"]} copies « MIROIR » non reprises, {len(sans_destination)} conduites sans destination '
+            f'connue, {len(lin)} linéaires, {occ} occupations, {ph} photos ({manq} introuvables), '
+            f'{self.nb_commentaires(zone)} commentaires')
         return zone
 
     # GraceTHD ------------------------------------------------------------------------------------
@@ -294,7 +337,7 @@ class Chargeur:
     def charger_grace(self):
         """Source attachée sous le nom « grc »."""
         con = self.con
-        zone = self.zone('GRACE', 'Export GraceTHD de test (Auvergne)')
+        zone = self.zone(projet.ZONE_GRACE, 'Export GraceTHD de test (Auvergne)')
         types = {'A': 'POT', 'C': 'CHB', 'F': 'FAC'}
         nat = {lib.lower(): i for i, lib in con.execute('SELECT NAT_ID, NAT_LIB FROM poteau.DEF_POT_NAT')}
         nat_grace = {'PBOI': nat.get('bois'), 'PBET': next((v for k, v in nat.items() if k.startswith('b') and 'ton' in k), None)}
@@ -307,8 +350,11 @@ class Chargeur:
                                  '(SELECT SetSRID(geom, 2154) FROM grc.t_noeud WHERE nd_code = ?)', (nd,), zone,
                                  crea=iso(crea), modif=iso(maj))
             if t == 'POT':
-                con.execute("INSERT INTO poteau.POT_POTEAU (NOE_KEY, NAT_KEY, POT_COMMENT, SRC_MODIF) "
-                            "VALUES (?, ?, ?, 'import')", (noe[nd], nat_grace.get(nature), f'GraceTHD nature {nature}'))
+                con.execute("INSERT INTO poteau.POT_POTEAU (NOE_KEY, NAT_KEY, SRC_MODIF) VALUES (?, ?, 'import')",
+                            (noe[nd], nat_grace.get(nature)))
+                # nature GraceTHD d'origine (pt_nature), conservée dans le journal
+                if nature:
+                    self.commentaire(noe[nd], f'GraceTHD nature {nature}', 'POT_COMMENT', 'GRACE')
             elif t == 'CHB':
                 con.execute("INSERT INTO chambre.CHB_CHAMBRE (NOE_KEY, MAT_KEY, SRC_MODIF) VALUES (?, ?, 'import')",
                             (noe[nd], self.mat_chb.get(nature)))
@@ -326,10 +372,13 @@ class Chargeur:
                               '(SELECT CastToLineString(SetSRID(geom, 2154)) FROM grc.t_cheminement WHERE cm_code = ?)',
                               (cm,), lng)
             if t == 'LIN-AER':
-                # angles des extrémités sur la rosace : azimut en grades, 0 = nord, sens horaire
+                # angles des extrémités sur la rosace : azimut géodésique (WGS84) en grades, 0 = nord géographique, sens
+                # horaire ; en Lambert 93, le nord du quadrillage s'en écarte de la convergence des méridiens
+                # (2,3 grades à 5,9° E)
                 a1, a2 = con.execute(
-                    'SELECT Azimuth(StartPoint(GEOMETRY), PointN(GEOMETRY, 2)), '
-                    'Azimuth(EndPoint(GEOMETRY), PointN(GEOMETRY, NumPoints(GEOMETRY) - 1)) '
+                    'SELECT Azimuth(Transform(StartPoint(GEOMETRY), 4326), Transform(PointN(GEOMETRY, 2), 4326)), '
+                    'Azimuth(Transform(EndPoint(GEOMETRY), 4326), '
+                    'Transform(PointN(GEOMETRY, NumPoints(GEOMETRY) - 1), 4326)) '
                     'FROM PRJ_LINEAIRE WHERE LIN_ID = ?', (l,)).fetchone()
                 gr = lambda a: round((a * 200 / math.pi) % 400, 2) if a is not None else None
                 con.execute("INSERT INTO infra.INF_PORTEE (LIN_KEY, PRT_ANG1, PRT_ANG2, PRT_LNG, SRC_MODIF) "
@@ -352,7 +401,7 @@ class Chargeur:
                                 "VALUES (?, ?, ?, ?, 'import')", (f'GRA-{cd}', l, dia, f'GraceTHD {cdtype}'))
                     conduites += 1
         self.rapport.append(f'GRACE : {len(noe)} nœuds, {portees} portées (angles calculés), {cables} câbles portés, '
-                            f'{conduites} conduites souterraines')
+                            f'{conduites} conduites souterraines, {self.nb_commentaires(zone)} commentaires')
         return zone
 
     def finir(self):
@@ -374,11 +423,17 @@ def controles(con):
     print('  conduites FOA vues d\'un seul côté entre deux chambres (miroir à appliquer) :', q(
         "SELECT COUNT(*) FROM infra.INF_CONDUITE cd JOIN PRJ_LINEAIRE l ON l.LIN_ID = cd.LIN_KEY "
         "JOIN PRJ_NOE a ON a.NOE_ID = l.NOE1_KEY JOIN PRJ_NOE b ON b.NOE_ID = l.NOE2_KEY "
-        "WHERE a.TYPE_KEY = 16 AND b.TYPE_KEY = 16 AND cd.CD_CODE_EXT NOT LIKE 'GRA-%' "
+        "WHERE a.TYPE_KEY = 16 AND b.TYPE_KEY = 16 "
+        f"AND a.ZONE_KEY IS NOT (SELECT ZONE_ID FROM PRJ_ZONE WHERE ZONE_CODE_EXT = '{projet.ZONE_GRACE}') "
         "AND (SELECT COUNT(*) FROM chambre.CHB_POSITION p WHERE p.CD_KEY = cd.CD_ID) = 1")[0][0])
     print('  conduites sans destination connue, rattachées à leur chambre :', q(
         'SELECT COUNT(*) FROM infra.INF_CONDUITE WHERE NOE_KEY IS NOT NULL')[0][0])
     print('  niveaux de renseignement des chambres :', q('SELECT CHB_NIVEAU, COUNT(*) FROM chambre.CHB_CHAMBRE GROUP BY 1'))
+    print('  faces (largeur, hauteur en m, nombre) :', q(
+        'SELECT FAC_LARG, FAC_HAUT, COUNT(*) FROM chambre.CHB_FACE GROUP BY 1, 2 ORDER BY 3 DESC'))
+    print('  positions en m depuis la gauche et le haut de la face (X min, X max, Y min, Y max) :', q(
+        'SELECT MIN(POS_X), MAX(POS_X), MIN(POS_Y), MAX(POS_Y) FROM chambre.CHB_POSITION')[0])
+    print('  positions hors de leur face :', projet.positions_hors_face(con))
     print('  exemple de chambre relevée :', q(
         "SELECT n.NOE_LIB, n.NOE_CODE_EXT, (SELECT COUNT(*) FROM chambre.CHB_FACE f WHERE f.CHB_KEY = c.CHB_ID), "
         "(SELECT COUNT(*) FROM chambre.CHB_POSITION p JOIN chambre.CHB_FACE f ON f.FAC_ID = p.FAC_KEY WHERE f.CHB_KEY = c.CHB_ID), "
@@ -389,9 +444,18 @@ def controles(con):
         "CASE WHEN l.NOE1_KEY = p.NOE_ID THEN r.PRT_ANG1 ELSE r.PRT_ANG2 END, "
         "(SELECT COUNT(*) FROM infra.INF_PORTEE_CABLE c WHERE c.PRT_KEY = r.PRT_ID) "
         "FROM (SELECT n.NOE_ID FROM PRJ_NOE n JOIN PRJ_LINEAIRE x ON n.NOE_ID IN (x.NOE1_KEY, x.NOE2_KEY) "
-        "WHERE n.NOE_CODE_EXT LIKE 'GRA-%' AND n.TYPE_KEY = 13 GROUP BY n.NOE_ID HAVING COUNT(*) >= 3 LIMIT 1) p "
+        f"WHERE n.ZONE_KEY = (SELECT ZONE_ID FROM PRJ_ZONE WHERE ZONE_CODE_EXT = '{projet.ZONE_GRACE}') "
+        "AND n.TYPE_KEY = 13 GROUP BY n.NOE_ID HAVING COUNT(*) >= 3 LIMIT 1) p "
         "JOIN PRJ_LINEAIRE l ON p.NOE_ID IN (l.NOE1_KEY, l.NOE2_KEY) JOIN infra.INF_PORTEE r ON r.LIN_KEY = l.LIN_ID "
         "JOIN PRJ_NOE d1 ON d1.NOE_ID = l.NOE1_KEY JOIN PRJ_NOE d2 ON d2.NOE_ID = l.NOE2_KEY"))
+    print('  journal de commentaires (origine, auteur, type, nombre) :', q(
+        'SELECT COM_ORIGINE, COM_AUTEUR, COM_TYPE, COUNT(*) FROM PRJ_COMMENTAIRE GROUP BY 1, 2, 3 ORDER BY 1, 2, 3'))
+    print('  commentaires sans nœud porteur :', q(
+        "SELECT COUNT(*) FROM PRJ_COMMENTAIRE c WHERE c.ENT_KEY <> (SELECT ENT_ID FROM DEF_ENTITE WHERE ENT_TABLE = "
+        "'PRJ_NOE') OR NOT EXISTS (SELECT 1 FROM PRJ_NOE n WHERE n.NOE_ID = c.OBJ_KEY)")[0][0])
+    print('  commentaire de chambre repris de FOA (nœud, date, texte) :', q(
+        'SELECT n.NOE_CODE_EXT, c.DATE_CREA, c.COM_TEXTE FROM PRJ_COMMENTAIRE c JOIN PRJ_NOE n ON n.NOE_ID = c.OBJ_KEY '
+        "JOIN chambre.CHB_CHAMBRE h ON h.NOE_KEY = n.NOE_ID WHERE c.COM_ORIGINE = 'FOA' ORDER BY c.DATE_CREA LIMIT 1"))
     print('  zones (emprise km²) :', q('SELECT ZONE_CODE_EXT, round(Area(GEOMETRY) / 1e6, 3) FROM PRJ_ZONE'))
 
 
