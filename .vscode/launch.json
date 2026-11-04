@@ -18,6 +18,33 @@
             "args": ["--web-port", "8080"]
         },
         {
+            "name": "NgeEsPlorer (web, terminal smartphone)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "chrome",
+            "args": ["--web-port", "8080", "--web-launch-url", "http://localhost:8080/?terminal=smartphone"]
+        },
+        {
+            "name": "NgeEsPlorer (web, terminal tablette)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "chrome",
+            "args": ["--web-port", "8080", "--web-launch-url", "http://localhost:8080/?terminal=tablette"]
+        },
+        {
+            "name": "NgeEsPlorer (web, terminal smartphone, photos de Nancy, profile)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "chrome",
+            "flutterMode": "profile",
+            "preLaunchTask": "Serveur de photos (Nancy)",
+            "args": ["--web-port", "8080", "--web-launch-url", "http://localhost:8080/?terminal=smartphone",
+                "--dart-define=SERVEUR_PHOTOS=8090"]
+        },
+        {
             "name": "NgeEsPlorer (web, profile)",
             "request": "launch",
             "type": "dart",

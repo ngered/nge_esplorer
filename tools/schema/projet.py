@@ -298,6 +298,10 @@ def essai(con):
         cd1 = q('SELECT last_insert_rowid()')[0]
         con.execute('INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, CD_PARENT_KEY, CD_NUM, CD_DIAM) '
                     'VALUES (?, ?, ?, 1, 28)', ('essai-cd2', l1, cd1))
+        # alvéole sans destination connue : conduite rattachée à la chambre, sans linéaire
+        con.execute("INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, NOE_KEY, CD_NUM, CD_DIAM) VALUES ('essai-cd3', ?, 2, 45)",
+                    (c1,))
+        cd3 = q('SELECT last_insert_rowid()')[0]
         cable = q("SELECT MAT_ID FROM infra.MAT_CABLE WHERE MAT_LIB = '5/9'")[0]
         con.execute('INSERT INTO infra.INF_CD_CABLE (CD_KEY, MAT_KEY, CDC_NB) VALUES (?, ?, 2)', (cd1, cable))
         con.execute('INSERT INTO infra.INF_PORTEE (LIN_KEY, PRT_ANG1, PRT_ANG2, PRT_LNG) VALUES (?, 0, 200, 31)', (l2,))
@@ -319,6 +323,8 @@ def essai(con):
                     (faces[c1], cd1))
         con.execute('INSERT INTO chambre.CHB_POSITION (FAC_KEY, CD_KEY, POS_X, POS_Y, POS_MIROIR) VALUES (?, ?, 5, 4, 1)',
                     (faces[c2], cd1))
+        con.execute('INSERT INTO chambre.CHB_POSITION (FAC_KEY, CD_KEY, POS_X, POS_Y) VALUES (?, ?, 6, 4)',
+                    (faces[c1], cd3))
 
         mat_pot = q("SELECT MAT_ID FROM poteau.MAT_POTEAU WHERE GES_LIB = 'BS7'")[0]   # type GESPOT de la maquette
         for noe in (p1, p2):
@@ -344,6 +350,12 @@ def essai(con):
             'JOIN chambre.CHB_FACE f ON f.FAC_ID = p.FAC_KEY JOIN chambre.CHB_CHAMBRE c ON c.CHB_ID = f.CHB_KEY '
             'JOIN PRJ_NOE n ON n.NOE_ID = c.NOE_KEY WHERE p.CD_KEY = ? ORDER BY n.NOE_LIB', (cd1,)).fetchall()
         constats.append(('miroir : une conduite, une position dans chaque chambre', len(miroir) == 2, miroir))
+        sans_dest = con.execute(
+            'SELECT n.NOE_LIB, p.POS_X FROM infra.INF_CONDUITE cd JOIN PRJ_NOE n ON n.NOE_ID = cd.NOE_KEY '
+            'JOIN chambre.CHB_POSITION p ON p.CD_KEY = cd.CD_ID WHERE cd.CD_ID = ? AND cd.LIN_KEY IS NULL',
+            (cd3,)).fetchall()
+        constats.append(('alvéole sans destination : conduite rattachée à sa chambre, sans linéaire',
+                         sans_dest == [('1476', 6.0)], sans_dest))
         rosace = con.execute(
             'SELECT CASE WHEN l.NOE1_KEY = :p THEN d2.NOE_LIB ELSE d1.NOE_LIB END, '
             'CASE WHEN l.NOE1_KEY = :p THEN r.PRT_ANG1 ELSE r.PRT_ANG2 END, i.IMPL_LIB '
@@ -368,6 +380,9 @@ def essai(con):
                  (faces[c1],)),
                 ('conduite sur un linéaire inexistant',
                  "INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY) VALUES ('x', 999999)", ()),
+                ('conduite sans linéaire ni chambre', "INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT) VALUES ('x')", ()),
+                ('conduite sur un linéaire et une chambre',
+                 "INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, NOE_KEY) VALUES ('x', ?, ?)", (l1, c1)),
                 ('suppression d\'un nœud porteur d\'un poteau',
                  'DELETE FROM PRJ_NOE WHERE NOE_ID = ?', (p2,)),
                 ('suppression d\'une conduite placée dans un masque',

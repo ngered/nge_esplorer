@@ -10,12 +10,15 @@ Règles de reprise FOA :
 - alvéole d'une face réelle (A à D) → conduite sur le linéaire chambre → destination ; deux alvéoles de faces réelles
   appariées par ALV_DESTALV_KEY → une seule conduite, positionnée dans les deux chambres (miroir) ;
 - copies « MIROIR_… » (face d'accueil non enregistrée) : non reprises, la conduite reste à placer côté destination ;
-- destination absente ou inconnue → nœud « destination à localiser » à 1 m de la chambre (mode INDT) ;
+- destination absente ou inconnue (alvéole sans miroir, autorisée) → conduite rattachée à la chambre, sans linéaire
+  ni nœud de destination ;
 - positions : grille FOA 9 x 12 cellules de 6,3 x 4,5 unités, origine en bas à gauche → colonne / ligne depuis le haut ;
 - rotation FOA en degrés → grades ; dates Unix → ISO 8601.
 
 Usage :
   python -I tools/essai/charger_essai.py <dossier projet> <dossier QGIS bin>
+  python -I tools/essai/charger_essai.py <dossier projet> <dossier QGIS bin> --foa <base FOA> <code zone> <libellé>
+      [<dossier photos>]      (projet d'une seule base FOA, ses catalogues compris, ex. FTTH_OR_NANCY)
 """
 import hashlib, math, os, shutil, sqlite3, sys, tempfile
 from datetime import datetime, timezone
@@ -96,8 +99,13 @@ class Chargeur:
     # FOA Explorer ------------------------------------------------------------------------------
 
     def charger_foa(self, prefixe, srid, zone_lib, photos=None):
-        """Source attachée sous le nom « src »."""
+        """Source attachée sous le nom « src » ; srid None : celui déclaré par la base, corrigé en Lambert II
+        étendu si les ordonnées le trahissent (déclaration 2154 erronée, comme à Heillecourt)."""
         con, un = self.con, self.un
+        if srid is None:
+            srid = un("SELECT srid FROM src.geometry_columns WHERE lower(f_table_name) = 'prj_chb_noe'")
+            if srid == 2154 and un('SELECT MAX(Y(GEOMETRY)) FROM src.PRJ_CHB_NOE') < 3e6:
+                srid = 27572
         zone = self.zone(prefixe, zone_lib)
         g = lambda col: f'Transform(SetSRID({col}, {srid}), 2154)' if srid != 2154 else f'SetSRID({col}, 2154)'
 
@@ -160,8 +168,8 @@ class Chargeur:
                     f'(SELECT CastToLineString({g("GEOMETRY")}) FROM src.PRJ_LNK_INTER_CHB WHERE LNK_ID = ?)', (l_id,))
 
         # alvéoles des faces réelles → conduites, faces, masques logiques, positions
-        faces, mlog, inconnue, conduite = {}, {}, {}, {}
-        stats = dict(conduites=0, positions=0, miroirs=0, copies=0, inconnues=0, lineaires=0)
+        faces, mlog, conduite, sans_destination = {}, {}, {}, set()
+        stats = dict(conduites=0, positions=0, miroirs=0, copies=0, lineaires=0)
         stats['copies'] = un("SELECT COUNT(*) FROM src.PRJ_CHB_ALVEOLE WHERE MASK_LIB NOT IN ('A','B','C','D')")
         rows = con.execute(
             "SELECT ALV_ID, CHB_KEY, MASK_LIB, ALV_NUM, ALV_DIAM, ALV_ETAT, ALV_DEST_KEY, ALV_DEST_TYPE_KEY, "
@@ -189,37 +197,42 @@ class Chargeur:
 
             # même tube vu de la chambre d'en face ?
             partenaire = destalv if destalv in reel and reel[destalv][1] == dest else None
-            if partenaire in conduite:
-                cd = conduite[partenaire]
-                stats['miroirs'] += 1
-                miroir = 1
+            if dest and (dest_t in (None, 16)) and dest in chb_noe and dest != c_id:
+                cible = chb_noe[dest]
+            elif dest and (dest, dest_t) in foa_geo:
+                cible = destination_geo((dest, dest_t), noe)
             else:
-                miroir = 0
-                if dest and (dest_t in (None, 16)) and dest in chb_noe and dest != c_id:
-                    cible = chb_noe[dest]
-                elif dest and (dest, dest_t) in foa_geo:
-                    cible = destination_geo((dest, dest_t), noe)
-                else:
-                    if c_id not in inconnue:
-                        inconnue[c_id] = self.noeud(
-                            f'{prefixe}-X{c_id}', 'Destination à localiser', self.types['AUT'],
-                            '(SELECT MakePoint(X(GEOMETRY) + 1, Y(GEOMETRY), 2154) FROM PRJ_NOE WHERE NOE_ID = ?)',
-                            (noe,), zone, geol_mod=self.indt,
-                            comment=f'Destination d\'alvéole non renseignée ou inconnue (FOA {dest_t}/{dest})')
-                    cible = inconnue[c_id]
-                    stats['inconnues'] += 1
+                cible = None    # alvéole sans miroir : conduite rattachée à la chambre
+
+            def parcours():
                 paire = frozenset((noe, cible))
                 if paire not in lin:
                     impl = 7 if cible in chb_noe.values() else None
                     lin[paire] = self.lineaire(f'{prefixe}-L{min(paire)}-{max(paire)}', 'LIN-SOUT', impl,
                                                noe, cible, zone)
                     stats['lineaires'] += 1
-                con.execute('INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, CD_PARENT_KEY, CD_NUM, CD_DIAM, '
-                            "ETAT_KEY, CD_COMMENT, DATE_CREA, SRC_MODIF) VALUES (?, ?, ?, ?, ?, ?, ?, "
+                return lin[paire]
+
+            if partenaire in conduite:
+                cd = conduite[partenaire]
+                stats['miroirs'] += 1
+                miroir = 1
+                if cd in sans_destination and cible is not None:
+                    # destination connue de ce côté seulement : la conduite passe sur le linéaire
+                    con.execute('UPDATE infra.INF_CONDUITE SET LIN_KEY = ?, NOE_KEY = NULL WHERE CD_ID = ?',
+                                (parcours(), cd))
+                    sans_destination.discard(cd)
+            else:
+                miroir = 0
+                con.execute('INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, NOE_KEY, CD_PARENT_KEY, CD_NUM, '
+                            "CD_DIAM, ETAT_KEY, CD_COMMENT, DATE_CREA, SRC_MODIF) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
                             "COALESCE(?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), 'import')",
-                            (f'{prefixe}-CD{a_id}', lin[paire], conduite.get(parent), num, diam,
-                             self.etat[ETAT_FOA.get(etat, 'V')], comment or None, iso(crea)))
+                            (f'{prefixe}-CD{a_id}', parcours() if cible else None, None if cible else noe,
+                             conduite.get(parent), num, diam, self.etat[ETAT_FOA.get(etat, 'V')], comment or None,
+                             iso(crea)))
                 cd = self.dernier()
+                if cible is None:
+                    sans_destination.add(cd)
                 stats['conduites'] += 1
             conduite[a_id] = cd
             con.execute('INSERT INTO chambre.CHB_POSITION (FAC_KEY, CD_KEY, POS_X, POS_Y, MLOG_KEY, POS_MIROIR, '
@@ -272,8 +285,8 @@ class Chargeur:
         self.rapport.append(
             f'{prefixe} : {len(chb)} chambres, {len(geo)} autres nœuds, {len(adr)} adresses, {len(faces)} faces, '
             f'{stats["conduites"]} conduites ({stats["miroirs"]} vues des deux côtés), {stats["positions"]} positions, '
-            f'{stats["copies"]} copies « MIROIR » non reprises, {stats["inconnues"]} alvéoles vers une destination '
-            f'à localiser, {len(lin)} linéaires, {occ} occupations, {ph} photos ({manq} introuvables)')
+            f'{stats["copies"]} copies « MIROIR » non reprises, {len(sans_destination)} conduites sans destination '
+            f'connue, {len(lin)} linéaires, {occ} occupations, {ph} photos ({manq} introuvables)')
         return zone
 
     # GraceTHD ------------------------------------------------------------------------------------
@@ -363,6 +376,8 @@ def controles(con):
         "JOIN PRJ_NOE a ON a.NOE_ID = l.NOE1_KEY JOIN PRJ_NOE b ON b.NOE_ID = l.NOE2_KEY "
         "WHERE a.TYPE_KEY = 16 AND b.TYPE_KEY = 16 AND cd.CD_CODE_EXT NOT LIKE 'GRA-%' "
         "AND (SELECT COUNT(*) FROM chambre.CHB_POSITION p WHERE p.CD_KEY = cd.CD_ID) = 1")[0][0])
+    print('  conduites sans destination connue, rattachées à leur chambre :', q(
+        'SELECT COUNT(*) FROM infra.INF_CONDUITE WHERE NOE_KEY IS NOT NULL')[0][0])
     print('  niveaux de renseignement des chambres :', q('SELECT CHB_NIVEAU, COUNT(*) FROM chambre.CHB_CHAMBRE GROUP BY 1'))
     print('  exemple de chambre relevée :', q(
         "SELECT n.NOE_LIB, n.NOE_CODE_EXT, (SELECT COUNT(*) FROM chambre.CHB_FACE f WHERE f.CHB_KEY = c.CHB_ID), "
@@ -380,16 +395,8 @@ def controles(con):
     print('  zones (emprise km²) :', q('SELECT ZONE_CODE_EXT, round(Area(GEOMETRY) / 1e6, 3) FROM PRJ_ZONE'))
 
 
-def main():
-    if len(sys.argv) < 3:
-        print(__doc__)
-        sys.exit(1)
-    dossier, qgis = sys.argv[1:3]
-    if os.path.isdir(dossier):
-        shutil.rmtree(dossier)
-    for ligne in projet.construire(dossier, ESSONNE, qgis, 'ESSAI', 'Jeu d\'essai chambres et poteaux'):
-        pass
-    ch = Chargeur(dossier, qgis)
+def etapes_essai(ch):
+    """Jeu d'essai : Heillecourt, Essonne et GraceTHD."""
     # l'export GraceTHD contient des vues qui empêchent de l'attacher sous un autre nom que main : copie sans vues
     grace = os.path.join(tempfile.mkdtemp(), 'grace.sqlite')
     shutil.copy2(GRACE, grace)
@@ -398,13 +405,34 @@ def main():
         g.execute(f'DROP VIEW "{v}"')
     g.commit()
     g.close()
-    etapes = (
+    return (
         ('src', os.path.join(HEILLECOURT, 'FOA_HEILLECOURT.db'),
          # déclarée 2154 dans geometry_columns, mais coordonnées en Lambert II étendu (x 883 000, y 2 411 000)
          lambda: ch.charger_foa('HEI', 27572, 'Heillecourt (FOA Explorer)', photos=os.path.join(HEILLECOURT, 'Chambres'))),
         ('src', ESSONNE, lambda: ch.charger_foa('ESS', 27572, 'Essonne DOU 12-13 (FOA Explorer)')),
         ('grc', grace, ch.charger_grace),
         (None, None, ch.finir))
+
+
+def main():
+    if len(sys.argv) < 3:
+        print(__doc__)
+        sys.exit(1)
+    dossier, qgis = sys.argv[1:3]
+    if os.path.isdir(dossier):
+        shutil.rmtree(dossier)
+    if '--foa' in sys.argv:
+        foa, code, lib, *photos = sys.argv[sys.argv.index('--foa') + 1:]
+        for ligne in projet.construire(dossier, foa, qgis, code, lib):
+            pass
+        ch = Chargeur(dossier, qgis)
+        etapes = (('src', foa, lambda: ch.charger_foa(code, None, lib, photos=photos[0] if photos else None)),
+                  (None, None, ch.finir))
+    else:
+        for ligne in projet.construire(dossier, ESSONNE, qgis, 'ESSAI', 'Jeu d\'essai chambres et poteaux'):
+            pass
+        ch = Chargeur(dossier, qgis)
+        etapes = etapes_essai(ch)
     for alias, base, charger in etapes:   # ATTACH impossible dans une transaction : une transaction par source
         if alias:
             ch.con.execute(f'ATTACH DATABASE ? AS {alias}', (base,))

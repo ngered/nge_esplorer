@@ -42,7 +42,7 @@ python -I tools\schema\projet.py construire docs\essai\projet_vide `
 
 [tools/schema/projet.py](../tools/schema/projet.py) est l'implémentation de référence de la future bibliothèque
 noyau C# : construction, ouverture (attachement, dépendances, triggers d'intégrité), recherche d'orphelins, et un
-scénario d'essai (deux chambres reliées par une conduite vue des deux côtés, deux poteaux et leur portée, une
+scénario d'essai (deux chambres reliées par une conduite vue des deux côtés, une alvéole sans destination, deux poteaux et leur portée, une
 façade, photo, intervention, refus attendus), annulé à la fin.
 
 Corrections à l'import des catalogues FOA :

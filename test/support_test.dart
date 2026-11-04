@@ -4,44 +4,44 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nge_esplorer/data/memory_repository.dart';
-import 'package:nge_esplorer/data/objet.dart';
-import 'package:nge_esplorer/data/paquet.dart';
-import 'package:nge_esplorer/data/referentiels.dart';
-import 'package:nge_esplorer/data/visuels.dart';
-import 'package:nge_esplorer/modules/poteau/rosace_screen.dart';
-import 'package:nge_esplorer/modules/renseignement.dart';
+import 'package:nge_esplorer/data/geo_object.dart';
+import 'package:nge_esplorer/data/bundle.dart';
+import 'package:nge_esplorer/data/reference_data.dart';
+import 'package:nge_esplorer/data/visuals.dart';
+import 'package:nge_esplorer/modules/poteau/rosette_screen.dart';
+import 'package:nge_esplorer/modules/completion.dart';
 import 'package:nge_esplorer/providers/app_provider.dart';
-import 'package:nge_esplorer/screens/visuels_screen.dart';
+import 'package:nge_esplorer/screens/visuals_screen.dart';
 import 'package:nge_esplorer/theme.dart';
-import 'package:nge_esplorer/widgets/retour_carte.dart';
+import 'package:nge_esplorer/widgets/back_to_map.dart';
 import 'package:provider/provider.dart';
 
 /// Image PNG de 1 × 1 pixel.
 final png = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
 
-Map<String, dynamic> photo(String id, String vue, int rang) => {
+Map<String, dynamic> photo(String id, String view, int rank) => {
       'ENTITE': 'PRJ_NOE',
-      'VUE_CODE': vue,
+      'VUE_CODE': view,
       'FIC_CODE_EXT': id,
-      'FIC_RANG': rang,
-      'FIC_PRINCIPALE': rang == 1 ? 1 : 0,
+      'FIC_RANG': rank,
+      'FIC_PRINCIPALE': rank == 1 ? 1 : 0,
       'FIC_NOM': '$id.jpg',
       'DATE_PRISE': '2021-03-25T09:30:00Z',
       'fichier': 'fichiers/$id.jpg',
     };
 
 /// Paquet d'essai : un poteau et ses trois visuels (boîtier : 1 photo, ensemble : 2, tête : aucune).
-Paquet paquet() => Paquet(
-      entete: {
-        'format': Paquet.format,
-        'version': Paquet.version,
+Bundle bundle() => Bundle(
+      header: {
+        'format': Bundle.format,
+        'version': Bundle.version,
         'date': '2026-11-02T08:00:00Z',
         'projet': {'code': 'TEST'},
         'zone': {'code': 'Z1', 'lib': 'Zone 1', 'emprise': [2.0, 45.0, 2.01, 45.01]},
         'modules': {'noyau': '0.1.0', 'poteau': '0.1.0'},
       },
-      objets: [
-        Objet.depuisFeature({
+      objects: [
+        GeoObject.fromFeature({
           'type': 'Feature',
           'id': 'P1',
           'geometry': {'type': 'Point', 'coordinates': [2.0, 45.0]},
@@ -52,13 +52,13 @@ Paquet paquet() => Paquet(
             'fichiers': [photo('B1', 'BOITIER', 1), photo('E2', 'ENSEMBLE', 2), photo('E1', 'ENSEMBLE', 1)],
           },
         }),
-        Objet.depuisFeature({
+        GeoObject.fromFeature({
           'type': 'Feature',
           'id': 'P2',
           'geometry': {'type': 'Point', 'coordinates': [2.0005, 45.0]},
           'properties': {'classe': 'NOE', 'NOE_LIB': 'P923', 'TYPE_KEY': 14},
         }),
-        Objet.depuisFeature({
+        GeoObject.fromFeature({
           'type': 'Feature',
           'id': 'L1',
           'geometry': {
@@ -76,14 +76,14 @@ Paquet paquet() => Paquet(
             'inf': {'portee': <String, dynamic>{}},
           },
         }),
-        Objet.depuisFeature({
+        GeoObject.fromFeature({
           'type': 'Feature',
           'id': 'C1',
           'geometry': {'type': 'Point', 'coordinates': [2.001, 45.0]},
           'properties': {'classe': 'NOE', 'NOE_LIB': 'C12', 'TYPE_KEY': 16},
         }),
       ],
-      referentiels: Referentiels({
+      referenceData: ReferenceData({
         'noyau': {
           'DEF_TYPE': [
             {'TYPE_ID': 3, 'TYPE_CODE': 'INF', 'TYPE_LIB': 'Support'},
@@ -101,131 +101,131 @@ Paquet paquet() => Paquet(
           ],
         },
       }),
-      fichiers: {'fichiers/B1.jpg': png, 'fichiers/E1.jpg': png, 'fichiers/E2.jpg': png},
+      files: {'fichiers/B1.jpg': png, 'fichiers/E1.jpg': png, 'fichiers/E2.jpg': png},
     );
 
-final vEnsemble = Visuel.attendu({'VUE_CODE': 'ENSEMBLE'});
-final vTete = Visuel.attendu({'VUE_CODE': 'TETE'});
+final vOverall = Visual.expected({'VUE_CODE': 'ENSEMBLE'});
+final vHead = Visual.expected({'VUE_CODE': 'TETE'});
 
 void main() {
   group('Visuels et photos', () {
     test('visuels du type et de ses parents, ordre de la galerie', () {
-      final p = paquet();
-      final o = p.objets.first;
-      expect(Visuel.de(o, p.referentiels).map((v) => v.code), ['BOITIER', 'ENSEMBLE', 'TETE']);
-      expect(o.photos(vEnsemble).map((f) => f['FIC_CODE_EXT']), ['E1', 'E2']);
-      expect(o.photos(vTete), isEmpty);
+      final p = bundle();
+      final o = p.objects.first;
+      expect(Visual.of(o, p.referenceData).map((v) => v.code), ['BOITIER', 'ENSEMBLE', 'TETE']);
+      expect(o.photos(vOverall).map((f) => f['FIC_CODE_EXT']), ['E1', 'E2']);
+      expect(o.photos(vHead), isEmpty);
     });
 
     test('ajouter, réordonner, supprimer : référence et rangs', () {
-      final o = paquet().objets.first;
-      final n = o.ajouterPhoto(vEnsemble, nom: 'IMG_1.JPG', taille: 3, auteur: 'essai');
+      final o = bundle().objects.first;
+      final n = o.addPhoto(vOverall, name: 'IMG_1.JPG', size: 3, author: 'essai');
       expect(n['fichier'], matches(RegExp(r'^fichiers/[0-9a-f-]{36}\.jpg$')));
       expect(n['FIC_TYPE'], 'image/jpeg');
-      expect(o.photos(vEnsemble).map((f) => f['FIC_RANG']), [1, 2, 3]);
+      expect(o.photos(vOverall).map((f) => f['FIC_RANG']), [1, 2, 3]);
 
-      final ordre = o.photos(vEnsemble);
-      o.ordonnerPhotos([ordre[2], ordre[0], ordre[1]]);
-      expect(o.photos(vEnsemble).first, same(n));
+      final order = o.photos(vOverall);
+      o.reorderPhotos([order[2], order[0], order[1]]);
+      expect(o.photos(vOverall).first, same(n));
       expect(n['FIC_PRINCIPALE'], 1);
-      expect(o.fichiers.where((f) => f['FIC_PRINCIPALE'] == 1 && f['VUE_CODE'] == 'ENSEMBLE').length, 1);
+      expect(o.files.where((f) => f['FIC_PRINCIPALE'] == 1 && f['VUE_CODE'] == 'ENSEMBLE').length, 1);
 
       // photo venue du BE : abandonnée ; photo prise sur le terminal : retirée
-      final e1 = o.photos(vEnsemble).firstWhere((f) => f['FIC_CODE_EXT'] == 'E1');
-      o.supprimerPhoto(vEnsemble, e1, nouvelle: false, auteur: 'essai');
+      final e1 = o.photos(vOverall).firstWhere((f) => f['FIC_CODE_EXT'] == 'E1');
+      o.deletePhoto(vOverall, e1, isNew: false, author: 'essai');
       expect(e1['DATE_ABD'], isNotNull);
-      expect(o.fichiers, contains(e1));
-      o.supprimerPhoto(vEnsemble, n, nouvelle: true, auteur: 'essai');
-      expect(o.fichiers, isNot(contains(n)));
-      final reste = o.photos(vEnsemble).single;
-      expect([reste['FIC_CODE_EXT'], reste['FIC_RANG'], reste['FIC_PRINCIPALE']], ['E2', 1, 1]);
+      expect(o.files, contains(e1));
+      o.deletePhoto(vOverall, n, isNew: true, author: 'essai');
+      expect(o.files, isNot(contains(n)));
+      final remaining = o.photos(vOverall).single;
+      expect([remaining['FIC_CODE_EXT'], remaining['FIC_RANG'], remaining['FIC_PRINCIPALE']], ['E2', 1, 1]);
     });
 
     test('visuel libre : après les visuels attendus, titre porté par ses photos', () {
-      final p = paquet();
-      final o = p.objets.first;
-      final libre = Visuel.libre('Boîte aux lettres');
-      final f = o.ajouterPhoto(libre, nom: 'bal.jpg', taille: 3, auteur: 'essai');
-      expect([f['VIS_CODE'], f['VIS_LIB'], f.containsKey('VUE_CODE')], [libre.code, 'Boîte aux lettres', false]);
-      o.ajouterPhoto(libre, nom: 'bal2.jpg', taille: 3, auteur: 'essai');
-      var vs = Visuel.de(o, p.referentiels);
+      final p = bundle();
+      final o = p.objects.first;
+      final free = Visual.free('Boîte aux lettres');
+      final f = o.addPhoto(free, name: 'bal.jpg', size: 3, author: 'essai');
+      expect([f['VIS_CODE'], f['VIS_LIB'], f.containsKey('VUE_CODE')], [free.code, 'Boîte aux lettres', false]);
+      o.addPhoto(free, name: 'bal2.jpg', size: 3, author: 'essai');
+      var vs = Visual.of(o, p.referenceData);
       expect(vs.map((v) => v.lib), ['Boîtier optique', "Vue d'ensemble", 'Vue tête de poteau', 'Boîte aux lettres']);
-      expect(vs.last.libre, isTrue);
+      expect(vs.last.free, isTrue);
       expect(o.photos(vs.last).map((f) => f['FIC_RANG']), [1, 2]);
 
-      o.renommerVisuel(vs.last, 'BAL');
-      vs = Visuel.de(o, p.referentiels);
+      o.renameVisual(vs.last, 'BAL');
+      vs = Visual.of(o, p.referenceData);
       expect(vs.last.lib, 'BAL');
 
       // sans photo, le visuel libre disparaît
       for (final f in o.photos(vs.last)) {
-        o.supprimerPhoto(vs.last, f, nouvelle: true, auteur: 'essai');
+        o.deletePhoto(vs.last, f, isNew: true, author: 'essai');
       }
-      expect(Visuel.de(o, p.referentiels).length, 3);
+      expect(Visual.of(o, p.referenceData).length, 3);
     });
 
     test('paquet de retour : photos prises sur le terminal et toujours rattachées', () async {
       final repo = MemoryRepository();
-      await repo.charger(paquet());
+      await repo.load(bundle());
       final app = AppProvider(repo);
-      final o = (await repo.objet('P1'))!.copie();
-      await app.ajouterPhoto(o, vTete, nom: 'tete.png', octets: png);
-      await app.ajouterPhoto(o, vTete, nom: 'autre.png', octets: png);
-      final o2 = (await repo.objet('P1'))!.copie();
-      final retiree = o2.photos(vTete).last;
-      o2.supprimerPhoto(vTete, retiree, nouvelle: true, auteur: 'essai');
-      await app.enregistrer(o2);
+      final o = (await repo.object('P1'))!.copy();
+      await app.addPhoto(o, vHead, name: 'tete.png', bytes: png);
+      await app.addPhoto(o, vHead, name: 'autre.png', bytes: png);
+      final o2 = (await repo.object('P1'))!.copy();
+      final removed = o2.photos(vHead).last;
+      o2.deletePhoto(vHead, removed, isNew: true, author: 'essai');
+      await app.save(o2);
 
-      final (_, zip) = await app.paquetRetour();
-      final noms = ZipDecoder().decodeBytes(zip).files.map((f) => f.name).toList();
-      final gardee = o2.photos(vTete).single['fichier'];
-      expect(noms, contains(gardee));
-      expect(noms, isNot(contains(retiree['fichier'])));
+      final (_, zip) = await app.returnBundle();
+      final names = ZipDecoder().decodeBytes(zip).files.map((f) => f.name).toList();
+      final kept = o2.photos(vHead).single['fichier'];
+      expect(names, contains(kept));
+      expect(names, isNot(contains(removed['fichier'])));
     });
   });
 
   group('Renseignement (principe FOA Explorer)', () {
     late MemoryRepository repo;
-    late Referentiels ref;
+    late ReferenceData ref;
     setUp(() async {
-      final p = paquet();
-      ref = p.referentiels;
+      final p = bundle();
+      ref = p.referenceData;
       repo = MemoryRepository();
-      await repo.charger(p);
+      await repo.load(p);
     });
 
     test('poteau : partiel, complet, défaut ; niveau posé à l\'enregistrement', () async {
-      final o = (await repo.objet('P1'))!.copie();
-      expect(await renseignement((await repo.objet('P2'))!, ref, repo), Renseignement.aRenseigner);
-      expect(await renseignement(o, ref, repo), Renseignement.partiel); // photos, mais tête manquante
+      final o = (await repo.object('P1'))!.copy();
+      expect(await completionOf((await repo.object('P2'))!, ref, repo), Completion.toFill);
+      expect(await completionOf(o, ref, repo), Completion.partial); // photos, mais tête manquante
 
-      o.ajouterPhoto(vTete, nom: 't.jpg', taille: 1, auteur: 'essai');
-      o.espace('pot', creer: true)!
+      o.addPhoto(vHead, name: 't.jpg', size: 1, author: 'essai');
+      o.namespace('pot', create: true)!
         ..['MAT_KEY'] = 7
         ..['controles'] = [
           {'DATE_CTL': '2026-11-02', 'SEC_UTILISABLE': 1},
         ];
-      expect(await renseignement(o, ref, repo), Renseignement.partiel); // portée L1 non orientée
+      expect(await completionOf(o, ref, repo), Completion.partial); // portée L1 non orientée
 
-      final l1 = (await repo.objet('L1'))!.copie();
-      (l1.espace('inf')!['portee'] as Map)['PRT_ANG1'] = 100.0;
-      await repo.enregistrer(l1, auteur: 'essai');
-      expect(await renseignement(o, ref, repo), Renseignement.complet);
+      final l1 = (await repo.object('L1'))!.copy();
+      (l1.namespace('inf')!['portee'] as Map)['PRT_ANG1'] = 100.0;
+      await repo.save(l1, author: 'essai');
+      expect(await completionOf(o, ref, repo), Completion.complete);
 
-      await AppProvider(repo).enregistrer(o);
-      expect((await repo.objet('P1'))!.espace('pot')!['POT_NIVEAU'], 2);
+      await AppProvider(repo).save(o);
+      expect((await repo.object('P1'))!.namespace('pot')!['POT_NIVEAU'], 2);
 
-      (o.espace('pot')!['controles'] as List).add({'DATE_CTL': '2026-11-03', 'SEC_UTILISABLE': 0});
-      expect(await renseignement(o, ref, repo), Renseignement.defaut);
+      (o.namespace('pot')!['controles'] as List).add({'DATE_CTL': '2026-11-03', 'SEC_UTILISABLE': 0});
+      expect(await completionOf(o, ref, repo), Completion.defect);
     });
 
     test('chambre : face relevée et vue de chaque face relevée', () async {
-      final c = (await repo.objet('C1'))!.copie();
-      expect(await renseignement(c, ref, repo), Renseignement.aRenseigner);
-      final visuels = Visuel.de(c, ref);
-      c.ajouterPhoto(visuels.firstWhere((v) => v.code == 'ENV'), nom: 'env.jpg', taille: 1, auteur: 'essai');
-      expect(await renseignement(c, ref, repo), Renseignement.partiel); // aucune face relevée
-      c.espace('chb', creer: true)!['faces'] = [
+      final c = (await repo.object('C1'))!.copy();
+      expect(await completionOf(c, ref, repo), Completion.toFill);
+      final visuals = Visual.of(c, ref);
+      c.addPhoto(visuals.firstWhere((v) => v.code == 'ENV'), name: 'env.jpg', size: 1, author: 'essai');
+      expect(await completionOf(c, ref, repo), Completion.partial); // aucune face relevée
+      c.namespace('chb', create: true)!['faces'] = [
         {
           'FAC_CODE': 'A',
           'positions': [
@@ -234,9 +234,9 @@ void main() {
         },
         {'FAC_CODE': 'B', 'positions': []},
       ];
-      expect(await renseignement(c, ref, repo), Renseignement.partiel); // vue A manquante (B : sans position)
-      c.ajouterPhoto(visuels.firstWhere((v) => v.code == 'A'), nom: 'a.jpg', taille: 1, auteur: 'essai');
-      expect(await renseignement(c, ref, repo), Renseignement.complet);
+      expect(await completionOf(c, ref, repo), Completion.partial); // vue A manquante (B : sans position)
+      c.addPhoto(visuals.firstWhere((v) => v.code == 'A'), name: 'a.jpg', size: 1, author: 'essai');
+      expect(await completionOf(c, ref, repo), Completion.complete);
     });
   });
 
@@ -245,18 +245,18 @@ void main() {
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     final repo = MemoryRepository();
-    await repo.charger(paquet());
+    await repo.load(bundle());
     final app = AppProvider(repo);
-    final poteau = (await repo.objet('P1'))!;
+    final pole = (await repo.object('P1'))!;
     await t.pumpWidget(ChangeNotifierProvider.value(
       value: app,
       child: MaterialApp(
-        theme: themeNge(),
-        navigatorObservers: [pileEcrans],
+        theme: ngeTheme(),
+        navigatorObservers: [screenStack],
         home: Builder(
           builder: (context) => Scaffold(
             body: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RosaceScreen(poteau: poteau))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RosetteScreen(pole: pole))),
               child: const Text('carte'),
             ),
           ),
@@ -293,7 +293,7 @@ void main() {
 
     await t.tap(find.text('Enregistrer'));
     await t.pumpAndSettle();
-    final cables = ((await repo.objet('L1'))!.espace('inf')!['portee'] as Map)['cables'] as List;
+    final cables = ((await repo.object('L1'))!.namespace('inf')!['portee'] as Map)['cables'] as List;
     expect(cables.single, containsPair('PCB_NAPPE', 2));
     expect(find.text('Enregistrer'), findsNothing);
   });
@@ -303,17 +303,17 @@ void main() {
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     final repo = MemoryRepository();
-    await repo.charger(paquet());
+    await repo.load(bundle());
     final app = AppProvider(repo);
-    final poteau = (await repo.objet('P1'))!;
+    final pole = (await repo.object('P1'))!;
     await t.pumpWidget(ChangeNotifierProvider.value(
       value: app,
       child: MaterialApp(
-        theme: themeNge(),
-        navigatorObservers: [pileEcrans],
+        theme: ngeTheme(),
+        navigatorObservers: [screenStack],
         home: Builder(
           builder: (context) => Scaffold(
-            body: TextButton(onPressed: () => ouvrirSupport(context, poteau), child: const Text('carte')),
+            body: TextButton(onPressed: () => openSupport(context, pole), child: const Text('carte')),
           ),
         ),
       ),
@@ -335,22 +335,22 @@ void main() {
     await t.tap(find.byTooltip('Supprimer la photo').first);
     await t.pumpAndSettle();
     expect(find.text('Photo supprimée'), findsOneWidget);
-    var ensemble = (await repo.objet('P1'))!.photos(vEnsemble);
-    expect(ensemble.map((f) => f['FIC_CODE_EXT']), ['E2']);
-    expect(ensemble.single['FIC_PRINCIPALE'], 1);
-    expect(app.nbModifies, 1);
+    var overall = (await repo.object('P1'))!.photos(vOverall);
+    expect(overall.map((f) => f['FIC_CODE_EXT']), ['E2']);
+    expect(overall.single['FIC_PRINCIPALE'], 1);
+    expect(app.nbChanged, 1);
 
     await t.tap(find.text('ANNULER'));
     await t.pumpAndSettle();
-    ensemble = (await repo.objet('P1'))!.photos(vEnsemble);
-    expect(ensemble.map((f) => f['FIC_CODE_EXT']), ['E1', 'E2']);
+    overall = (await repo.object('P1'))!.photos(vOverall);
+    expect(overall.map((f) => f['FIC_CODE_EXT']), ['E1', 'E2']);
 
     // la seconde devient la référence
     await t.tap(find.byTooltip('Définir comme référence'));
     await t.pumpAndSettle();
-    ensemble = (await repo.objet('P1'))!.photos(vEnsemble);
-    expect(ensemble.map((f) => f['FIC_CODE_EXT']), ['E2', 'E1']);
-    expect(ensemble.first['FIC_PRINCIPALE'], 1);
+    overall = (await repo.object('P1'))!.photos(vOverall);
+    expect(overall.map((f) => f['FIC_CODE_EXT']), ['E2', 'E1']);
+    expect(overall.first['FIC_PRINCIPALE'], 1);
 
     // le globe ramène à la carte
     await t.tap(find.text('Carte'));

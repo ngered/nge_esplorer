@@ -1,30 +1,30 @@
-import '../../data/referentiels.dart';
+import '../../data/reference_data.dart';
 
 /// Réseau d'un câble, déduit du catalogue (`MAT_CABLE.CAB_TYPE`).
-enum Reseau { telecom, energie, inconnu }
+enum Network { telecom, energy, unknown }
 
 /// Style d'une flèche de la rosace (légende Hirondelle) : couleur = réseau, tireté = branchement.
-class StyleCable {
-  const StyleCable(this.reseau, {required this.branchement});
+class CableStyle {
+  const CableStyle(this.network, {required this.drop});
 
-  final Reseau reseau;
-  final bool branchement;
+  final Network network;
+  final bool drop;
 
-  static StyleCable de(Referentiels ref, int? matKey) {
+  static CableStyle of(ReferenceData ref, int? matKey) {
     final c = ref.cable(matKey);
     final type = c?['CAB_TYPE'] as String?;
-    final reseau = switch (type) {
-      'N' || 'I' => Reseau.energie,
-      'Telecom' || 'FO' || 'Fibre' => Reseau.telecom,
-      _ => Reseau.inconnu,
+    final network = switch (type) {
+      'N' || 'I' => Network.energy,
+      'Telecom' || 'FO' || 'Fibre' => Network.telecom,
+      _ => Network.unknown,
     };
-    return StyleCable(reseau, branchement: c?['CAB_USAGE'] == 'BRANCHEMENT');
+    return CableStyle(network, drop: c?['CAB_USAGE'] == 'BRANCHEMENT');
   }
 }
 
 /// Tensions de pose des câbles portés (`INF_PORTEE_CABLE.PCB_TENSION`).
-const tensions = {
-  'STD_AGGLO': 'Standard agglomération',
-  'STD_ECART': 'Standard écart',
-  'RELEVE': 'Flèche relevée',
+const voltages = {
+  'STD_AGGLO': 'Standard agglomération', // tr
+  'STD_ECART': 'Standard écart', // tr
+  'RELEVE': 'Flèche relevée', // tr
 };

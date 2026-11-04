@@ -2,175 +2,208 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/data_repository.dart';
-import '../data/objet.dart';
-import '../data/paquet.dart';
-import '../data/referentiels.dart';
-import '../data/reglages.dart';
-import '../data/visuels.dart';
-import '../modules/renseignement.dart';
-import 'sortie_page.dart' if (dart.library.js_interop) 'sortie_page_web.dart';
+import '../data/geo_object.dart';
+import '../data/bundle.dart';
+import '../data/reference_data.dart';
+import '../data/settings.dart';
+import '../data/visuals.dart';
+import '../lng.dart';
+import '../modules/completion.dart';
+import 'page_exit.dart' if (dart.library.js_interop) 'page_exit_web.dart';
 
 /// État de la session terrain : paquet chargé, compte, intervention en cours.
 class AppProvider extends ChangeNotifier {
-  AppProvider(this.repo, {this.reglages});
+  AppProvider(this.repo, {this.settings});
 
   final DataRepository repo;
 
   /// Paramètres conservés sur le terminal (absents dans les tests).
-  final Reglages? reglages;
+  final Settings? settings;
 
   /// Compte abonné (provisoire : saisi tant que la connexion par jeton n'existe pas).
-  String auteur = 'terrain';
-  String? erreur;
-  bool chargement = false;
+  String author = 'terrain';
+  String? error;
+  bool loading = false;
 
   /// Option : annuler le téléchargement des tuiles qui ne seront plus affichées (désactivée par défaut).
-  bool annulerTuilesObsoletes = false;
+  bool cancelStaleTiles = false;
 
   /// Clé Google Map Tiles renseignée par l'utilisateur, sous sa responsabilité (vide : pas de fonds Google).
-  String cleGoogle = '';
-  int nbModifies = 0;
+  String googleKey = '';
+
+  /// Serveur des photos demandé par l'adresse de la page (`?photos=`), prioritaire sur le paramètre.
+  String? urlPhotoServer;
+
+  /// Paramètre (web) : photos non embarquées lues au serveur local `tools/essai/serveur_photos.py`.
+  bool useLocalPhotoServer = false;
+  static const localPhotoServer = 'http://localhost:8090/';
+
+  /// Serveur des photos non embarquées dans le paquet (web, développement), null sinon.
+  String? get photoServer => urlPhotoServer ?? (useLocalPhotoServer ? localPhotoServer : null);
+  int nbChanged = 0;
 
   /// Le retour a été exporté depuis la dernière modification.
-  bool _exporte = false;
+  bool _exported = false;
 
   /// Modifications qui seraient perdues sans export (web : données en mémoire seulement).
-  bool get aExporter => nbModifies > 0 && !_exporte;
+  bool get toExport => nbChanged > 0 && !_exported;
 
   /// Incrémenté à chaque écriture : la carte recharge les objets visibles.
   int revision = 0;
 
   /// Incrémenté à chaque paquet chargé : la carte se cadre sur l'emprise de la zone.
-  int paquets = 0;
+  int bundleCount = 0;
 
   String? _intervention;
-  String? _debut;
+  String? _start;
 
-  bool get ouvert => repo.ouvert;
-  Map<String, dynamic>? get entete => repo.entete;
-  Referentiels get referentiels => repo.referentiels;
+  bool get isOpen => repo.isOpen;
+  Map<String, dynamic>? get header => repo.header;
+  ReferenceData get referenceData => repo.referenceData;
 
-  String get titre {
-    final e = entete;
+  String get title {
+    final e = header;
     if (e == null) return 'NgeEsPlorer';
     return '${(e['zone'] as Map?)?['lib'] ?? (e['zone'] as Map?)?['code']}';
   }
 
   /// Emprise de la zone [minLon, minLat, maxLon, maxLat].
-  List<double>? get emprise =>
-      ((entete?['zone'] as Map?)?['emprise'] as List?)?.map((v) => (v as num).toDouble()).toList();
+  List<double>? get bounds =>
+      ((header?['zone'] as Map?)?['emprise'] as List?)?.map((v) => (v as num).toDouble()).toList();
 
-  Future<void> chargerPaquet(Uint8List zip) async {
-    chargement = true;
-    erreur = null;
+  Future<void> loadBundle(Uint8List zip) async {
+    loading = true;
+    error = null;
     notifyListeners();
     try {
-      await repo.charger(Paquet.lire(zip));
+      await repo.load(Bundle.read(zip));
       _intervention = null;
-      _debut = null;
-      nbModifies = 0;
-      _exporte = false;
-      avertirAvantSortie(aExporter);
+      _start = null;
+      nbChanged = 0;
+      _exported = false;
+      warnBeforeLeaving(toExport);
       revision++;
-      paquets++;
+      bundleCount++;
     } on FormatException catch (e) {
-      erreur = 'Paquet illisible : ${e.message}';
+      error = tr('Paquet illisible : {0}', [e.message]);
     } catch (e) {
-      erreur = 'Paquet illisible : $e';
+      error = tr('Paquet illisible : {0}', [e]);
     } finally {
-      chargement = false;
+      loading = false;
       notifyListeners();
     }
   }
 
-  void definirAuteur(String nom) {
-    auteur = nom.trim().isEmpty ? 'terrain' : nom.trim();
+  void setAuthor(String name) {
+    author = name.trim().isEmpty ? 'terrain' : name.trim();
     notifyListeners();
   }
 
-  Future<void> chargerReglages() async {
-    final r = reglages;
+  Future<void> loadSettings() async {
+    final r = settings;
     if (r == null) return;
-    cleGoogle = await r.lire(Reglages.cleGoogle) ?? '';
-    annulerTuilesObsoletes = await r.lire(Reglages.annulerTuiles) == 'oui';
+    googleKey = await r.read(Settings.googleKey) ?? '';
+    cancelStaleTiles = await r.read(Settings.cancelStaleTiles) == 'oui';
+    useLocalPhotoServer = await r.read(Settings.useLocalPhotoServer) == 'oui';
+    final language = await r.read(Settings.language);
+    if (language != null && language != Lng.language) {
+      await Lng.load(language);
+      Lng.rebuildAll();
+    }
     notifyListeners();
   }
 
-  void definirAnnulationTuiles(bool active) {
-    annulerTuilesObsoletes = active;
-    reglages?.ecrire(Reglages.annulerTuiles, active ? 'oui' : null);
+  /// Langue de l'interface (code ISO, `Lng.languages`), appliquée tout de suite à tous les écrans.
+  String get language => Lng.language;
+
+  Future<void> setLanguage(String code) async {
+    await Lng.load(code);
+    settings?.write(Settings.language, Lng.language == Lng.sourceLanguage ? null : Lng.language);
+    notifyListeners();
+    Lng.rebuildAll();
+  }
+
+  void setUseLocalPhotoServer(bool enabled) {
+    useLocalPhotoServer = enabled;
+    settings?.write(Settings.useLocalPhotoServer, enabled ? 'oui' : null);
     notifyListeners();
   }
 
-  void definirCleGoogle(String cle) {
-    cleGoogle = cle.trim();
-    reglages?.ecrire(Reglages.cleGoogle, cleGoogle);
+  void setCancelStaleTiles(bool active) {
+    cancelStaleTiles = active;
+    settings?.write(Settings.cancelStaleTiles, active ? 'oui' : null);
+    notifyListeners();
+  }
+
+  void setGoogleKey(String apiKey) {
+    googleKey = apiKey.trim();
+    settings?.write(Settings.googleKey, googleKey);
     notifyListeners();
   }
 
   /// À appeler après toute écriture dans le dépôt (l'intervention commence à la première).
-  Future<void> apresEcriture() async {
+  Future<void> afterWrite() async {
     _intervention ??= const Uuid().v4();
-    _debut ??= Paquet.horodatage();
-    nbModifies = (await repo.modifies()).length;
-    _exporte = false;
-    avertirAvantSortie(aExporter);
+    _start ??= Bundle.timestamp();
+    nbChanged = (await repo.modifies()).length;
+    _exported = false;
+    warnBeforeLeaving(toExport);
     revision++;
     notifyListeners();
   }
 
   /// À appeler une fois le paquet de retour enregistré.
-  void marquerExporte() {
-    _exporte = true;
-    avertirAvantSortie(aExporter);
+  void markExported() {
+    _exported = true;
+    warnBeforeLeaving(toExport);
     notifyListeners();
   }
 
-  Future<void> enregistrer(Objet o, {bool abandon = false}) async {
-    if (!abandon) await poserNiveau(o, referentiels, repo);
-    await repo.enregistrer(o, auteur: auteur, abandon: abandon);
-    await apresEcriture();
+  Future<void> save(GeoObject o, {bool abandon = false}) async {
+    if (!abandon) await saveLevel(o, referenceData, repo);
+    await repo.save(o, author: author, abandon: abandon);
+    await afterWrite();
   }
 
   /// Ajoute une photo prise sur le terminal au visuel [v] de [o] (copie de travail) et enregistre l'objet.
-  Future<void> ajouterPhoto(Objet o, Visuel v, {required String nom, required Uint8List octets}) async {
-    final f = o.ajouterPhoto(v, nom: nom, taille: octets.length, auteur: auteur);
-    await repo.ajouterFichier(f['fichier'] as String, octets);
-    await enregistrer(o);
+  Future<void> addPhoto(GeoObject o, Visual v, {required String name, required Uint8List bytes}) async {
+    final f = o.addPhoto(v, name: name, size: bytes.length, author: author);
+    await repo.addFile(f['fichier'] as String, bytes);
+    await save(o);
   }
 
   /// Paquet de retour (objets modifiés, intervention, photos prises sur le terminal) et son nom de fichier.
-  Future<(String, Uint8List)> paquetRetour() async {
-    final e = entete!;
-    final objets = await repo.modifies();
-    final activites = <String>{
-      for (final o in objets) ...[
-        if (o.props.containsKey('pot') || o.espace('inf')?['portee'] != null) 'RELEVE_POT',
-        if (o.props.containsKey('chb') || o.espace('inf')?['conduites'] != null) 'RELEVE_CHB',
+  Future<(String, Uint8List)> returnBundle() async {
+    final e = header!;
+    final objects = await repo.modifies();
+    final activities = <String>{
+      for (final o in objects) ...[
+        if (o.props.containsKey('pot') || o.namespace('inf')?['portee'] != null) 'RELEVE_POT',
+        if (o.props.containsKey('chb') || o.namespace('inf')?['conduites'] != null) 'RELEVE_CHB',
       ],
     };
-    final date = Paquet.horodatage();
+    final date = Bundle.timestamp();
     final intervention = {
       'INT_CODE_EXT': _intervention ?? const Uuid().v4(),
-      'ACT_CODE': activites.isEmpty ? 'RELEVE' : (activites.toList()..sort()).join(','),
-      'INT_AUTEUR': auteur,
+      'ACT_CODE': activities.isEmpty ? 'RELEVE' : (activities.toList()..sort()).join(','),
+      'INT_AUTEUR': author,
       'INT_TERMINAL': kIsWeb ? 'web' : defaultTargetPlatform.name,
-      'DATE_DEBUT': _debut ?? date,
+      'DATE_DEBUT': _start ?? date,
       'DATE_FIN': date,
     };
     // photos prises sur le terminal et toujours rattachées à un objet du retour
     final references = {
-      for (final o in objets)
-        for (final f in o.fichiers)
+      for (final o in objects)
+        for (final f in o.files)
           if (f['DATE_ABD'] == null) f['fichier'],
     };
-    final fichiers = {
-      for (final f in repo.fichiersNouveaux.entries)
+    final files = {
+      for (final f in repo.newFiles.entries)
         if (references.contains(f.key)) f.key: f.value,
     };
-    final zip = Paquet.ecrireRetour(base: e, intervention: intervention, objets: objets, fichiers: fichiers);
-    final nom = '${(e['projet'] as Map?)?['code']}_${(e['zone'] as Map?)?['code']}_RETOUR_'
+    final zip = Bundle.writeReturn(base: e, intervention: intervention, objects: objects, files: files);
+    final name = '${(e['projet'] as Map?)?['code']}_${(e['zone'] as Map?)?['code']}_RETOUR_'
         '${date.replaceAll(RegExp(r'[-:]'), '').substring(0, 13)}.zip';
-    return (nom, zip);
+    return (name, zip);
   }
 }

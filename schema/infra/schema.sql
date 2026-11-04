@@ -86,10 +86,12 @@ CREATE TABLE MAT_EQUIP (                -- FOA MAT_EQUIP (boîtes, manchons…)
 -- Parcours souterrain -------------------------------------------------------------------------
 
 -- Alvéole ou tube : portée par le linéaire qui relie deux nœuds ; un sous-tube a pour parent son alvéole.
+-- Destination inconnue (alvéole sans miroir, autorisée) : pas de linéaire, la conduite est rattachée à sa chambre.
 CREATE TABLE INF_CONDUITE (
     CD_ID           INTEGER PRIMARY KEY AUTOINCREMENT,
     CD_CODE_EXT     TEXT NOT NULL UNIQUE,
-    LIN_KEY         INTEGER NOT NULL,   -- noyau PRJ_LINEAIRE
+    LIN_KEY         INTEGER,            -- noyau PRJ_LINEAIRE
+    NOE_KEY         INTEGER,            -- noyau PRJ_NOE : chambre de la conduite sans linéaire
     CD_PARENT_KEY   INTEGER REFERENCES INF_CONDUITE (CD_ID),
     CD_NUM          INTEGER,
     CD_DIAM         REAL,               -- diamètre nominal (mm)
@@ -100,7 +102,8 @@ CREATE TABLE INF_CONDUITE (
     DATE_MODIF      TEXT,
     SRC_MODIF       TEXT,
     DATE_ABD        TEXT,
-    SRC_ABD         TEXT
+    SRC_ABD         TEXT,
+    CHECK ((LIN_KEY IS NULL) <> (NOE_KEY IS NULL))
 );
 
 -- Occupation d'une conduite : câbles constatés (non identifiés individuellement).

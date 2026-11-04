@@ -72,7 +72,7 @@ Règles :
 | `hors_zone` | nœud | Extrémité d'un linéaire de la zone située dans une autre zone (consultation) |
 | `chb` | nœud | `CHB_CHAMBRE`, avec `faces` (`CHB_FACE`, chacune avec ses `positions`) et `masques` (`CHB_MASQUE_LOGIQUE`) |
 | `pot` | nœud | `POT_POTEAU`, avec `controles` (`POT_CONTROLE`) |
-| `inf` | nœud | `equipements` (`INF_EQUIPEMENT`) |
+| `inf` | nœud | `equipements` (`INF_EQUIPEMENT`) et, dans une chambre, `conduites` sans destination connue (alvéole sans miroir : `INF_CONDUITE` rattachée par `NOE_KEY`, sans linéaire) |
 | `inf` | linéaire | `conduites` (`INF_CONDUITE`, chacune avec ses `cables` : `INF_CD_CABLE`) et `portee` (`INF_PORTEE`, avec ses `cables` : `INF_PORTEE_CABLE`) |
 | `fichiers` | objet | `PRJ_FICHIER` de l'objet et de ses éléments : `ENTITE` (table porteuse), `VUE_CODE` (visuel attendu) ou `VIS_CODE` / `VIS_LIB` (visuel libre), colonnes du fichier ; ordre de la galerie `FIC_RANG`, photo de référence `FIC_PRINCIPALE` ; `fichier` = chemin dans le paquet s'il y est inclus |
 

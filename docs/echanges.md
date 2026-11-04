@@ -166,6 +166,20 @@ Constats sur les sources :
   seul côté, à compléter par la fonction miroir ;
 - angles des portées GraceTHD : azimut en grades, 0 = nord, sens horaire — convention retenue pour la rosace du
   terminal, orientée au nord (voir « Hirondelle » plus bas).
+
+Paquet réel de Nancy (3 novembre 2026), FOA Explorer FTTH Orange `FTTH_OR_NANCY` (2016-2017, 27572 déclaré et
+réel) : projet à part par `charger_essai.py … --foa <base> NCY "Nancy (FOA Explorer)" <dossier Chambres>` →
+`docs/essai/projet_nancy/` (6 Go avec les photos), paquet `docs/essai/paquets/NANCY_NCY.zip` (0,9 Mo, sans les
+photos), non versionnés. Contenu : 8 061 chambres (1 189 relevées), 2 268 faces, 7 851 conduites dont 2 563 vues
+des deux côtés, 10 414 positions, 1 544 masques logiques, 6 452 photos (15 introuvables), emprise 20 km², aucun
+orphelin. À reprendre : 2 431 copies « MIROIR » non reprises (2 043 conduites vues d'un seul côté entre deux
+chambres), 3 241 alvéoles sans destination (autorisées : conduite rattachée à sa chambre, sans linéaire ni nœud
+« à localiser » sur la carte), 18 positions dont les deux alvéoles FOA
+appariées ont des destinations incohérentes, adresses quasi absentes (5). Photos sur le web sans les embarquer :
+le paquet donne le chemin de chaque photo dans le projet (`FIC_CHEMIN`), lue à la demande au serveur local
+`tools/essai/serveur_photos.py docs/essai/projet_nancy` (dossier `photos/` seul, boucle locale, CORS) quand
+l'application est ouverte avec `?photos=8090` ou compilée avec `--dart-define=SERVEUR_PHOTOS=8090` (un `&` dans les arguments du lanceur coupe la commande de flutter.bat) ; lanceur VS Code « photos de Nancy » (tâche du serveur comprise).
+Sur Android, les photos seront dans le stockage du terminal (paquet avec photos).
 2. **Optique**, puis **retour fin de travaux**.
 3. Immeubles / BAL, électrique : ensuite.
 
@@ -218,7 +232,7 @@ l'écran précédent, un bouton « Revenir à la carte » ferme les écrans un p
 saisie non enregistrée demande confirmation et le retour s'arrête si l'utilisateur reste ; pas de raccourci dans les
 dialogues et feuilles modales, qui se ferment d'abord ; le retour arrière garde son sens (écran précédent).
 
-**Écrans de saisie** (2 novembre 2026, `widgets/saisie.dart`) : bouton flottant « Enregistrer » en bas à droite,
+**Écrans de saisie** (2 novembre 2026, `widgets/entry_screen.dart`) : bouton flottant « Enregistrer » en bas à droite,
 visible seulement s'il y a quelque chose à enregistrer ; après l'enregistrement, on reste sur l'écran (message
 « Enregistré ») ; quitter avec une saisie en cours demande « Quitter sans enregistrer ? » (Rester / Quitter). Les
 interrupteurs des paramètres s'appliquent immédiatement.
@@ -265,9 +279,27 @@ interrupteurs des paramètres s'appliquent immédiatement.
 - **support** : écran d'arrivée « visuels » (une carte par visuel : photo de référence, nombre de photos ou
   « Manquante », prendre une photo, fonction propre du visuel) ; le **crayon** de l'en-tête ouvre la saisie générale de l'entité
   (identification, commentaire, caractéristiques, contrôles, données propres au module), pas les photos ni leur
-  titre ; barre basse commune module (Portées pour le poteau) · **Connecteurs** (liens optiques, écrans
-  `support_saisie_optique` / `support_route_optique`) · Carte (globe, remplace « Revenir à la carte ») · Ajouter
-  (visuel libre) ;
+  titre ; barre basse commune module (Portées pour le poteau, Masques et conduites pour la chambre) ·
+  **Équipements** (remplace « Connecteurs » le 4 novembre 2026 : une boîte d'épissure y propose ses liens fibres,
+  écrans `support_saisie_optique` / `support_route_optique`) · Carte (globe, remplace « Revenir à la carte ») ·
+  Ajouter (visuel libre) ;
+- **onglets du support** (4 novembre 2026) : écrans séparés plutôt qu'un long formulaire ; saisie (crayon des
+  visuels), module (portées, masques) et équipements sont des onglets : passer de l'un à l'autre remplace l'écran au
+  lieu de l'empiler (saisie enregistrée avant ; grille ou rosace modifiée : confirmation, et l'on peut rester), le
+  retour ramène aux visuels du support, puis à la carte ; depuis la grille d'une face, Masques ramène à l'aperçu ;
+- **saisie de la chambre** (4 novembre 2026) : cartes dépliables Général (date, type, numéro, référence,
+  implantation, adresse), Dimensions (une ligne par dimension : référence du catalogue, dimension relevée),
+  Équipements, Commentaires (un seul commentaire ; celui de la chambre repris de FOA seulement s'il est renseigné) ;
+  masques et conduites ne sont plus dans la saisie : le bouton Masques de la barre basse ouvre leur aperçu (une
+  ligne par face : alvéoles, grille, chaque face ouvrant sa grille ; puis les conduites : parcours vers les autres
+  supports, conduites sans destination connue) ; dimension de référence en gris sous chaque champ de dimension ;
+- **adresse d'un support** (4 novembre 2026) : toucher l'adresse ouvre son écran, calqué sur « Adresse édition »
+  de FibReady : sélection commune, voie, adresse parmi celles du paquet (ou nouvelle adresse), détail (numéro,
+  complément, code postal, commentaire), Détacher / Annuler / Valider ; l'adresse est enregistrée avec le support.
+  Bouton de détection : géocodage inversé de la position du support comme l'adresse auto de FibReady
+  (`GeoCodage.GetBestAdr` : Géoplateforme en France, Photon en repli ou ailleurs), rapproché des adresses du paquet
+  (casse et accents ignorés) ; nouvelle adresse sinon, avec l'identifiant BAN. Demande une connexion. Entrée, type de
+  bâtiment et niveaux de FibReady non repris (absents de `PRJ_ADRESSE`) ;
 - **suppression au plus près de l'élément** (au lieu de la coche de sélection et de la corbeille de la barre basse du
   Figma) : corbeille sur chaque photo de la galerie avec « Annuler » dans le message qui suit, « Supprimer ce câble » dans le
   détail d'un câble porté, « Supprimer le support » en bas de la saisie du support, avec confirmation ;
@@ -284,8 +316,28 @@ une photo prise sur le terminal remonte dans le paquet de retour (`fichiers/<FIC
 reste rattachée ; sur le web, « prendre une photo » choisit une image (appareil photo sur Android, à venir).
 L'action `ROSACE` de la vue tête de poteau n'est pas affichée (Portées dans la barre basse).
 
-Suites prévues : appareil photo sur Android, saisie des masques de chambre en grille, persistance locale
-(Drift ; SQLCipher sur Android), boussole pour orienter la rosace, connexion par jeton abonné.
+Masques de chambre (2 novembre 2026, `lib/modules/chambre/`) : entrée « Masques » de la barre du support et
+bouton grille des visuels A à D ; une face en plein écran (A à D), grille de `FAC_NB_COL` × `FAC_NB_LIG` cellules
+(9 × 12 par défaut, réglable pour les grandes faces) parcourue par déplacement et zoom ; une alvéole par position,
+disque à la couleur de l'état (`DEF_CD_ETAT`), taille selon le diamètre, numéro de la conduite. Toucher la grille
+place une alvéole (parcours souterrain de la chambre, diamètre normalisé, état ; derniers choix repris pour la
+saisie en série) ; toucher une alvéole la sélectionne (état, diamètre, retrait) ; l'appui long la déplace. La
+position est écrite dans la chambre (`chb.faces[].positions`), l'état et le diamètre dans la conduite du linéaire
+(`inf.conduites`) ; retirer une position venue du BE l'abandonne (`DATE_ABD`), une alvéole créée dans la session
+disparaît. Le niveau de renseignement est recalculé à l'enregistrement (positions abandonnées ignorées).
+
+Fiche de la chambre (crayon), reprise de la fiche « Chambre - édition des informations » de FOA Explorer : type
+(chambre, chambre FT, chambre SAT : `TYPE_KEY`), numéro (`NOE_LIB`), adresse rattachée (lecture seule ; choix de
+l'adresse à venir), référence du catalogue (`MAT_KEY`, `MAT_CHAMBRE`), implantation (`IMPS_KEY`), équipements
+(`inf.equipements`, catalogue `MAT_EQUIP`, communs aux supports : aussi sur le poteau), commentaire, dimensions de
+référence (catalogue, intérieur) et dimensions relevées si elles diffèrent (`CHB_LARG`, `CHB_LNG`, `CHB_HAUT`) ;
+puis les quatre faces, chacune ouvrant sa grille. La date de la fiche FOA correspond ici à la date de modification.
+Réorganisée le 4 novembre 2026 (cartes dépliables, adresse modifiable, faces et conduites dans l'aperçu des
+masques) : voir « saisie de la chambre » et « adresse d'un support » plus haut.
+
+Suites prévues : appareil photo sur Android, miroir (report d'une alvéole dans la chambre voisine), masques
+logiques et câbles des conduites, persistance locale (Drift ; SQLCipher sur Android), boussole pour orienter la
+rosace, connexion par jeton abonné.
 
 ## 9. Environnement de développement
 

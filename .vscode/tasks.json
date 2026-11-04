@@ -1,0 +1,18 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Serveur de photos (Nancy)",
+            "detail": "Photos du projet docs/essai/projet_nancy pour la version web (?photos=8090)",
+            "type": "shell",
+            "command": "python",
+            "args": ["-I", "tools/essai/serveur_photos.py", "docs/essai/projet_nancy", "8090"],
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "serveur-photos",
+                "pattern": { "regexp": "^__aucun__$" },
+                "background": { "activeBegins": true, "beginsPattern": "^__jamais__$", "endsPattern": "servies sur" }
+            }
+        }
+    ]
+}

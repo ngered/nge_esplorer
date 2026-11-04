@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 import projet  # noqa: E402
 
 sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 FORMAT = 'nge-esplorer-paquet'
 FORMAT_VERSION = '0.1.0'
 DECIMALES = 7                   # ~1 cm en WGS84
@@ -39,7 +40,9 @@ NOEUD = [
     ('pot', 'poteau.POT_POTEAU', 'NOE_KEY', True, [
         ('controles', 'poteau.POT_CONTROLE', 'POT_KEY', False, [])]),
     ('inf', None, None, True, [
-        ('equipements', 'infra.INF_EQUIPEMENT', 'NOE_KEY', False, [])]),
+        ('equipements', 'infra.INF_EQUIPEMENT', 'NOE_KEY', False, []),
+        ('conduites', 'infra.INF_CONDUITE', 'NOE_KEY', False, [         # alvéoles sans destination connue
+            ('cables', 'infra.INF_CD_CABLE', 'CD_KEY', False, [])])]),
 ]
 LINEAIRE = [
     ('inf', None, None, True, [
@@ -111,6 +114,10 @@ class Publication:
     def enfants(self, table, parent):
         """Lignes d'une table groupées par la colonne parent (chargées une seule fois)."""
         if (table, parent) not in self.cache:
+            schema, _, nom = table.rpartition('.')
+            if parent not in {r[1] for r in self.con.execute(f'PRAGMA {schema or "main"}.table_info({nom})')}:
+                raise SystemExit(f'{table} sans colonne {parent} : projet construit avec un schéma antérieur, '
+                                 f'à reconstruire (tools/essai/charger_essai.py)')
             groupes = defaultdict(list)
             for l in lignes(self.con, table):
                 groupes[l[parent]].append(l)

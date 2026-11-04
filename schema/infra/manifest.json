@@ -21,6 +21,7 @@
     {"table": "MAT_CABLE", "colonne": "FAB_KEY", "cible": "noyau.DEF_FABRICANT.FAB_ID"},
     {"table": "MAT_EQUIP", "colonne": "FAB_KEY", "cible": "noyau.DEF_FABRICANT.FAB_ID"},
     {"table": "INF_CONDUITE", "colonne": "LIN_KEY", "cible": "noyau.PRJ_LINEAIRE.LIN_ID"},
+    {"table": "INF_CONDUITE", "colonne": "NOE_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
     {"table": "INF_PORTEE", "colonne": "LIN_KEY", "cible": "noyau.PRJ_LINEAIRE.LIN_ID"},
     {"table": "INF_EQUIPEMENT", "colonne": "NOE_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"}
   ],
