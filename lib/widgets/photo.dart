@@ -19,18 +19,21 @@ String? photoServerFromUrl(Uri pageUrl,
 }
 
 /// Image d'une photo (élément de `fichiers`) : contenu embarqué dans le paquet ou pris sur le terminal, sinon lu au
-/// serveur de photos par son chemin dans le projet (`FIC_CHEMIN`). Null sans source.
+/// serveur de photos par son chemin dans le projet (`FIC_CHEMIN`). Null sans source. Originaux de 12 Mpx (48 Mo
+/// décodés, appareil photo du terminal, relevés de Nancy) : décodés à la largeur d'affichage, d'où qu'ils viennent.
 ImageProvider? photoImage(AppProvider app, Map f) {
+  ImageProvider fit(ImageProvider i) => ResizeImage(i, width: photoWidth, policy: ResizeImagePolicy.fit);
   final path = f['fichier'] as String?;
   final bytes = path == null ? null : app.repo.file(path);
-  if (bytes != null) return MemoryImage(bytes);
+  if (bytes != null) return fit(MemoryImage(bytes));
   final distant = f['FIC_CHEMIN'] as String?;
   final server = app.photoServer;
   if (server == null || distant == null) return null;
-  // originaux de 12 Mpx (48 Mo décodés) : décodés à la largeur d'affichage
-  return ResizeImage(NetworkImage(Uri.parse(server).resolve(distant).toString()),
-      width: 1280, policy: ResizeImagePolicy.fit);
+  return fit(NetworkImage(Uri.parse(server).resolve(distant).toString()));
 }
+
+/// Largeur de décodage des photos (pixels) ; une photo moins large garde la sienne (pas d'agrandissement).
+const photoWidth = 1280;
 
 /// Photo cadrée ([fit] : remplissant le cadre, ou entière dans la galerie) ; à défaut, le cadre [NoPhoto] avec
 /// [missingText] (ou « Photo introuvable » si la lecture échoue).

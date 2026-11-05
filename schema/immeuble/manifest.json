@@ -1,6 +1,6 @@
 {
   "code": "immeuble",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "libelle": "Immeubles et BAL : logements, locaux, conventions",
   "fichier": "immeuble.sqlite",
   "spatial": false,
@@ -25,8 +25,7 @@
   "vues": [
     {"type": "IMM", "code": "ENSEMBLE", "lib": "Vue d'ensemble", "ordre": 1, "obligatoire": "OUI"},
     {"type": "IMM", "code": "BAL", "lib": "Boîtes aux lettres", "ordre": 2, "obligatoire": "OUI"},
-    {"type": "IMM", "code": "BOITIER", "lib": "Boîtier optique", "ordre": 3, "obligatoire": "NON"},
-    {"type": "IMM", "code": "COLONNE", "lib": "Colonne montante", "ordre": 4, "obligatoire": "NON"}
+    {"type": "IMM", "code": "COLONNE", "lib": "Colonne montante", "ordre": 3, "obligatoire": "NON"}
   ],
   "completude": "À définir avec les activités relevé BAL et relevé immeubles.",
   "grace": {

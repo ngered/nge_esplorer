@@ -53,14 +53,14 @@ class MaskScreen extends StatefulWidget {
   final String? face;
 
   /// Alvéole sélectionnée à l'ouverture (CD_KEY) : arrivée d'un parcours suivi depuis un autre support, chambre
-  /// rouverte par le menu ⋮.
+  /// rouverte par le menu ⋮ ; conduite pas encore placée ici : son alvéole à placer en miroir, mise en évidence.
   final String? selection;
 
   @override
   State<MaskScreen> createState() => _MaskScreenState();
 }
 
-class _MaskScreenState extends State<MaskScreen> {
+class _MaskScreenState extends State<MaskScreen> with UndoMessage {
   late final MaskEditor _editor;
   Route<dynamic>? _route;
 
@@ -84,9 +84,15 @@ class _MaskScreenState extends State<MaskScreen> {
       ..addListener(_note);
     _editor.load().then((_) {
       // alvéole choisie à l'ouverture, si elle est toujours placée sur la face (une alvéole jamais enregistrée a
-      // disparu, et le premier toucher de la grille ne servirait qu'à la désélectionner)
+      // disparu, et le premier toucher de la grille ne servirait qu'à la désélectionner) ; conduite que cette chambre
+      // n'a pas encore placée (arrivée d'un « Vers … ») : son alvéole à placer en miroir, mise en évidence
       final s = widget.selection;
-      if (mounted && s != null && _editor.bores().any((a) => a.cd == s)) _editor.select(s);
+      if (!mounted || s == null) return;
+      if (_editor.bores().any((a) => a.cd == s)) {
+        _editor.select(s);
+      } else {
+        _editor.focusMirror(s);
+      }
     });
   }
 
@@ -99,8 +105,10 @@ class _MaskScreenState extends State<MaskScreen> {
 
   /// Face et alvéole choisies, notées pour rouvrir la grille dans le même état si l'on quitte la chambre (menu ⋮).
   void _note() {
+    // toute autre action rend caduc le « Annuler » d'une imbrication
+    if (!_nesting) hideUndo();
     final r = _route;
-    if (r != null) screenStack.note(r, tab: 'masques:${_editor.face}', selection: _editor.selection);
+    if (r != null) screenStack.note(r, tab: 'masques:${_editor.face}', selection: _editor.selection ?? _editor.focus);
   }
 
   @override
@@ -161,6 +169,121 @@ class _MaskScreenState extends State<MaskScreen> {
     _editor.add(linear: linear, x: x, y: y, diameter: diameter, state: state);
   }
 
+  /// Libellé d'une source du miroir : « C598 · face B ».
+  String _sourceLabel(MirrorSource s) {
+    final other = _editor.mirrorSources().where((m) => m.source == s).firstOrNull?.chamber ??
+        _editor.destinations.values.where((d) => d.id == s.chamber).firstOrNull;
+    return tr('{0} · face {1}', [other?.lib ?? tr('Sans étiquette'), s.face]);
+  }
+
+  /// Bouton Miroir (notes rep15) : ouvre le miroir sur la face affichée, depuis la face de la chambre d'en face
+  /// choisie s'il y en a plusieurs ; le referme s'il est ouvert.
+  Future<void> _toggleMirror() async {
+    if (_editor.mirrorSource != null) {
+      _editor.showMirror(null);
+      return;
+    }
+    await _chooseMirror();
+  }
+
+  /// Face de la chambre d'en face dont les alvéoles sont proposées en pointillé sur la face affichée : d'emblée
+  /// s'il n'y en a qu'une, sinon choisie dans une liste.
+  Future<void> _chooseMirror() async {
+    final sources = _editor.mirrorSources();
+    if (sources.isEmpty) return;
+    final source = sources.length == 1
+        ? sources.single.source
+        : await showModalBottomSheet<MirrorSource>(
+            context: context,
+            isScrollControlled: true,
+            builder: (c) => SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(tr('Miroir sur la face {0}, depuis', [_editor.face]),
+                        style: Theme.of(c).textTheme.titleMedium),
+                  ),
+                  for (final s in sources)
+                    ListTile(
+                      leading: const Icon(Icons.flip),
+                      title: Text(tr('{0} · face {1}', [s.chamber.lib ?? tr('Sans étiquette'), s.source.face])),
+                      subtitle: Text(trn(s.count, '{0} alvéole à placer', '{0} alvéoles à placer')),
+                      selected: s.source == _editor.mirrorSource,
+                      onTap: () => Navigator.pop(c, s.source),
+                    ),
+                ]),
+              ),
+            ),
+          );
+    if (source != null && mounted) _editor.showMirror(source);
+  }
+
+  /// Alvéole déposée (fin d'un appui long) dans une plus grande : elle en devient un sous-tube, comme dans FOA
+  /// Explorer (notes rep15), avec « Annuler » ; une alvéole d'un autre parcours ne le peut pas, et le message le dit.
+  void _drop(MaskBore a) {
+    final parent = _editor.nestTarget(a);
+    if (parent == null) return;
+    if (!_editor.canNest(a, parent)) {
+      ScaffoldMessenger.of(context).replaceSnackBar(SnackBar(
+          content: Text(tr('Alvéole {0} d\'un autre parcours : elle ne peut pas être sous-tube de l\'alvéole {1}.',
+              [a.label, parent.label]))));
+      return;
+    }
+    final label = a.label;
+    _nesting = true;
+    final undo = _editor.nest(a, parent);
+    _nesting = false;
+    final child = _editor.bores().where((b) => b.cd == a.cd).firstOrNull;
+    showUndo(tr('Alvéole {0} devenue sous-tube {1}', [label, child?.label ?? '?']), undo);
+  }
+
+  /// Imbrication en cours : sa notification ne ferme pas son propre « Annuler ».
+  bool _nesting = false;
+
+  /// « Tout placer » : place d'un coup les alvéoles à placer de la face affichée.
+  void _placeMirrors() {
+    final n = _editor.placeMirrors();
+    ScaffoldMessenger.of(context).replaceSnackBar(SnackBar(
+        content: Text(trn(n, '{0} alvéole placée en miroir', '{0} alvéoles placées en miroir'))));
+  }
+
+  /// Sous-tubage de l'alvéole [a] : nombre et diamètre des sous-tubes, choisis dans un dialogue.
+  Future<void> _subduct(MaskBore a) async {
+    final choice = await showDialog<(int, double)>(
+      context: context,
+      builder: (_) => _SubductDialog(bore: a, diameters: subductDiameters(_editor.referenceData)),
+    );
+    if (choice != null) _editor.subduct(a, choice.$1, choice.$2);
+  }
+
+  /// Câble d'un autre diamètre que ceux proposés, saisi en mm.
+  Future<void> _otherCable(MaskBore a) async {
+    final mm = await showDialog<double>(context: context, builder: (_) => const _CableDiameterDialog());
+    if (mm != null) _editor.addCable(a, mm, _editor.cableNature);
+  }
+
+  /// Retire l'alvéole choisie ; avec ses sous-tubes, après confirmation.
+  Future<void> _remove(MaskBore a) async {
+    final n = _editor.children(a).length;
+    if (n > 0) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(tr('Retirer l\'alvéole {0}', [a.label])),
+          content: Text(trn(n, 'Son sous-tube sera retiré avec elle.', 'Ses {0} sous-tubes seront retirés avec elle.')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Annuler'))),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Retirer'))),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    _editor.remove(a);
+  }
+
   /// Ajout depuis la barre basse : au centre de la face, décalé (en m) s'il y est déjà une alvéole.
   void _addAtCenter() {
     final (x, y) = _editor.freePlace(_lastDiameter);
@@ -197,13 +320,18 @@ class _MaskScreenState extends State<MaskScreen> {
       listenable: _editor,
       builder: (context, _) {
         final bores = _editor.bores();
-        final n = bores.length;
+        // alvéoles, sous-tubes non comptés
+        final n = bores.where((b) => !b.subduct).length;
         final sel = _editor.selectedBore;
+        // miroir : alvéoles à placer en tout (pastille du bouton), celles affichées sur la face
+        final pending = _editor.loaded ? _editor.pendingMirrors : 0;
+        final mirrors = _editor.mirrors(_editor.face).length;
         // la chambre relue dans le dépôt au chargement de la session (l'objet passé a pu vieillir)
         final chamber = _editor.chamber;
         return EntryScreen(
           changed: _editor.changed,
-          message: tr('Les masques modifiés ne seront pas enregistrés.'),
+          onSave: _save,
+          message: tr('Les masques ont été modifiés.'),
           child: Scaffold(
             appBar: AppBar(
               title: ScreenTitle(
@@ -215,6 +343,8 @@ class _MaskScreenState extends State<MaskScreen> {
                 SupportMenu(object: chamber, actions: [
                   (icon: Icons.image_outlined, label: tr('Photos de la face'), onSelected: _photos),
                   (icon: Icons.aspect_ratio, label: tr('Dimensions de la face'), onSelected: _resize),
+                  if (mirrors > 0)
+                    (icon: Icons.flip, label: tr('Tout placer en miroir ({0})', [mirrors]), onSelected: _placeMirrors),
                 ]),
               ],
             ),
@@ -236,35 +366,82 @@ class _MaskScreenState extends State<MaskScreen> {
                 : LayoutBuilder(builder: (context, c) {
                     final faces = Padding(
                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                      child: SegmentedButton<String>(
+                      // choix de la face, puis le bouton Miroir (notes rep15)
+                      child: Row(children: [
+                        Expanded(child: SegmentedButton<String>(
                         showSelectedIcon: false,
                         segments: [
                           for (final f in chamberFaces)
                             ButtonSegment(
                               value: f,
-                              label: Text(
-                                  _editor.bores(f).isEmpty ? f : '$f · ${_editor.bores(f).length}'),
+                              // nombre d'alvéoles placées ; réduit plutôt que de déborder (téléphone, grands caractères)
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(() {
+                                  final placed = _editor.bores(f).where((b) => !b.subduct).length;
+                                  return placed == 0 ? f : '$f · $placed';
+                                }()),
+                              ),
                             ),
                         ],
                         selected: {_editor.face},
                         onSelectionChanged: (s) => _editor.selectFace(s.first),
-                      ),
+                      )),
+                        const SizedBox(width: 8),
+                        Badge(
+                          isLabelVisible: pending > 0 && _editor.mirrorSource == null,
+                          label: Text('$pending'),
+                          backgroundColor: Nge.yellow,
+                          textColor: Nge.slateDark,
+                          child: IconButton(
+                            isSelected: _editor.mirrorSource != null,
+                            tooltip: _editor.mirrorSource != null
+                                ? tr('Fermer le miroir')
+                                : trn(pending, 'Miroir · {0} alvéole à placer', 'Miroir · {0} alvéoles à placer'),
+                            style: IconButton.styleFrom(
+                              side: const BorderSide(color: Nge.border),
+                              backgroundColor: _editor.mirrorSource != null ? Nge.yellow : Colors.white,
+                              foregroundColor: Nge.slateDark,
+                            ),
+                            icon: const Icon(Icons.flip),
+                            onPressed: pending == 0 && _editor.mirrorSource == null ? null : _toggleMirror,
+                          ),
+                        ),
+                      ]),
                     );
                     final grid = MaskGrid(
                       editor: _editor,
                       states: states,
                       onPlace: _add,
+                      onDrop: _drop,
+                      initial: widget.selection,
                     );
                     // [wide] : colonne latérale haute (tablette, Windows en paysage), légende et choix en grand ;
                     // [actions] : « Retirer du masque » et « Enregistrer » dans le panneau (sinon épinglés à part)
+                    // sans alvéole choisie : alvéoles à placer en miroir sur la face, puis la légende
                     Widget panelOf({bool wide = false, bool actions = true}) => sel == null
-                        ? _Legend(states: states, wide: wide)
+                        ? Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            if (_editor.mirrorSource case final source?)
+                              _MirrorBanner(
+                                source: _sourceLabel(source),
+                                count: mirrors,
+                                face: _editor.face,
+                                wide: wide,
+                                onPlaceAll: mirrors > 0 ? _placeMirrors : null,
+                                onChange: _editor.mirrorSources().length > 1 ? _chooseMirror : null,
+                                onClose: () => _editor.showMirror(null),
+                              ),
+                            _Legend(states: states, wide: wide),
+                          ])
                         : _BorePanel(
                             bore: sel,
                             editor: _editor,
                             states: states,
                             onSave: _editor.changed ? _save : null,
                             onFollow: _follow,
+                            onSubduct: _subduct,
+                            onOtherCable: _otherCable,
+                            onRemove: _remove,
                             wide: wide,
                             actions: actions,
                           );
@@ -310,7 +487,7 @@ class _MaskScreenState extends State<MaskScreen> {
                                 const Divider(height: 1),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-                                  child: _BoreActions(bore: sel, editor: _editor, onSave: _editor.changed ? _save : null),
+                                  child: _BoreActions(bore: sel, onRemove: _remove, onSave: _editor.changed ? _save : null),
                                 ),
                               ],
                             ]),
@@ -335,7 +512,7 @@ class _MaskScreenState extends State<MaskScreen> {
                           if (sel != null)
                             Padding(
                               padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                              child: _BoreActions(bore: sel, editor: _editor, onSave: _editor.changed ? _save : null),
+                              child: _BoreActions(bore: sel, onRemove: _remove, onSave: _editor.changed ? _save : null),
                             ),
                         ]),
                       ),
@@ -371,10 +548,23 @@ const _minTouch = 28.0;
 /// Grille d'une face aux dimensions réelles : cellules carrées de 5 cm, alvéoles en vraie grandeur ; déplacement et
 /// zoom de la vue, ajout au toucher, déplacement d'une alvéole par appui long. Positions en m.
 class MaskGrid extends StatefulWidget {
-  const MaskGrid({super.key, required this.editor, required this.states, required this.onPlace});
+  const MaskGrid({
+    super.key,
+    required this.editor,
+    required this.states,
+    required this.onPlace,
+    this.onDrop,
+    this.initial,
+  });
+
+  /// Fin du déplacement d'une alvéole (appui long relâché) : sous-tubage par glisser-déposer.
+  final void Function(MaskBore bore)? onDrop;
 
   final MaskEditor editor;
   final List<DuctState> states;
+
+  /// Alvéole choisie à l'ouverture (MaskScreen.selection), amenée dans la vue.
+  final String? initial;
 
   /// Toucher hors alvéole : centre de la nouvelle alvéole, en m depuis la gauche et le haut de la face.
   final void Function(double x, double y) onPlace;
@@ -385,6 +575,42 @@ class MaskGrid extends StatefulWidget {
 
 class _MaskGridState extends State<MaskGrid> {
   final _gridKey = GlobalKey();
+  final _view = TransformationController();
+
+  /// Écart du doigt au centre de l'alvéole déplacée (m).
+  Offset _grab = Offset.zero;
+
+  /// Alvéole sur laquelle la vue a été centrée (arrivée d'un « Vers … », chambre rouverte) : une seule fois.
+  String? _centered;
+
+  @override
+  void dispose() {
+    _view.dispose();
+    super.dispose();
+  }
+
+  /// Amène au centre de la vue ([viewport]) l'alvéole à placer mise en évidence, sinon l'alvéole choisie à
+  /// l'ouverture ([MaskGrid.initial]) : sur une grande face, elle serait hors de l'écran. Une seule fois par
+  /// alvéole ; une face qui tient dans la vue n'a pas à défiler.
+  void _center(Size viewport, double width, double height, double scale) {
+    final e = widget.editor;
+    final cd = e.focus ?? (e.selection == widget.initial ? widget.initial : null);
+    if (cd == null || cd == _centered) return;
+    final m = e.mirrors(e.face).where((m) => m.cd == cd).firstOrNull;
+    final b = m == null ? e.bores().where((b) => b.cd == cd).firstOrNull : null;
+    final (x, y) = m != null ? (m.x, m.y) : b != null ? (b.x, b.y) : (null, null);
+    if (x == null || y == null) return;
+    _centered = cd;
+    final contentWidth = math.max(viewport.width, width + 24), contentHeight = math.max(viewport.height, height + 24);
+    double shift(double content, double view, double face, double at) {
+      if (content <= view) return 0;
+      final px = (content - face - 24) / 2 + 12 + at;
+      return (view / 2 - px).clamp(view - content, 0.0);
+    }
+
+    _view.value = Matrix4.translationValues(
+        shift(contentWidth, viewport.width, width, x * scale), shift(contentHeight, viewport.height, height, y * scale), 0);
+  }
 
   /// Point de la face (m) sous une position de l'écran ; [scale] en px par m.
   Offset? _toFace(Offset global, double scale) {
@@ -408,6 +634,10 @@ class _MaskGridState extends State<MaskGrid> {
       final scale = cell / gridCell; // px par m
       final width = faceWidth * scale, height = faceHeight * scale;
       final colors = {for (final s in widget.states) s.id: s.color};
+      final viewport = Size(c.maxWidth, c.maxHeight);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _center(viewport, width, height, scale);
+      });
       final face = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (d) {
@@ -426,8 +656,12 @@ class _MaskGridState extends State<MaskGrid> {
             for (final a in e.bores())
               () {
                 final d = boreDiameter(a.diameter) * scale;
-                final touch = math.max(d, _minTouch);
+                // un sous-tube à sa taille : le bord de son alvéole reste à toucher (les sous-tubes se choisissent
+                // aussi dans le panneau de l'alvéole)
+                final touch = a.subduct ? d : math.max(d, _minTouch);
                 final chosen = a.cd == e.selection;
+                // l'appui long d'un sous-tube déplace son alvéole, avec tous ses sous-tubes
+                final held = a.subduct ? e.bores().where((b) => b.cd == a.parent).firstOrNull ?? a : a;
                 return Positioned(
                   left: a.x * scale - touch / 2,
                   top: a.y * scale - touch / 2,
@@ -436,31 +670,77 @@ class _MaskGridState extends State<MaskGrid> {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => e.select(chosen ? null : a.cd),
-                    onLongPressStart: (_) => e.select(a.cd),
+                    onLongPressStart: (s) {
+                      // écart du doigt au centre, gardé pendant le déplacement ; l'alvéole n'est choisie qu'au
+                      // relâcher : son panneau, en s'ouvrant, recentrerait la grille sous le doigt
+                      final p = _toFace(s.globalPosition, scale);
+                      _grab = p == null ? Offset.zero : p - Offset(held.x, held.y);
+                    },
                     onLongPressMoveUpdate: (m) {
                       final p = _toFace(m.globalPosition, scale);
-                      if (p != null) e.move(a, p.dx, p.dy);
+                      if (p != null) e.move(held, p.dx - _grab.dx, p.dy - _grab.dy);
+                    },
+                    onLongPressEnd: (_) {
+                      e.select(held.cd);
+                      final moved = e.bores().where((b) => b.cd == held.cd).firstOrNull;
+                      if (moved != null) widget.onDrop?.call(moved);
                     },
                     child: Center(
                       child: SizedBox.square(
                         dimension: d,
                         child: BoreTile(
                           color: a.duct == null ? Nge.hoverPressed : colors[a.state] ?? Colors.white,
-                          number: a.number,
+                          label: a.label,
                           chosen: chosen,
                           diameter: d,
+                          occupancy: occupancyOf(a.duct, e.referenceData),
                         ),
                       ),
                     ),
                   ),
                 );
               }(),
+            // alvéoles à placer en miroir, au-dessus des alvéoles placées (un sous-tube à placer seul est dans son
+            // alvéole) et translucides : les toucher les place ; avec une alvéole choisie, le toucher la désélectionne,
+            // comme sur la grille
+            for (final m in e.mirrors())
+              if (m.face == e.face)
+                () {
+                  final d = boreDiameter(m.diameter) * scale;
+                  final touch = math.max(d, _minTouch);
+                  return Positioned(
+                    left: m.x * scale - touch / 2,
+                    top: m.y * scale - touch / 2,
+                    width: touch,
+                    height: touch,
+                    child: Semantics(
+                      button: true,
+                      label: tr('Placer l\'alvéole {0} en miroir', [m.label]),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => e.selection != null ? e.select(null) : e.placeMirror(m),
+                        child: Center(
+                          child: SizedBox.square(
+                            dimension: d,
+                            child: MirrorTile(
+                              color: colors[m.state] ?? Colors.white,
+                              label: m.label,
+                              diameter: d,
+                              focused: m.cd == e.focus,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }(),
           ]),
         ),
       );
       return ColoredBox(
         color: Nge.barBackground,
         child: InteractiveViewer(
+          transformationController: _view,
           constrained: false,
           // dézoom jusqu'à voir toute une grande face
           minScale: math.min(0.4, math.min(c.maxWidth / (width + 24), c.maxHeight / (height + 24))),
@@ -480,18 +760,31 @@ class _MaskGridState extends State<MaskGrid> {
   }
 }
 
-/// Une alvéole : disque à la couleur de l'état, numéro de la conduite ; cerclée de jaune si choisie.
+/// Une alvéole : disque à la couleur de l'état, numéro de la conduite (« 3.2 » pour un sous-tube) et, dans un disque
+/// assez grand, son taux d'occupation ([occupancy], %) ; cerclée de jaune si choisie.
 class BoreTile extends StatelessWidget {
-  const BoreTile({super.key, required this.color, required this.number, required this.chosen, required this.diameter});
+  const BoreTile({
+    super.key,
+    required this.color,
+    required this.label,
+    required this.chosen,
+    required this.diameter,
+    this.occupancy,
+  });
 
   final Color color;
-  final int? number;
+  final String label;
   final bool chosen;
   final double diameter;
+  final double? occupancy;
+
+  /// Diamètre à l'écran (px) à partir duquel le taux d'occupation s'écrit sous le numéro.
+  static const occupancyDiameter = 52.0;
 
   @override
   Widget build(BuildContext context) {
     final ink = color.computeLuminance() > 0.45 ? Nge.text : Colors.white;
+    final rate = occupancy;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color,
@@ -500,13 +793,70 @@ class BoreTile extends StatelessWidget {
         boxShadow: chosen ? const [BoxShadow(color: Nge.slate, spreadRadius: 2)] : null,
       ),
       child: Center(
-        child: Text(
-          number == null ? '?' : '$number',
-          style: TextStyle(color: ink, fontWeight: FontWeight.w700, fontSize: (diameter * 0.38).clamp(10, 18)),
+        child: FittedBox(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(
+              label,
+              style: TextStyle(color: ink, fontWeight: FontWeight.w700, fontSize: (diameter * 0.38).clamp(10, 18)),
+            ),
+            if (rate != null && rate > 0 && diameter >= occupancyDiameter)
+              Text('${rate.round()} %', style: TextStyle(color: ink, fontSize: 10, fontWeight: FontWeight.w600)),
+          ]),
         ),
       ),
     );
   }
+}
+
+/// Alvéole à placer en miroir : disque en pointillé, teinté de l'état de sa conduite, son numéro ; mise en évidence
+/// en jaune ([focused]) à l'arrivée d'un « Vers … ».
+class MirrorTile extends StatelessWidget {
+  const MirrorTile({super.key, required this.color, required this.label, required this.diameter, this.focused = false});
+
+  final Color color;
+  final String label;
+  final double diameter;
+  final bool focused;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _DashedCirclePainter(fill: color.withValues(alpha: 0.35), stroke: focused ? Nge.amber : Nge.slate,
+            width: focused ? 3 : 1.5),
+        child: Center(
+          child: FittedBox(
+            child: Text(label,
+                style: TextStyle(color: Nge.slate, fontWeight: FontWeight.w700, fontSize: (diameter * 0.38).clamp(10, 18))),
+          ),
+        ),
+      );
+}
+
+class _DashedCirclePainter extends CustomPainter {
+  _DashedCirclePainter({required this.fill, required this.stroke, required this.width});
+
+  final Color fill;
+  final Color stroke;
+  final double width;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2 - width / 2;
+    canvas.drawCircle(center, radius, Paint()..color = fill);
+    final paint = Paint()
+      ..color = stroke
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width;
+    // tirets d'environ 6 px, au moins huit par tour
+    final dashes = math.max(8, (2 * math.pi * radius / 9).floor());
+    final step = 2 * math.pi / dashes;
+    for (var i = 0; i < dashes; i++) {
+      canvas.drawArc(Rect.fromCircle(center: center, radius: radius), i * step, step * 0.6, false, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedCirclePainter old) => old.fill != fill || old.stroke != stroke || old.width != width;
 }
 
 /// Face à ses dimensions exactes (contour) et cellules carrées de 5 cm depuis le coin haut gauche, origine des
@@ -673,15 +1023,19 @@ class _Dot extends StatelessWidget {
       );
 }
 
-/// Alvéole choisie : destination (« Vers … » mène au support d'en face, [onFollow]), état, diamètre, retrait ;
-/// [wide] (colonne latérale haute) : état et diamètre en grandes cases, libellés entiers.
+/// Alvéole choisie : destination (« Vers … » mène au support d'en face, [onFollow]), état, diamètre, sous-tubes
+/// ([onSubduct]), câbles constatés et taux d'occupation, retrait ; [wide] (colonne latérale haute) : état et diamètre
+/// en grandes cases, libellés entiers.
 class _BorePanel extends StatelessWidget {
   const _BorePanel({
     required this.bore,
     required this.editor,
     required this.states,
+    required this.onRemove,
     this.onSave,
     this.onFollow,
+    this.onSubduct,
+    this.onOtherCable,
     this.wide = false,
     this.actions = true,
   });
@@ -689,8 +1043,11 @@ class _BorePanel extends StatelessWidget {
   final MaskBore bore;
   final MaskEditor editor;
   final List<DuctState> states;
+  final void Function(MaskBore bore) onRemove;
   final VoidCallback? onSave;
   final void Function(MaskBore bore)? onFollow;
+  final void Function(MaskBore bore)? onSubduct;
+  final void Function(MaskBore bore)? onOtherCable;
   final bool wide;
 
   /// « Retirer du masque » et « Enregistrer » en bas du panneau ; faux : épinglés à part ([_BoreActions]).
@@ -701,24 +1058,25 @@ class _BorePanel extends StatelessWidget {
     final a = bore;
     final t = Theme.of(context).textTheme;
     final l = a.linear;
-    final cables = a.nbCables;
     final destination = l == null ? null : editor.destinations[l.id];
     // support d'en face supprimé : « Vers … » ne mène plus nulle part, et le panneau le dit
     final gone = destination?.abandoned ?? false;
-    final rest = '${cables > 0 ? ' · ${trn(cables, '{0} câble', '{0} câbles')}' : ''}${a.mirror ? ' · ${tr('miroir')}' : ''}';
     // marges sûres tenues par la disposition (sous la grille en portrait, colonne latérale en paysage)
     // « Vers … » : lien d'une touche vers le support d'en face, sur l'alvéole de la même conduite (ni carton ni
     // infobulle, qui en aurait l'air), sur sa ligne, avec le type et le pictogramme du support (notes rep10)
     final link = a.duct != null && destination != null && !gone && onFollow != null;
+    // sous-tube : diamètres du sous-tubage ; alvéole : diamètres normalisés
+    final diameters = {...a.subduct ? subductDiameters(editor.referenceData) : standardDiameters, ?a.diameter}.toList()
+      ..sort();
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
           Expanded(
             child: Text(
-              '${tr('Alvéole {0}', [a.number ?? '?'])}'
+              '${a.subduct ? tr('Sous-tube {0}', [a.label]) : tr('Alvéole {0}', [a.label])}'
               '${link ? '' : ' · ${a.duct == null ? tr('conduite absente du paquet') : editor.linearLabel(l)}'}'
-              '${gone ? ' · ${tr('support supprimé')}' : ''}$rest',
+              '${gone ? ' · ${tr('support supprimé')}' : ''}${a.mirror ? ' · ${tr('miroir')}' : ''}',
               style: t.titleSmall,
             ),
           ),
@@ -745,11 +1103,12 @@ class _BorePanel extends StatelessWidget {
                 onTap: () => editor.setDuctState(a, s.id),
               ),
           ]),
+          if (editor.occupied(a)) _OccupiedNote(bore: a, editor: editor),
           const SizedBox(height: 14),
           Text(tr('Diamètre (mm)'), style: t.titleSmall),
           const SizedBox(height: 6),
           _Tiles(columns: 4, children: [
-            for (final d in {...standardDiameters, ?a.diameter}.toList()..sort())
+            for (final d in diameters)
               _ChoiceTile(
                 label: d.toStringAsFixed(0),
                 center: true,
@@ -769,6 +1128,7 @@ class _BorePanel extends StatelessWidget {
                 onSelected: (_) => editor.setDuctState(a, s.id),
               ),
           ]),
+          if (editor.occupied(a)) _OccupiedNote(bore: a, editor: editor),
           const SizedBox(height: 6),
           // diamètres à la ligne : sur un téléphone, une rangée qui défile cachait les derniers (150)
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -776,7 +1136,7 @@ class _BorePanel extends StatelessWidget {
             const SizedBox(width: 6),
             Expanded(
               child: Wrap(spacing: 6, runSpacing: 4, children: [
-                for (final d in {...standardDiameters, ?a.diameter}.toList()..sort())
+                for (final d in diameters)
                   ChoiceChip(
                     label: Text(d.toStringAsFixed(0)),
                     selected: a.diameter == d,
@@ -786,18 +1146,184 @@ class _BorePanel extends StatelessWidget {
             ),
           ]),
         ],
-        if (actions) _BoreActions(bore: a, editor: editor, onSave: onSave),
+        if (a.duct != null) ...[
+          const SizedBox(height: 10),
+          _SubductSection(bore: a, editor: editor, states: states, onSubduct: onSubduct),
+          const SizedBox(height: 10),
+          _CableSection(bore: a, editor: editor, onOther: onOtherCable),
+          const SizedBox(height: 6),
+        ],
+        if (actions) _BoreActions(bore: a, onRemove: onRemove, onSave: onSave),
       ]),
     );
   }
 }
 
-/// Actions de l'alvéole choisie : la retirer du masque, enregistrer les masques ([onSave] null : rien à enregistrer).
-class _BoreActions extends StatelessWidget {
-  const _BoreActions({required this.bore, required this.editor, this.onSave});
+/// Alvéole occupée d'office (câbles, sous-tubes) : l'état ne peut pas repasser à vide (règle de FOA Explorer).
+class _OccupiedNote extends StatelessWidget {
+  const _OccupiedNote({required this.bore, required this.editor});
 
   final MaskBore bore;
   final MaskEditor editor;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          editor.subductsOf(bore).isNotEmpty
+              ? tr('Occupée : l\'alvéole est sous-tubée.')
+              : tr('Occupée : l\'alvéole porte des câbles.'),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      );
+}
+
+/// Sous-tubage : pour un sous-tube, son alvéole ; pour une alvéole sous-tubée, ses sous-tubes, chacun choisi d'une
+/// touche (plus commode que dans la grille, où ils sont petits) ; sinon « Sous-tuber » si des sous-tubes y tiennent.
+class _SubductSection extends StatelessWidget {
+  const _SubductSection({required this.bore, required this.editor, required this.states, this.onSubduct});
+
+  final MaskBore bore;
+  final MaskEditor editor;
+  final List<DuctState> states;
+  final void Function(MaskBore bore)? onSubduct;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final a = bore;
+    final colors = {for (final s in states) s.id: s.color};
+    if (a.subduct) {
+      return Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [
+        Text(tr('Sous-tube de l\'alvéole {0}', [a.parentNumber ?? '?']), style: t.bodyMedium),
+        if (editor.bores().any((b) => b.cd == a.parent))
+          TextButton(onPressed: () => editor.select(a.parent), child: Text(tr('Voir l\'alvéole'))),
+        // le glisser-déposer imbrique ; ce bouton défait l'imbrication
+        TextButton(onPressed: () => editor.unnest(a), child: Text(tr('Détacher de l\'alvéole'))),
+      ]);
+    }
+    final kids = editor.children(a);
+    // sous-tubes de la conduite que cette chambre n'a pas encore placés (sous-tubage fait dans la chambre d'en face)
+    final missing = editor.pendingSubducts(a);
+    if (kids.isNotEmpty || editor.subductsOf(a).isNotEmpty) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(tr('Sous-tubes'), style: t.titleSmall),
+        const SizedBox(height: 4),
+        Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          for (final k in kids)
+            ActionChip(
+              avatar: _Dot(color: colors[k.state] ?? Colors.white, size: 16),
+              label: Text('${k.label} · ${k.diameter?.toStringAsFixed(0) ?? '?'}'),
+              tooltip: tr('Choisir le sous-tube {0}', [k.label]),
+              onPressed: () => editor.select(k.cd),
+            ),
+          if (missing > 0)
+            TextButton.icon(
+              icon: const Icon(Icons.flip),
+              label: Text(trn(missing, 'Placer {0} sous-tube en miroir', 'Placer {0} sous-tubes en miroir')),
+              onPressed: () => editor.placeSubductMirrors(a),
+            ),
+        ]),
+      ]);
+    }
+    final fits = subductDiameters(editor.referenceData).any((d) => MaskEditor.subductFits(a.diameter, 3, d));
+    if (!fits || onSubduct == null) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.bubble_chart_outlined),
+        label: Text(tr('Sous-tuber')),
+        onPressed: () => onSubduct!(a),
+      ),
+    );
+  }
+}
+
+/// Diamètre en mm sans décimale inutile : « 10 », « 10,5 ».
+String _mm(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : '$v'.replaceAll('.', ',');
+
+/// Câbles constatés dans la conduite (FOA Explorer, « Occupation alvéole ») : une pastille par ligne (diamètre,
+/// nature, nombre ; la toucher retire un câble), la jauge du taux d'occupation, puis l'ajout d'un câble d'une touche :
+/// nature (Fo, Cu, retenue pour la saisie en série) et diamètre parmi ceux de FOA Explorer, ou un autre ([onOther]).
+class _CableSection extends StatelessWidget {
+  const _CableSection({required this.bore, required this.editor, this.onOther});
+
+  final MaskBore bore;
+  final MaskEditor editor;
+  final void Function(MaskBore bore)? onOther;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final a = bore;
+    final cables = cablesOf(a.duct);
+    final rate = occupancyOf(a.duct, editor.referenceData);
+    final over = (rate ?? 0) > 100;
+    String name(Map<String, dynamic> c) {
+      final mat = editor.referenceData.cable((c['MAT_KEY'] as num?)?.toInt())?['MAT_LIB'];
+      final d = (c['CDC_DIAM'] as num?)?.toDouble();
+      return [
+        if (mat != null) '$mat',
+        if (d != null) '${_mm(d)} mm',
+        if (c['CDC_NATURE'] != null) natureLabel(c['CDC_NATURE']),
+      ].join(' · ');
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // à la ligne plutôt que de déborder (grands caractères)
+      Wrap(alignment: WrapAlignment.spaceBetween, spacing: 12, children: [
+        Text(trn(a.nbCables, '{0} câble', '{0} câbles'), style: t.titleSmall),
+        Text(rate == null ? tr('Occupation inconnue') : tr('Occupation {0} %', [rate.round()]),
+            style: t.bodyMedium?.copyWith(color: over ? Nge.red : null, fontWeight: over ? FontWeight.w700 : null)),
+      ]),
+      const SizedBox(height: 4),
+      LinearProgressIndicator(
+        value: ((rate ?? 0) / 100).clamp(0.0, 1.0),
+        minHeight: 6,
+        borderRadius: BorderRadius.circular(3),
+        color: over ? Nge.red : Nge.petrolBlue,
+        backgroundColor: Nge.rule,
+        semanticsLabel: tr('Taux d\'occupation'),
+      ),
+      if (cables.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 4, children: [
+          for (final c in cables)
+            InputChip(
+              label: Text('${name(c)} × ${(c['CDC_NB'] as num?)?.toInt() ?? 1}'),
+              deleteButtonTooltipMessage: tr('Retirer un câble'),
+              onDeleted: () => editor.removeCable(a, c),
+            ),
+        ]),
+      ],
+      const SizedBox(height: 8),
+      Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        SegmentedButton<String>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [for (final n in cableNatures) ButtonSegment(value: n, label: Text(natureLabel(n)))],
+          selected: {editor.cableNature},
+          onSelectionChanged: (s) => editor.setCableNature(s.first),
+        ),
+        for (final d in cableDiameters)
+          ActionChip(
+            label: Text('+${_mm(d)}'),
+            tooltip: tr('Ajouter un câble de {0} mm', [_mm(d)]),
+            onPressed: () => editor.addCable(a, d, editor.cableNature),
+          ),
+        if (onOther != null) ActionChip(label: Text(tr('Autre Ø')), onPressed: () => onOther!(a)),
+      ]),
+    ]);
+  }
+}
+
+/// Actions de l'alvéole choisie : la retirer du masque ([onRemove]), enregistrer les masques ([onSave] null : rien à
+/// enregistrer).
+class _BoreActions extends StatelessWidget {
+  const _BoreActions({required this.bore, required this.onRemove, this.onSave});
+
+  final MaskBore bore;
+  final void Function(MaskBore bore) onRemove;
   final VoidCallback? onSave;
 
   @override
@@ -807,11 +1333,196 @@ class _BoreActions extends StatelessWidget {
           style: TextButton.styleFrom(foregroundColor: Nge.red),
           icon: const Icon(Icons.delete_outline),
           label: Text(tr('Retirer du masque')),
-          onPressed: () => editor.remove(bore),
+          onPressed: () => onRemove(bore),
         ),
         if (onSave != null)
           FilledButton.icon(onPressed: onSave, icon: const Icon(Icons.save), label: Text(tr('Enregistrer'))),
       ]);
+}
+
+/// Miroir ouvert (bouton Miroir, notes rep15), au-dessus de la légende : face d'en face d'où viennent les alvéoles
+/// proposées en pointillé sur la face affichée, leur nombre ; « Tout placer » ([onPlaceAll]) les valide d'un coup,
+/// « Changer » ([onChange]) prend une autre face d'en face, la croix ([onClose]) ferme le miroir. Toucher une alvéole
+/// en pointillé la valide seule ; changer de face affichée y applique le même miroir.
+class _MirrorBanner extends StatelessWidget {
+  const _MirrorBanner({
+    required this.source,
+    required this.count,
+    required this.face,
+    required this.onClose,
+    this.onPlaceAll,
+    this.onChange,
+    this.wide = false,
+  });
+
+  /// « C598 · face B ».
+  final String source;
+  final int count;
+
+  /// Face affichée, où le miroir s'applique.
+  final String face;
+  final VoidCallback onClose;
+  final VoidCallback? onPlaceAll;
+  final VoidCallback? onChange;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Nge.yellow.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Nge.yellow),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 4, 8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Padding(padding: EdgeInsets.only(top: 10), child: Icon(Icons.flip, color: Nge.amber, size: 20)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tr('Miroir de {0} sur la face {1}', [source, face]), style: wide ? t.titleMedium : t.titleSmall),
+                    Text(
+                      count == 0
+                          ? tr('Rien à placer sur cette face.')
+                          : '${trn(count, '{0} alvéole à valider', '{0} alvéoles à valider')} · '
+                              '${tr('en pointillé dans la grille, une touche la place ici.')}',
+                      style: wide ? t.bodyMedium : t.bodySmall,
+                    ),
+                  ]),
+                ),
+              ),
+              IconButton(tooltip: tr('Fermer le miroir'), icon: const Icon(Icons.close), onPressed: onClose),
+            ]),
+            Wrap(alignment: WrapAlignment.end, spacing: 8, children: [
+              if (onChange != null) TextButton(onPressed: onChange, child: Text(tr('Changer'))),
+              if (onPlaceAll != null)
+                FilledButton.tonalIcon(onPressed: onPlaceAll, icon: const Icon(Icons.flip), label: Text(tr('Tout placer'))),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Sous-tubage d'une alvéole : nombre de sous-tubes (3 en triangle, 4 en carré, gabarits de FOA Explorer) et leur
+/// diamètre, parmi ceux qui tiennent dans l'alvéole ([MaskEditor.subductFits]). Rend (nombre, diamètre en mm).
+class _SubductDialog extends StatefulWidget {
+  const _SubductDialog({required this.bore, required this.diameters});
+
+  final MaskBore bore;
+  final List<double> diameters;
+
+  @override
+  State<_SubductDialog> createState() => _SubductDialogState();
+}
+
+class _SubductDialogState extends State<_SubductDialog> {
+  late int _count = widget.diameters.any((d) => _fits(4, d)) ? 4 : 3;
+  late double? _diameter = widget.diameters.where((d) => _fits(_count, d)).lastOrNull;
+
+  bool _fits(int count, double d) => MaskEditor.subductFits(widget.bore.diameter, count, d);
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final d = _diameter;
+    return AlertDialog(
+      title: Text(tr('Sous-tuber l\'alvéole {0}', [widget.bore.label])),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(tr('Nombre de sous-tubes'), style: t.titleSmall),
+          const SizedBox(height: 6),
+          SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: [
+              for (final n in const [3, 4])
+                ButtonSegment(value: n, label: Text('$n'), enabled: widget.diameters.any((d) => _fits(n, d))),
+            ],
+            selected: {_count},
+            onSelectionChanged: (s) => setState(() {
+              _count = s.first;
+              if (d == null || !_fits(_count, d)) _diameter = widget.diameters.where((x) => _fits(_count, x)).lastOrNull;
+            }),
+          ),
+          const SizedBox(height: 12),
+          Text(tr('Diamètre (mm)'), style: t.titleSmall),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            for (final x in widget.diameters)
+              ChoiceChip(
+                label: Text(x.toStringAsFixed(0)),
+                selected: d == x,
+                onSelected: _fits(_count, x) ? (_) => setState(() => _diameter = x) : null,
+              ),
+          ]),
+          const SizedBox(height: 8),
+          Text(tr('Alvéole de {0} mm : seuls les sous-tubes qui y tiennent sont proposés.',
+              [widget.bore.diameter?.toStringAsFixed(0) ?? '?']), style: t.bodySmall),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Annuler'))),
+        FilledButton(
+          onPressed: d == null ? null : () => Navigator.pop(context, (_count, d)),
+          child: Text(tr('Sous-tuber')),
+        ),
+      ],
+    );
+  }
+}
+
+/// Diamètre d'un câble autre que ceux proposés, en mm (au demi-millimètre, de 1 à 150) ; null si l'on annule.
+class _CableDiameterDialog extends StatefulWidget {
+  const _CableDiameterDialog();
+
+  @override
+  State<_CableDiameterDialog> createState() => _CableDiameterDialogState();
+}
+
+class _CableDiameterDialogState extends State<_CableDiameterDialog> {
+  final _txtDiameter = TextEditingController();
+
+  @override
+  void dispose() {
+    _txtDiameter.dispose();
+    super.dispose();
+  }
+
+  double? get _value {
+    final v = double.tryParse(_txtDiameter.text.replaceAll(',', '.').trim());
+    if (v == null || !v.isFinite || v < 1 || v > 150) return null;
+    return (v * 2).round() / 2;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _value;
+    return AlertDialog(
+      title: Text(tr('Diamètre du câble')),
+      content: TextField(
+        controller: _txtDiameter,
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          suffixText: 'mm',
+          errorText: _txtDiameter.text.isNotEmpty && v == null ? tr('De {0} à {1} mm', [1, 150]) : null,
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Annuler'))),
+        FilledButton(onPressed: v == null ? null : () => Navigator.pop(context, v), child: Text(tr('Ajouter'))),
+      ],
+    );
+  }
 }
 
 /// Création d'une alvéole : parcours de la conduite (destination), diamètre, état ; [wide] (volet de droite, en

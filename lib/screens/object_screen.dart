@@ -8,6 +8,7 @@ import '../data/geocoding.dart';
 import '../data/reference_data.dart';
 import '../lng.dart';
 import '../modules/chambre/chamber_sheet.dart';
+import '../modules/infra/equipment.dart';
 import '../modules/poteau/pole_sheet.dart';
 import '../providers/app_provider.dart';
 import '../theme.dart';
@@ -21,9 +22,10 @@ import '../widgets/screen_title.dart';
 import 'address_screen.dart';
 
 /// Saisie d'un support (crayon des visuels) : identification (noyau), caractéristiques et contrôles du module selon
-/// le type, commentaires (journal daté et signé), linéaires rattachés, suppression. Les photos sont dans les visuels.
-/// Chambre : cartes dépliables Général, Dimensions, Commentaires. Les équipements, les masques et les conduites ont
-/// leurs onglets (barre basse). Poteau : cartes dépliables Général, Contrôles, Commentaires ; les portées et les
+/// le type, équipements (ajout rapide, retrait ; le picto de chacun ouvre son écran dédié), commentaires (journal daté
+/// et signé), linéaires rattachés, suppression. Les photos sont dans les visuels, ceux d'un équipement dans son écran.
+/// Chambre : cartes dépliables Général, Équipements, Dimensions, Commentaires ; les masques et les conduites ont leur
+/// onglet (barre basse). Poteau : cartes dépliables Général, Équipements, Contrôles, Commentaires ; les portées et les
 /// autres parcours sont dans l'onglet Portées.
 /// La saisie travaille sur une copie, écrite dans le dépôt à l'enregistrement.
 class ObjectScreen extends StatefulWidget {
@@ -54,6 +56,9 @@ class _ObjectScreenState extends State<ObjectScreen> {
 
   /// Adresse choisie ou modifiée dans l'écran de l'adresse, enregistrée avec le support.
   GeoObject? _pendingAddress;
+
+  /// Équipements ajoutés depuis le dernier enregistrement (retirés tout à fait, sinon abandonnés).
+  final Set<String> _newEquipment = {};
 
   @override
   void initState() {
@@ -114,6 +119,7 @@ class _ObjectScreenState extends State<ObjectScreen> {
       _o = fresh!.copy();
       _changed = false;
       _pendingAddress = null;
+      _newEquipment.clear();
     });
     _select(_selectedLinear);
     showSaved(context);
@@ -131,6 +137,23 @@ class _ObjectScreenState extends State<ObjectScreen> {
     if (!await _previous() || !mounted) return;
     await follow(context, linear, other, route: true);
   }
+
+  /// Picto d'un équipement : la saisie en cours est enregistrée (un équipement ajouté existe alors au dépôt), puis
+  /// son écran dédié remplace la saisie (onglet).
+  Future<void> _openEquipment(String code) async {
+    if (!await _previous() || !mounted) return;
+    await openEquipment(context, _o, equipment: code);
+  }
+
+  Widget _equipment(AppProvider app, {bool? expanded}) => SupportEquipment(
+        node: _o,
+        referenceData: app.referenceData,
+        author: app.author,
+        newIds: _newEquipment,
+        onChanged: _change,
+        onOpen: _openEquipment,
+        expanded: expanded,
+      );
 
   /// Ensuite : l'objet a pu changer (orientation, photos), les linéaires aussi.
   Future<void> _next() async {
@@ -181,13 +204,14 @@ class _ObjectScreenState extends State<ObjectScreen> {
         : _linears.linears.where((l) => l.id == _selectedLinear).firstOrNull;
     return EntryScreen(
       changed: _changed,
+      onSave: _save,
       child: Scaffold(
         appBar: AppBar(
           title: ScreenTitle(
             _o.lib ?? tr('Sans étiquette'),
             [tr('saisie du support'), if (_o.status == 'C') tr('créé'), if (_o.status == 'M') tr('modifié')].join(' · '),
           ),
-          actions: [SupportMenu(object: _o, previous: _previous, entry: false)],
+          actions: [SupportMenu(object: _o, previous: _previous)],
         ),
         bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
           if (selected != null)
@@ -201,31 +225,12 @@ class _ObjectScreenState extends State<ObjectScreen> {
           SupportBar(object: _o, previous: _previous, next: _next),
         ]),
         floatingActionButton: saveButton(visible: _changed, onPressed: _save),
-        body: ListView(
-          padding: const EdgeInsets.only(bottom: fabMargin),
-          children: [
-            if (family == 'CHB') ...[
-              // cartes dépliables ; équipements, masques et conduites par la barre basse
-              _general(ref, family, [ChamberReference(node: _o, referenceData: ref, onChanged: _change)]),
-              ChamberDimensions(node: _o, referenceData: ref, onChanged: _change),
-              CommentsCard(object: _o, onChanged: _change, expanded: true),
-            ] else if (family == 'POT') ...[
-              // cartes dépliables ; équipements et portées (avec les autres parcours) par la barre basse
-              _general(ref, family, [PoleSpecs(node: _o, referenceData: ref, onChanged: _change)]),
-              PoleChecks(node: _o, onChanged: _change),
-              CommentsCard(object: _o, onChanged: _change, expanded: true),
-            ] else ...[
-              _identification(ref, family),
-              CommentsCard(object: _o, onChanged: _change),
-              LinearList(
-                node: _o,
-                data: _linears,
-                referenceData: ref,
-                title: tr('Portées et parcours'),
-                selected: _selectedLinear,
-                onSelect: (l) => _select(l.id == _selectedLinear ? null : l.id),
-              ),
-            ],
+        // paysage (tablette, téléphone en paysage, Windows) : deux colonnes qui défilent chacune, à gauche ce qui
+        // identifie le support (général, équipements), à droite ce qui s'y relève et s'y consigne (dimensions ou
+        // contrôles, commentaires, parcours) ; en portrait, une seule colonne dans le même ordre
+        body: LayoutBuilder(builder: (context, c) {
+          final (left, right) = _cards(app, ref, family);
+          final delete = [
             if (_o.objectClass == ObjectClass.noe && !_o.outOfZone)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
@@ -239,11 +244,80 @@ class _ObjectScreenState extends State<ObjectScreen> {
                   label: Text(tr('Supprimer le support')),
                 ),
               ),
-          ],
-        ),
+          ];
+          if (c.maxWidth > c.maxHeight && c.maxWidth >= twoColumnsWidth) {
+            return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Expanded(
+                child: ListView(
+                  key: const PageStorageKey('saisie gauche'),
+                  padding: const EdgeInsets.only(bottom: fabMargin),
+                  children: [...left, ...delete],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  key: const PageStorageKey('saisie droite'),
+                  padding: const EdgeInsets.only(bottom: fabMargin),
+                  children: right,
+                ),
+              ),
+            ]);
+          }
+          return ListView(
+            padding: const EdgeInsets.only(bottom: fabMargin),
+            children: [...left, ...right, ...delete],
+          );
+        }),
       ),
     );
   }
+
+  /// Largeur à partir de laquelle la saisie passe sur deux colonnes en paysage (deux colonnes de 360 dp au moins).
+  static const twoColumnsWidth = 720.0;
+
+  /// Cartes de la saisie : à gauche l'identification du support (général, équipements), à droite ses relevés et son
+  /// journal (dimensions de la chambre ou contrôles du poteau, commentaires, portées et parcours des autres supports).
+  (List<Widget>, List<Widget>) _cards(AppProvider app, ReferenceData ref, String? family) => switch (family) {
+        // cartes dépliables ; masques et conduites par la barre basse
+        'CHB' => (
+            [
+              _general(ref, family, [ChamberReference(node: _o, referenceData: ref, onChanged: _change)]),
+              _equipment(app, expanded: true),
+            ],
+            [
+              ChamberDimensions(node: _o, referenceData: ref, onChanged: _change),
+              CommentsCard(object: _o, onChanged: _change, expanded: true),
+            ],
+          ),
+        // cartes dépliables ; portées (avec les autres parcours) par la barre basse
+        'POT' => (
+            [
+              _general(ref, family, [PoleSpecs(node: _o, referenceData: ref, onChanged: _change)]),
+              _equipment(app, expanded: true),
+            ],
+            [
+              PoleChecks(node: _o, onChanged: _change),
+              CommentsCard(object: _o, onChanged: _change, expanded: true),
+            ],
+          ),
+        _ => (
+            [
+              _identification(ref, family),
+              if (_o.objectClass == ObjectClass.noe) _equipment(app),
+            ],
+            [
+              CommentsCard(object: _o, onChanged: _change),
+              LinearList(
+                node: _o,
+                data: _linears,
+                referenceData: ref,
+                title: tr('Portées et parcours'),
+                selected: _selectedLinear,
+                onSelect: (l) => _select(l.id == _selectedLinear ? null : l.id),
+              ),
+            ],
+          ),
+      };
 
   /// Adresse rattachée (numéro, voie, code postal, commune), null si absente.
   String? get _addressLabel {

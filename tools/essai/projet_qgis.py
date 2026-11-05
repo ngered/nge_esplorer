@@ -25,9 +25,9 @@ def chemin(fichier):
     return os.path.join(DOSSIER, fichier)
 
 
-def geo(table, nom, filtre=None):
+def geo(table, nom, filtre=None, fichier='noyau.sqlite'):
     u = QgsDataSourceUri()
-    u.setDatabase(chemin('noyau.sqlite'))
+    u.setDatabase(chemin(fichier))
     u.setDataSource('', table, 'GEOMETRY', filtre or '')
     return verifier(QgsVectorLayer(u.uri(), nom, 'spatialite'))
 
@@ -228,6 +228,9 @@ def main():
         'matpot': ajouter(table('poteau.sqlite', 'MAT_POTEAU', 'Catalogue poteaux'), 'Référentiels'),
         'potnat': ajouter(table('poteau.sqlite', 'DEF_POT_NAT', 'Natures de poteau'), 'Référentiels'),
     }
+    # diamètres des alvéoles (module infra 0.2.0) : seulement si le projet a été construit ou repris depuis
+    if sqlite3.connect(chemin('infra.sqlite')).execute("SELECT 1 FROM sqlite_master WHERE name = 'DEF_CD_DIAM'").fetchone():
+        ref['diam'] = ajouter(table('infra.sqlite', 'DEF_CD_DIAM', 'Diamètres des alvéoles'), 'Référentiels')
     for g in ('Référentiels',):
         groupes[g].setExpanded(False)
     def fichiers(entite, nom):
@@ -370,8 +373,15 @@ def main():
             (1, 'Posé', trait('#C2185B', '0.8')), (2, 'À poser', trait('#C2185B', '0.8', 'dash')),
             (0, 'Avancement non renseigné', trait('#999999', '0.8'))])
         etiquettes(cables, '"CAB_LIB" || \' \' || "CAB_CAPA" || \' FO\'', 7, ligne=True, echelle_max=3000)
+        # câbles de raccordement : tracé propre (OPT_CABLE.GEOMETRY, module optique 0.3.0), du PBO à l'adresse
+        raccordements = geo('OPT_CABLE', 'Câbles de raccordement', '"ADR2_KEY" IS NOT NULL', 'optique.sqlite')
+        categories(raccordements, 'coalesce("AVCT_KEY", 0)', [
+            (1, 'Posé', trait('#7B1FA2', '0.4')), (2, 'À poser', trait('#7B1FA2', '0.4', 'dash')),
+            (0, 'Avancement non renseigné', trait('#999999', '0.4'))])
+        etiquettes(raccordements, '"CAB_LIB"', 6, ligne=True, echelle_max=1500)
         ajouter(boitiers, 'Optique')
         ajouter(cables, 'Optique')
+        ajouter(raccordements, 'Optique')
 
     # fond de plan
     osm = QgsRasterLayer('type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0',

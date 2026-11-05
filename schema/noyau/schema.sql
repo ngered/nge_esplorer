@@ -83,18 +83,23 @@ CREATE TABLE DEF_FABRICANT (            -- FOA DEF_FABRICANTS
     FAB_LIB         TEXT NOT NULL
 );
 
--- Vues photographiées attendues par type de support (écran « visuels » du socle).
+-- Vues photographiées attendues (écrans « visuels » du socle) : d'un type de support (TYPE_KEY), ou des éléments
+-- d'une table porteuse (VUE_ENTITE, table de DEF_ENTITE : INF_EQUIPEMENT pour la galerie d'un équipement, noyau
+-- 0.3.0), l'un ou l'autre.
 CREATE TABLE DEF_VUE (
     VUE_ID          INTEGER PRIMARY KEY AUTOINCREMENT,
-    TYPE_KEY        INTEGER NOT NULL REFERENCES DEF_TYPE (TYPE_ID),
+    TYPE_KEY        INTEGER REFERENCES DEF_TYPE (TYPE_ID),
+    VUE_ENTITE      TEXT,           -- table porteuse des photos de la vue ; nulle : le support du type TYPE_KEY
     VUE_CODE        TEXT NOT NULL,
     VUE_LIB         TEXT NOT NULL,
     VUE_ORDRE       INTEGER NOT NULL,
     VUE_OBLIGATOIRE TEXT NOT NULL DEFAULT 'NON' CHECK (VUE_OBLIGATOIRE IN ('OUI', 'NON', 'SI_MASQUE')),
     VUE_ACTION      TEXT,           -- action propre au module : MASQUE, ROSACE…
     MOD_CODE        TEXT NOT NULL,
-    UNIQUE (TYPE_KEY, VUE_CODE)
+    CHECK ((TYPE_KEY IS NULL) <> (VUE_ENTITE IS NULL))
 );
+CREATE UNIQUE INDEX UX_VUE_TYPE ON DEF_VUE (TYPE_KEY, VUE_CODE) WHERE TYPE_KEY IS NOT NULL;
+CREATE UNIQUE INDEX UX_VUE_ENTITE ON DEF_VUE (VUE_ENTITE, VUE_CODE) WHERE VUE_ENTITE IS NOT NULL;
 
 -- Géométries ----------------------------------------------------------------------------------
 

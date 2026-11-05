@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../data/geo_object.dart';
 import '../data/visuals.dart';
 import '../lng.dart';
+import '../modules/chambre/mask_overview_screen.dart';
 import '../modules/chambre/mask_screen.dart';
 import '../providers/app_provider.dart';
 import '../theme.dart';
@@ -35,11 +36,40 @@ Future<bool> takePhoto(BuildContext context, GeoObject o, Visual v, {String? mes
   return true;
 }
 
-/// Ajoute un visuel libre à [o] : titre saisi, puis première photo (un visuel libre n'existe qu'avec ses photos).
-Future<void> addFreeVisual(BuildContext context, GeoObject o) async {
+/// Ajoute un visuel libre à [o], ou à son équipement [equipment] (`EQU_CODE_EXT`) : titre saisi, puis première photo
+/// (un visuel libre n'existe qu'avec ses photos).
+Future<void> addFreeVisual(BuildContext context, GeoObject o, {String? equipment}) async {
   final lib = await askTitle(context, title: tr('Nouveau visuel libre'));
   if (lib == null || !context.mounted) return;
-  await takePhoto(context, o, Visual.free(lib), message: tr('Visuel ajouté : {0}', [lib]));
+  await takePhoto(context, o, Visual.free(lib, null, equipment), message: tr('Visuel ajouté : {0}', [lib]));
+}
+
+/// Tuiles des visuels, du même style sur tous les écrans (notes rep9) : d'au moins [VisualCard.minWidth] de large,
+/// une colonne sur un téléphone en portrait, deux sur une tablette en portrait ou un téléphone en paysage, trois sur
+/// une tablette en paysage, davantage sur un écran très large ; rangées de même hauteur (celle de la plus haute si
+/// une note ou un long titre l'allonge).
+class VisualGrid extends StatelessWidget {
+  const VisualGrid({super.key, required this.visuals, required this.card});
+
+  final List<Visual> visuals;
+  final Widget Function(Visual v) card;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
+        final columns = math.max(1, ((c.maxWidth + 12) / (VisualCard.minWidth + 12)).floor());
+        return Column(children: [
+          for (var i = 0; i < visuals.length; i += columns)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: IntrinsicHeight(
+                child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: 12, children: [
+                  for (var j = i; j < i + columns; j++)
+                    Expanded(child: j < visuals.length ? card(visuals[j]) : const SizedBox()),
+                ]),
+              ),
+            ),
+        ]);
+      });
 }
 
 /// Titre d'un visuel libre (null : annulé ou vide).
@@ -86,6 +116,9 @@ class _VisualsScreenState extends State<VisualsScreen> {
   int _revision = -1;
   Route<dynamic>? _route;
 
+  /// Conduites sous-tubes des linéaires du support : non comptées dans le nombre d'alvéoles d'un masque.
+  Set<Object?> _subducts = const {};
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -95,12 +128,26 @@ class _VisualsScreenState extends State<VisualsScreen> {
   /// Relit le support, et le note tel qu'il est enregistré : quitté depuis ses visuels, il garde son intitulé à jour
   /// dans les supports quittés (menu ⋮).
   Future<void> _reload() async {
-    final fresh = await context.read<AppProvider>().repo.object(_o.id);
-    if (!mounted || fresh == null) return;
-    setState(() => _o = fresh);
+    final repo = context.read<AppProvider>().repo;
+    final fresh = await repo.object(_o.id);
+    if (fresh == null) return;
+    final subducts = subductCodes([...await repo.linearsOf(fresh.id), fresh]);
+    if (!mounted) return;
+    setState(() {
+      _o = fresh;
+      _subducts = subducts;
+    });
     final r = _route;
     if (r != null) screenStack.note(r, tab: 'support', object: fresh.copy());
   }
+
+  /// Nombre d'alvéoles placées sur la face [code] (sous-tubes non comptés), affiché sur le bouton du masque.
+  int _bores(String code) => [
+        for (final f in (_o.namespace('chb')?['faces'] as List?) ?? const [])
+          if ((f as Map)['FAC_CODE'] == code)
+            for (final p in (f['positions'] as List?) ?? const [])
+              if ((p as Map)['DATE_ABD'] == null && p['CD_KEY'] is String && !_subducts.contains(p['CD_KEY'])) p,
+      ].length;
 
   /// Écran propre des visuels (galerie ; grille d'une face, route nommée [settings] pour la retenir si l'on quitte
   /// le support) ; au retour, l'objet est relu.
@@ -131,45 +178,32 @@ class _VisualsScreenState extends State<VisualsScreen> {
         actions: [SupportMenu(object: _o, visuals: false)],
       ),
       bottomNavigationBar: SupportBar(object: _o, next: _reload),
-      body: LayoutBuilder(builder: (context, c) {
-        // tuiles d'au moins [VisualCard.minWidth], toutes du même style (notes rep9) : une colonne sur un téléphone en
-        // portrait, deux sur une tablette en portrait ou un téléphone en paysage, trois sur une tablette en paysage,
-        // davantage sur un écran très large
-        final columns = math.max(1, ((c.maxWidth - 12) / (VisualCard.minWidth + 12)).floor());
-        Widget card(Visual v) {
-          final photos = _o.photos(v);
-          return VisualCard(
-            visual: v,
-            count: photos.length,
-            reference: photos.isEmpty ? null : photoImage(app, photos.first),
-            onOpen: () => _open(GalleryScreen(object: _o, visual: v)),
-            onPhoto: () async {
-              if (await takePhoto(context, _o, v)) await _reload();
-            },
-            onMask: () => _open(MaskScreen(chamber: _o, face: v.code), tabSettings(_o, 'masques:${v.code}')),
-          );
-        }
-
-        return ListView(padding: const EdgeInsets.all(12), children: [
-          if (visuals.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(tr('Aucun visuel attendu pour ce type. « Ajouter » crée un visuel libre.'),
-                  style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
-            ),
-          // rangées de tuiles de même hauteur (celle de la plus haute si une note ou un long titre l'allonge)
-          for (var i = 0; i < visuals.length; i += columns)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: IntrinsicHeight(
-                child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: 12, children: [
-                  for (var j = i; j < i + columns; j++)
-                    Expanded(child: j < visuals.length ? card(visuals[j]) : const SizedBox()),
-                ]),
-              ),
-            ),
-        ]);
-      }),
+      body: ListView(padding: const EdgeInsets.all(12), children: [
+        if (visuals.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(tr('Aucun visuel attendu pour ce type. « Ajouter » crée un visuel libre.'),
+                style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
+          ),
+        // les visuels des équipements sont dans leur écran dédié (bouton Équipements)
+        VisualGrid(
+          visuals: visuals,
+          card: (v) {
+            final photos = _o.photos(v);
+            return VisualCard(
+              visual: v,
+              count: photos.length,
+              reference: photos.isEmpty ? null : photoImage(app, photos.first),
+              onOpen: () => _open(GalleryScreen(object: _o, visual: v)),
+              onPhoto: () async {
+                if (await takePhoto(context, _o, v)) await _reload();
+              },
+              onMask: () => _open(MaskScreen(chamber: _o, face: v.code), tabSettings(_o, 'masques:${v.code}')),
+              bores: _bores(v.code),
+            );
+          },
+        ),
+      ]),
     );
   }
 }
@@ -186,6 +220,7 @@ class VisualCard extends StatelessWidget {
     required this.onOpen,
     required this.onPhoto,
     this.onMask,
+    this.bores = 0,
   });
 
   /// Largeur minimale d'une tuile : en deçà de deux tuiles (téléphone en portrait), une seule colonne.
@@ -201,6 +236,9 @@ class VisualCard extends StatelessWidget {
 
   /// Grille du masque de la face (visuel d'action MASQUE).
   final VoidCallback? onMask;
+
+  /// Nombre d'alvéoles du masque, en pastille sur son bouton (comme le nombre d'équipements de la barre basse).
+  final int bores;
 
   @override
   Widget build(BuildContext context) {
@@ -253,10 +291,16 @@ class VisualCard extends StatelessWidget {
                   onPressed: onPhoto,
                 ),
                 if (v.action == 'MASQUE')
-                  IconButton.outlined(
-                    tooltip: tr('Grille du masque'),
-                    icon: const Icon(Icons.grid_on),
-                    onPressed: onMask,
+                  Badge(
+                    isLabelVisible: bores > 0,
+                    label: Text('$bores'),
+                    backgroundColor: Nge.yellow,
+                    textColor: Nge.slateDark,
+                    child: IconButton.outlined(
+                      tooltip: bores > 0 ? trn(bores, 'Grille du masque · {0} alvéole', 'Grille du masque · {0} alvéoles') : tr('Grille du masque'),
+                      icon: const Icon(Icons.grid_on),
+                      onPressed: onMask,
+                    ),
                   ),
               ]),
             ]),

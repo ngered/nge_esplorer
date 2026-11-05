@@ -12,16 +12,19 @@ class Bundle {
   Bundle({required this.header, required this.objects, required this.referenceData, this.files = const {}});
 
   static const format = 'nge-esplorer-paquet';
-  static const version = '0.2.0';
+  static const version = '0.5.0';
 
   /// Versions majeures des modules que l'application sait lire.
-  static const knownModules = {'noyau': 0, 'infra': 0, 'chambre': 0, 'poteau': 0};
+  static const knownModules = {'noyau': 0, 'infra': 0, 'chambre': 0, 'poteau': 0, 'optique': 0, 'immeuble': 0};
 
   /// Version minimale d'un module dont les paquets plus anciens portent des données que l'application ne lit plus,
-  /// avec la raison : avant la 0.3.0 du module chambre, positions des masques en cellules FOA au lieu de mètres. Pas
-  /// de conversion sur le terminal (le retour recopierait la version du module) : le paquet est à republier.
+  /// avec la raison : avant la 0.3.0 du module chambre, positions des masques en cellules FOA au lieu de mètres ;
+  /// avant la 0.2.0 du module infra, câbles des conduites sans rang (CDC_RANG, clé exigée au retour), sans l'état
+  /// « occupée et mauvaise » ni les diamètres de conduite. Pas de conversion sur le terminal (le retour recopierait
+  /// la version du module) : le paquet est à republier.
   static const minimumModules = {
     'chambre': ('0.3.0', 'positions des masques dans l\'ancien repère'), // tr
+    'infra': ('0.2.0', 'câbles des conduites sans rang'), // tr
   };
 
   final Map<String, dynamic> header;

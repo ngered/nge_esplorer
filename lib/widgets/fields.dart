@@ -172,12 +172,28 @@ class YesNoField extends StatelessWidget {
   }
 }
 
+/// Ligne « libellé : valeur » en lecture seule (contenu préparé au BE : boîtier optique, immeuble).
+class InfoLine extends StatelessWidget {
+  const InfoLine(this.label, this.value, {super.key});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 120, child: Text(label, style: const TextStyle(color: Nge.secondaryText))),
+        Expanded(child: Text(value)),
+      ]);
+}
+
 /// Carte titrée d'un écran de saisie ; dépliable si [expanded] est donné (ouverte au départ s'il est vrai).
 class Section extends StatelessWidget {
   const Section({super.key, required this.title, required this.children, this.action, this.expanded, this.spacing = 0});
 
   final String title;
   final List<Widget> children;
+
+  /// À droite du titre (bouton, effectif), sur 160 de large au plus : le titre garde la place qui reste.
   final Widget? action;
 
   /// Null : toujours ouverte ; sinon dépliable, ouverte au départ si vrai.
@@ -193,7 +209,7 @@ class Section extends StatelessWidget {
         child: Text(title.toUpperCase(),
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Nge.petrolBlue)),
       ),
-      ?action,
+      if (action != null) ConstrainedBox(constraints: const BoxConstraints(maxWidth: 160), child: action),
     ]);
     final body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: spacing, children: children);
     if (expanded == null) {

@@ -38,7 +38,8 @@ Future<Completion?> completionOf(GeoObject o, ReferenceData ref, DataRepository 
       if (((f as Map)['positions'] as List?)?.any((p) => (p as Map)['DATE_ABD'] == null) ?? false) '${f['FAC_CODE']}',
   };
   final visuals = Visual.of(o, ref);
-  final photos = visuals.any((v) => o.photos(v).isNotEmpty);
+  // une photo du support ou de l'un de ses équipements (le boîtier optique n'est plus un visuel du support)
+  final photos = o.files.any((f) => f['DATE_ABD'] == null);
   final missing = visuals.where((v) => (v.mandatory || (v.ifMasked && faces.contains(v.code))) && o.photos(v).isEmpty);
 
   final bool entered;

@@ -54,7 +54,9 @@ class _CachedTileProvider extends NetworkTileProvider {
           httpClient: _client,
           cachingProvider: storage,
           abortObsoleteRequests: cancelStale,
-          silenceExceptions: true,
+          // échec signalé, pas masqué : une tuile transparente passerait pour chargée, ni oubliée hors de la vue ni
+          // redemandée au rechargement du fond (zone grise jusqu'à ce qu'elle sorte de la carte)
+          silenceExceptions: false,
         );
 
   final http.Client _client;
@@ -171,22 +173,16 @@ class Osm extends TileSource {
   int get maxZoom => 19;
 }
 
-/// Fond par défaut d'une zone ([minLon, minLat, maxLon, maxLat]) : l'IGN en France métropolitaine, OpenStreetMap
-/// ailleurs (Maroc…), l'IGN ne couvrant que la France.
-TileSource defaultBaseMap(List<double>? bounds) {
-  if (bounds == null) return IgnPlan();
-  final lon = (bounds[0] + bounds[2]) / 2;
-  final lat = (bounds[1] + bounds[3]) / 2;
-  final france = lon > -5.5 && lon < 10 && lat > 41 && lat < 51.5;
-  return france ? IgnPlan() : Osm();
-}
+/// Fond par défaut d'une zone ([minLon, minLat, maxLon, maxLat]) : OpenStreetMap partout, moins chargé que le Plan
+/// IGN et plus lisible sous un réseau dense (retour du 5 novembre 2026) ; les fonds IGN restent au choix en France.
+TileSource defaultBaseMap(List<double>? bounds) => Osm();
 
-/// Fonds proposés (identifiant, nom) : les fonds Google seulement avec une clé renseignée. Les identifiants des
-/// fonds Google sont préfixés (« plan » est le Plan IGN, pas Google Plan).
+/// Fonds proposés (identifiant, nom), le fond par défaut d'abord : les fonds Google seulement avec une clé
+/// renseignée. Les identifiants des fonds Google sont préfixés (« plan » est le Plan IGN, pas Google Plan).
 List<(String, String)> availableBaseMaps(String googleKey) => [
+      ('osm', 'OpenStreetMap'),
       ('plan', tr('Plan IGN')),
       ('ortho', tr('Photographies aériennes IGN')),
-      ('osm', 'OpenStreetMap'),
       if (googleKey.isNotEmpty)
         for (final g in GoogleMapType.values) ('google-${g.name}', tr(g.label)),
     ];

@@ -7,13 +7,15 @@ import '../../data/reference_data.dart';
 import '../../lng.dart';
 import '../../theme.dart';
 import '../../widgets/fields.dart';
-import '../../widgets/messages.dart';
 import '../../widgets/svg_icon.dart';
+import '../optique/optical.dart';
 
 /// Équipements d'un support (espace `inf.equipements` du nœud : INF_EQUIPEMENT, catalogue MAT_EQUIP) : boîtes,
-/// manchons… Retirer un équipement venu du dépôt l'abandonne (`DATE_ABD`) ; un équipement ajouté pendant la saisie
-/// ([newIds]) disparaît. Une boîte d'épissure (capacité d'épissures au catalogue) propose ses liens fibres.
-/// Affiché par l'écran des équipements (onglet de la barre basse), seul endroit où on les modifie.
+/// manchons… Carte de la saisie du support, seul endroit où on les ajoute et les retire (ajout rapide : matériel du
+/// catalogue et quantité). Retirer un équipement venu du dépôt l'abandonne (`DATE_ABD`) ; un équipement ajouté pendant
+/// la saisie ([newIds]) disparaît. Un équipement optique (espace `opt` du nœud) montre son étiquette et sa fonction.
+/// Le picto de chaque équipement ([onOpen]) ouvre son écran dédié (module optique : ses visuels, ses liens fibres),
+/// où le renseigner en détail, ce qui n'est pas exigé d'un équipement préexistant.
 class SupportEquipment extends StatelessWidget {
   const SupportEquipment({
     super.key,
@@ -22,6 +24,8 @@ class SupportEquipment extends StatelessWidget {
     required this.author,
     required this.newIds,
     required this.onChanged,
+    required this.onOpen,
+    this.expanded,
   });
 
   final GeoObject node;
@@ -32,18 +36,61 @@ class SupportEquipment extends StatelessWidget {
   final Set<String> newIds;
   final VoidCallback onChanged;
 
+  /// Ouvre l'écran dédié de l'équipement (`EQU_CODE_EXT`).
+  final ValueChanged<String> onOpen;
+
+  /// Carte dépliable (saisie en cartes de la chambre et du poteau) : ouverte au départ si vrai.
+  final bool? expanded;
+
   static bool isSpliceBox(Map<String, dynamic>? mat) => ((mat?['MAT_CAPAEPIS'] as num?) ?? 0) > 0;
 
-  List<Map<String, dynamic>> get _list {
-    final l = node.namespace('inf', create: true)!.putIfAbsent('equipements', () => <dynamic>[]) as List;
+  /// Équipements de [node] (`inf.equipements`), cartes normalisées ; [create] : liste créée si absente.
+  static List<Map<String, dynamic>> listOf(GeoObject node, {bool create = false}) {
+    final inf = node.namespace('inf', create: create);
+    final l = (create ? inf!.putIfAbsent('equipements', () => <dynamic>[]) : inf?['equipements']) as List?;
+    if (l == null) return [];
     for (var i = 0; i < l.length; i++) {
       if (l[i] is! Map<String, dynamic>) l[i] = (l[i] as Map).cast<String, dynamic>();
     }
     return l.cast<Map<String, dynamic>>();
   }
 
+  /// Équipements présents (non abandonnés) de [node].
+  static List<Map<String, dynamic>> presentOf(GeoObject node) => [
+        for (final e in listOf(node))
+          if (e['DATE_ABD'] == null) e,
+      ];
+
+  /// Équipement [code] (`EQU_CODE_EXT`) de [node], abandonné ou non ; null s'il n'y est pas.
+  static Map<String, dynamic>? find(GeoObject node, String code) =>
+      listOf(node).where((e) => e['EQU_CODE_EXT'] == code).firstOrNull;
+
   static String label(Map<String, dynamic> m) =>
       [m['MAT_LIB'], m['MAT_REF']].whereType<String>().where((s) => s.trim().isNotEmpty).join(' — ');
+
+  /// Intitulé de l'équipement [e] de [node] : étiquette terrain du contenu optique, sinon matériel du catalogue.
+  static String title(GeoObject node, Map<String, dynamic> e, ReferenceData ref) {
+    final lib = Optical.of(node, e['EQU_CODE_EXT'] as String?)?['EQO_LIB'];
+    if (lib is String && lib.trim().isNotEmpty) return lib;
+    final m = ref.row('infra', 'MAT_EQUIP', 'MAT_ID', e['MAT_KEY']);
+    return m == null ? tr('Matériel {0}', [e['MAT_KEY'] ?? tr('inconnu')]) : label(m);
+  }
+
+  /// Détail de l'équipement [e] : fonction optique et matériel quand l'intitulé est l'étiquette, quantité ; null
+  /// s'il n'y a rien à ajouter.
+  static String? subtitle(GeoObject node, Map<String, dynamic> e, ReferenceData ref) {
+    final opt = Optical.of(node, e['EQU_CODE_EXT'] as String?);
+    final m = ref.row('infra', 'MAT_EQUIP', 'MAT_ID', e['MAT_KEY']);
+    final quantity = e['EQU_QTE'] as int? ?? 1;
+    final parts = [
+      if (opt != null) ...[
+        ?ref.equipmentType(opt['OTYP_KEY'] as int?),
+        if (opt['EQO_LIB'] is String) m == null ? tr('Matériel {0}', [e['MAT_KEY'] ?? tr('inconnu')]) : label(m),
+      ],
+      if (quantity > 1) tr('Quantité : {0}', [quantity]),
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
 
   Future<void> _add(BuildContext context) async {
     final catalog = referenceData.table('infra', 'MAT_EQUIP');
@@ -54,7 +101,7 @@ class SupportEquipment extends StatelessWidget {
     if (choice == null) return;
     final code = const Uuid().v4();
     newIds.add(code);
-    _list.add(<String, dynamic>{
+    listOf(node, create: true).add(<String, dynamic>{
       'EQU_CODE_EXT': code,
       'MAT_KEY': choice.$1['MAT_ID'],
       'EQU_QTE': choice.$2,
@@ -66,7 +113,7 @@ class SupportEquipment extends StatelessWidget {
 
   void _remove(Map<String, dynamic> e) {
     if (newIds.remove(e['EQU_CODE_EXT'])) {
-      _list.remove(e);
+      listOf(node).remove(e);
     } else {
       e['DATE_ABD'] = Bundle.timestamp();
       e['SRC_ABD'] = author;
@@ -76,46 +123,85 @@ class SupportEquipment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final presents = _list.where((e) => e['DATE_ABD'] == null).toList();
-    return Section(title: tr('Équipements'), children: [
-      if (presents.isEmpty) Text(tr('Aucun équipement'), style: Theme.of(context).textTheme.bodySmall),
-      for (final e in presents)
-        Builder(builder: (context) {
-          final m = referenceData.row('infra', 'MAT_EQUIP', 'MAT_ID', e['MAT_KEY']);
-          return ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const SvgIcon(SvgIcon.equipment),
-            title: Text(m == null ? tr('Matériel {0}', [e['MAT_KEY'] ?? tr('inconnu')]) : label(m)),
-            subtitle: (e['EQU_QTE'] as int? ?? 1) > 1 ? Text(tr('Quantité : {0}', [e['EQU_QTE']])) : null,
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (isSpliceBox(m))
+    final presents = presentOf(node);
+    return Section(
+      title: tr('Équipements'),
+      expanded: expanded,
+      action: presents.isEmpty
+          ? null
+          : Text(trn(presents.length, '{0} équipement', '{0} équipements'),
+              textAlign: TextAlign.end, style: const TextStyle(fontSize: 12, color: Nge.secondaryText)),
+      children: [
+        if (presents.isEmpty) Text(tr('Aucun équipement'), style: Theme.of(context).textTheme.bodySmall),
+        for (final e in presents)
+          Builder(builder: (context) {
+            final code = e['EQU_CODE_EXT'] as String?;
+            final sub = subtitle(node, e, referenceData);
+            return ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const SvgIcon(SvgIcon.equipment),
+              title: Text(title(node, e, referenceData)),
+              subtitle: sub == null ? null : Text(sub),
+              onTap: code == null ? null : () => onOpen(code),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                // picto des équipements (à la place des connecteurs) : l'écran dédié de l'équipement
+                if (code != null)
+                  IconButton(
+                    tooltip: tr('Ouvrir l\'équipement'),
+                    icon: const SvgIcon(SvgIcon.equipment),
+                    onPressed: () => onOpen(code),
+                  ),
                 IconButton(
-                  tooltip: tr('Liens fibres'),
-                  icon: const Icon(Icons.cable_outlined),
-                  onPressed: () => ScaffoldMessenger.of(context)
-                    .replaceSnackBar(SnackBar(content: Text(tr('Liens fibres de la boîte : à venir')))),
+                  tooltip: tr('Retirer l\'équipement'),
+                  color: Nge.red,
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _remove(e),
                 ),
-              IconButton(
-                tooltip: tr('Retirer l\'équipement'),
-                color: Nge.red,
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _remove(e),
-              ),
-            ]),
-          );
-        }),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: () => _add(context),
-          icon: const Icon(Icons.add),
-          label: Text(tr('Ajouter un équipement')),
+              ]),
+            );
+          }),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => _add(context),
+            icon: const Icon(Icons.add),
+            label: Text(tr('Ajouter un équipement')),
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }
+
+/// Équipement à afficher parmi les équipements présents de [node] ([SupportEquipment.presentOf]) : feuille de choix,
+/// l'équipement [current] marqué ; null si elle est fermée sans choix.
+Future<String?> chooseEquipment(BuildContext context, GeoObject node, ReferenceData ref, {String? current}) =>
+    showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(bottom: 8), children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Text(tr('Équipements de {0}', [node.lib ?? tr('Sans étiquette')]),
+                style: Theme.of(sheetContext).textTheme.titleMedium),
+          ),
+          for (final e in SupportEquipment.presentOf(node))
+            if (e['EQU_CODE_EXT'] case final String code)
+              ListTile(
+                leading: const SvgIcon(SvgIcon.equipment),
+                title: Text(SupportEquipment.title(node, e, ref)),
+                subtitle: switch (SupportEquipment.subtitle(node, e, ref)) {
+                  final String s => Text(s),
+                  null => null,
+                },
+                selected: code == current,
+                trailing: code == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(sheetContext, code),
+              ),
+        ]),
+      ),
+    );
 
 /// Choix d'un matériel du catalogue (recherche sur le libellé et la référence) et de la quantité.
 class _NewEquipment extends StatefulWidget {

@@ -5,23 +5,31 @@ import 'geo_object.dart';
 import 'bundle.dart';
 import 'reference_data.dart';
 
-/// Visuel d'un support : groupe de photos avec ses fonctions propres (docs/echanges.md §8). Visuel **attendu** :
-/// vue du type (`DEF_VUE`, photos repérées par `VUE_CODE`, fonction `VUE_ACTION` : MASQUE pour la grille du masque
-/// de chambre). Visuel **libre** : ajouté sur le terrain, titre saisi (photos repérées par `VIS_CODE`, titre
-/// `VIS_LIB`) ; il existe tant qu'il a des photos.
+/// Visuel d'un support ou d'un de ses équipements : groupe de photos avec ses fonctions propres (docs/echanges.md
+/// §8). Visuel **attendu** : vue du type du support ou vue des équipements (`DEF_VUE`, `VUE_ENTITE` `INF_EQUIPEMENT`
+/// : boîtier fermé, ouvert, cassettes, mesures), photos repérées par `VUE_CODE`, fonction `VUE_ACTION` : MASQUE pour
+/// la grille du masque de chambre. Visuel **libre** : ajouté sur le terrain, titre saisi (photos repérées par
+/// `VIS_CODE`, titre `VIS_LIB`) ; il existe tant qu'il a des photos. Les photos d'un équipement sont portées par son
+/// support (`ENTITE` `INF_EQUIPEMENT`, `EQU_KEY` : son `EQU_CODE_EXT`).
 class Visual {
-  const Visual._(this.code, this.lib, {this.free = false, this.mandatory = false, this.ifMasked = false, this.action});
+  const Visual._(this.code, this.lib,
+      {this.free = false, this.mandatory = false, this.ifMasked = false, this.action, this.equipment});
 
-  factory Visual.expected(Map<String, dynamic> def) => Visual._(
+  factory Visual.expected(Map<String, dynamic> def, {String? equipment}) => Visual._(
         def['VUE_CODE'] as String,
         def['VUE_LIB'] as String? ?? def['VUE_CODE'] as String,
         mandatory: def['VUE_OBLIGATOIRE'] == 'OUI',
         ifMasked: def['VUE_OBLIGATOIRE'] == 'SI_MASQUE',
         action: def['VUE_ACTION'] as String?,
+        equipment: equipment,
       );
 
-  /// Nouveau visuel libre, sans photo jusqu'à la première prise.
-  factory Visual.free(String lib, [String? code]) => Visual._(code ?? const Uuid().v4(), lib, free: true);
+  /// Nouveau visuel libre, sans photo jusqu'à la première prise ; de l'équipement [equipment] s'il est donné.
+  factory Visual.free(String lib, [String? code, String? equipment]) =>
+      Visual._(code ?? const Uuid().v4(), lib, free: true, equipment: equipment);
+
+  /// Entité des photos d'un équipement (`ENTITE` des fichiers, `VUE_ENTITE` de ses vues attendues).
+  static const equipmentEntity = 'INF_EQUIPEMENT';
 
   final String code;
   final String lib;
@@ -32,26 +40,49 @@ class Visual {
   final bool ifMasked;
   final String? action;
 
+  /// `EQU_CODE_EXT` de l'équipement dont c'est un visuel ; null : visuel du support.
+  final String? equipment;
+
+  /// Le même visuel libre sous le titre [lib].
+  Visual renamed(String lib) => Visual.free(lib, code, equipment);
+
+  /// Équipement de la photo [f] (`EQU_KEY` d'une photo d'`ENTITE` `INF_EQUIPEMENT`) ; null : photo du support. Une
+  /// photo d'équipement d'un paquet antérieur au format 0.4.0, sans `EQU_KEY`, reste au support.
+  static String? equipmentOf(Map<String, dynamic> f) =>
+      f['ENTITE'] == equipmentEntity ? f['EQU_KEY'] as String? : null;
+
   /// La photo [f] appartient à ce visuel.
-  bool contains(Map<String, dynamic> f) => free ? f['VIS_CODE'] == code : f['VUE_CODE'] == code;
+  bool contains(Map<String, dynamic> f) =>
+      equipmentOf(f) == equipment && (free ? f['VIS_CODE'] == code : f['VUE_CODE'] == code);
 
   /// Visuels de [o] : attendus pour son type et ses types parents (ordre de `VUE_ORDRE`), puis libres (ordre de
-  /// création).
+  /// création). Sans les visuels de ses équipements ([ofEquipment]).
   static List<Visual> of(GeoObject o, ReferenceData ref) {
     final types = <int?>{o.typeKey};
     for (var t = ref.type(o.typeKey); t != null; t = ref.type(t['TYPE_PARENT_KEY'] as int?)) {
       if (!types.add(t['TYPE_PARENT_KEY'] as int?)) break;
     }
-    final views = ref.table('noyau', 'DEF_VUE').where((v) => types.contains(v['TYPE_KEY'])).toList()
+    return _visuals(
+        o, ref, (v) => v['VUE_ENTITE'] == null && v['TYPE_KEY'] != null && types.contains(v['TYPE_KEY']), null);
+  }
+
+  /// Visuels de l'équipement [equipment] (`EQU_CODE_EXT`) du support [o] : vues des équipements, puis libres.
+  static List<Visual> ofEquipment(GeoObject o, String equipment, ReferenceData ref) =>
+      _visuals(o, ref, (v) => v['VUE_ENTITE'] == equipmentEntity, equipment);
+
+  static List<Visual> _visuals(
+      GeoObject o, ReferenceData ref, bool Function(Map<String, dynamic> v) expected, String? equipment) {
+    final views = ref.table('noyau', 'DEF_VUE').where(expected).toList()
       ..sort((a, b) => (a['VUE_ORDRE'] as int).compareTo(b['VUE_ORDRE'] as int));
     final freeVisuals = <String, Visual>{};
     for (final f in o.files) {
       final code = f['VIS_CODE'] as String?;
-      if (code != null && f['DATE_ABD'] == null) {
-        freeVisuals.putIfAbsent(code, () => Visual.free(f['VIS_LIB'] as String? ?? tr('Visuel libre'), code));
+      if (code != null && f['DATE_ABD'] == null && equipmentOf(f) == equipment) {
+        freeVisuals.putIfAbsent(
+            code, () => Visual.free(f['VIS_LIB'] as String? ?? tr('Visuel libre'), code, equipment));
       }
     }
-    return [for (final v in views) Visual.expected(v), ...freeVisuals.values];
+    return [for (final v in views) Visual.expected(v, equipment: equipment), ...freeVisuals.values];
   }
 }
 
@@ -101,7 +132,7 @@ extension ObjectPhotos on GeoObject {
     final ext = name.contains('.') ? name.split('.').last.toLowerCase() : 'jpg';
     final date = Bundle.timestamp();
     final f = <String, dynamic>{
-      'ENTITE': 'PRJ_NOE',
+      if (v.equipment == null) 'ENTITE': 'PRJ_NOE' else ...{'ENTITE': Visual.equipmentEntity, 'EQU_KEY': v.equipment},
       if (v.free) ...{'VIS_CODE': v.code, 'VIS_LIB': v.lib} else 'VUE_CODE': v.code,
       'FIC_CODE_EXT': id,
       'FIC_NOM': name,

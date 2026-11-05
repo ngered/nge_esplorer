@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../data/geo_object.dart';
 import '../data/geocoding.dart';
 import '../lng.dart';
+import '../modules/immeuble/building.dart';
 import '../providers/app_provider.dart';
 import '../theme.dart';
 import '../widgets/fields.dart';
@@ -18,7 +19,8 @@ typedef AddressChoice = ({GeoObject? address});
 /// Adresse d'un support (fiche « Adresse édition » de FibReady) : sélection par commune, voie et adresse parmi
 /// celles du paquet, ou nouvelle adresse ; détail (numéro, complément, code postal, commentaire) ; détection
 /// automatique par géocodage inversé de la position du support (adresse auto de FibReady), rapprochée des adresses
-/// du paquet. Renvoie le choix ([AddressChoice]) ou null (annulé) ; l'enregistrement est celui du support.
+/// du paquet ; immeuble, BAL et locaux de l'adresse du paquet choisie, en lecture ([BuildingSection]). Renvoie le
+/// choix ([AddressChoice]) ou null (annulé) ; l'enregistrement est celui du support.
 class AddressScreen extends StatefulWidget {
   const AddressScreen({super.key, required this.node, this.current, this.geocoder});
 
@@ -322,6 +324,8 @@ class _AddressScreenState extends State<AddressScreen> {
             StringField(m: _detail, column: 'ADR_COMMENT', label: tr('Commentaire'), rows: 2, onChanged: () {}),
           ]),
         ),
+        // immeuble et BAL de l'adresse du paquet (module immeuble), en lecture
+        if (known) BuildingSection(address: onStreet.firstWhere((a) => a.id == _selectedId)),
       ]),
     );
   }

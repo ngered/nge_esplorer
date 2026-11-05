@@ -11,13 +11,18 @@ import 'package:provider/provider.dart';
 
 import '../lng.dart';
 import '../map/flight.dart';
+import '../map/offset_line.dart';
 import '../map/point_layer.dart';
 import '../map/colors.dart';
 import '../map/symbols.dart';
 import '../map/selection.dart';
 import '../map/tile_source.dart';
+import '../data/data_repository.dart';
 import '../data/geo_object.dart';
 import '../data/reference_data.dart';
+import '../modules/immeuble/building.dart';
+import '../modules/infra/equipment.dart';
+import '../modules/optique/optical.dart';
 import '../modules/poteau/rosette_screen.dart';
 import '../modules/completion.dart';
 import '../providers/app_provider.dart';
@@ -25,6 +30,8 @@ import '../theme.dart';
 import '../widgets/back_to_map.dart';
 import '../widgets/bottom_bar.dart';
 import '../widgets/support_bar.dart';
+import '../widgets/support_link.dart';
+import '../widgets/svg_icon.dart';
 import 'settings_screen.dart';
 import 'visuals_screen.dart';
 import '../widgets/messages.dart';
@@ -241,8 +248,18 @@ class _MapView extends StatefulWidget {
 class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
   final _mapController = MapController();
   late TileSource _baseMap = defaultBaseMap(context.read<AppProvider>().bounds);
-  final Set<MapLayer> _layers = {MapLayer.aerial, MapLayer.underground};
+  final Set<MapLayer> _layers = {MapLayer.aerial, MapLayer.underground, MapLayer.infra};
+
+  /// Couche Tirage : câbles superposés d'un linéaire dessinés en parallèle, à la couleur de leur capacité (option
+  /// de FibReady), plutôt qu'en une bande.
+  bool _parallel = false;
   List<GeoObject> _inView = [];
+
+  /// Couche Tirage : câbles tirés sur chaque linéaire de la vue.
+  Map<String, List<GeoObject>> _cables = const {};
+
+  /// Couche Administratif : câbles à leur tracé propre dans la vue (raccordements du PBO à l'adresse desservie).
+  List<GeoObject> _ownCables = const [];
 
   /// Statut de renseignement des supports visibles, par id.
   Map<String, Completion?> _statuses = {};
@@ -252,6 +269,17 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
 
   /// Support sélectionné ([AppProvider.selectedSupport]), lu dans le dépôt.
   GeoObject? _selection;
+
+  /// Poteau dont on désigne la destination d'une nouvelle portée (« Ajouter une destination ») : le prochain support
+  /// touché sur la carte ; [_spanWarning] : support touché refusé, signalé dans la consigne (un message en bas de
+  /// l'écran la couvrirait).
+  GeoObject? _spanFrom;
+  String? _spanWarning;
+
+  void _waitDestination(GeoObject? pole) => setState(() {
+        _spanFrom = pole;
+        _spanWarning = null;
+      });
 
   /// Route de la carte ; [_away] : un autre écran est au premier plan, quitté avec [_leftWith] sélectionné.
   Route<dynamic>? _route;
@@ -278,14 +306,20 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
   final _baseMapReload = StreamController<void>.broadcast();
   Timer? _scheduledReload;
   DateTime? _lastReload;
+  Duration _reloadDelay = _firstReloadDelay;
+  static const _firstReloadDelay = Duration(seconds: 3);
+  static const _maxReloadDelay = Duration(minutes: 1);
 
-  /// Tuile en échec : rechargement du fond 3 s plus tard, au plus une fois toutes les 30 s (sans connexion, pas de
-  /// boucle de requêtes).
+  /// Tuile en échec : rechargement du fond (seules les tuiles en échec sont redemandées) 3 s plus tard, puis à des
+  /// délais doublés tant que les échecs se suivent, jusqu'à une minute (sans connexion, pas de boucle de requêtes) ;
+  /// un échec n'est jamais ignoré, il attend au pire le rechargement suivant.
   void _onTileError() {
-    final d = _lastReload;
     if (_scheduledReload?.isActive ?? false) return;
-    if (d != null && DateTime.now().difference(d) < const Duration(seconds: 30)) return;
-    _scheduledReload = Timer(const Duration(seconds: 3), _reloadBaseMap);
+    final last = _lastReload;
+    if (last == null || DateTime.now().difference(last) > _maxReloadDelay * 2) _reloadDelay = _firstReloadDelay;
+    _scheduledReload = Timer(_reloadDelay, _reloadBaseMap);
+    final next = _reloadDelay * 2;
+    _reloadDelay = next > _maxReloadDelay ? _maxReloadDelay : next;
   }
 
   void _reloadBaseMap() {
@@ -486,41 +520,92 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
   /// Amplitude de la pulsation à l'instant [t] (0 à 1) : trois battements qui s'amortissent.
   static double _wave(double t) => math.pow(math.sin(t * math.pi * 3), 2) * (1 - t);
 
-  /// Recharge les objets dont l'emprise coupe la vue (jamais toute la zone d'un coup).
-  void _reload() {
+  /// Recharge les objets dont l'emprise coupe la vue élargie ([_load]), 150 ms après le dernier appel (fin d'un
+  /// geste, couche changée…) ; [now] : aussitôt.
+  void _reload({bool now = false}) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 150), () async {
-      if (!mounted) return;
-      final app = context.read<AppProvider>();
-      final b = _mapController.camera.visibleBounds;
-      _zoom = _mapController.camera.zoom;
-      _updateAttribution();
-      final objects = await app.repo.objectsInBounds(
-        [b.west, b.south, b.east, b.north],
-        classes: {ObjectClass.noe, ObjectClass.lin, if (_layers.contains(MapLayer.administrative) && _zoom >= 16) ObjectClass.adr},
-      );
-      final statuses = <String, Completion?>{};
-      for (final o in objects.where((o) => o.objectClass == ObjectClass.noe)) {
-        final c = _statusCache[o.id];
-        statuses[o.id] = c != null && identical(c.$1, o)
-            ? c.$2
-            : (_statusCache[o.id] = (o, await completionOf(o, app.referenceData, app.repo))).$2;
+    _debounce = Timer(now ? Duration.zero : const Duration(milliseconds: 150), _load);
+  }
+
+  /// Pendant un geste ou un vol de repérage : la vue sort de l'emprise chargée, le réseau est chargé aussitôt, sans
+  /// attendre la fin du déplacement (un chargement à la fois ; la fin du geste recharge de toute façon).
+  void _reloadIfOutside() {
+    final loaded = _loaded;
+    if (_loading || (_debounce?.isActive ?? false)) return;
+    if (loaded != null && loaded.containsBounds(_mapController.camera.visibleBounds)) return;
+    _reload(now: true);
+  }
+
+  /// Emprise du dernier chargement : la vue élargie d'une demi-vue de chaque côté, pour qu'un déplacement découvre
+  /// un réseau déjà dessiné (marqueurs et traits hors de l'écran ne sont pas peints).
+  LatLngBounds? _loaded;
+  bool _loading = false;
+
+  /// Numéro du dernier chargement : un chargement dépassé par un plus récent n'est pas affiché.
+  int _loadCount = 0;
+
+  /// Charge les objets dont l'emprise coupe la vue élargie (jamais toute la zone d'un coup).
+  Future<void> _load() async {
+    if (!mounted) return;
+    final count = ++_loadCount;
+    _loading = true;
+    try {
+      await _loadObjects(count);
+    } finally {
+      if (count == _loadCount) _loading = false;
+    }
+  }
+
+  Future<void> _loadObjects(int count) async {
+    final app = context.read<AppProvider>();
+    final v = _mapController.camera.visibleBounds;
+    final dx = (v.east - v.west) / 2;
+    final dy = (v.north - v.south) / 2;
+    final area = LatLngBounds(
+      LatLng(math.max(v.south - dy, -85), math.max(v.west - dx, -180)),
+      LatLng(math.min(v.north + dy, 85), math.min(v.east + dx, 180)),
+    );
+    final b = [area.west, area.south, area.east, area.north];
+    _zoom = _mapController.camera.zoom;
+    _updateAttribution();
+    final objects = await app.repo.objectsInBounds(
+      b,
+      classes: {ObjectClass.noe, ObjectClass.lin, if (_layers.contains(MapLayer.administrative) && _zoom >= 16) ObjectClass.adr},
+    );
+    final cables = _layers.contains(MapLayer.cables)
+        ? await app.repo.cablesOnLinears([
+            for (final o in objects)
+              if (o.objectClass == ObjectClass.lin) o.id,
+          ])
+        : const <String, List<GeoObject>>{};
+    // raccordements : avec les adresses qu'ils desservent (couche Administratif), au même zoom
+    final ownCables = _layers.contains(MapLayer.administrative) && _zoom >= 16
+        ? await app.repo.objectsInBounds(b, classes: {ObjectClass.cab})
+        : const <GeoObject>[];
+    final statuses = <String, Completion?>{};
+    for (final o in objects.where((o) => o.objectClass == ObjectClass.noe)) {
+      final c = _statusCache[o.id];
+      statuses[o.id] = c != null && identical(c.$1, o)
+          ? c.$2
+          : (_statusCache[o.id] = (o, await completionOf(o, app.referenceData, app.repo))).$2;
+    }
+    // un support supprimé (abandonné) quitte la sélection
+    final id = app.selectedSupport;
+    final sel = id == null ? null : await app.repo.object(id);
+    if (!mounted || count != _loadCount) return;
+    final gone = sel == null || sel.abandoned;
+    if (gone && id != null && app.selectedSupport == id) app.selectSupport(null);
+    _loaded = area;
+    setState(() {
+      _inView = objects;
+      _cables = cables;
+      _ownCables = ownCables;
+      _statuses = statuses;
+      if (app.selectedSupport == null) {
+        _selection = null;
+      } else if (!gone && app.selectedSupport == sel.id) {
+        _selection = sel;
       }
-      // un support supprimé (abandonné) quitte la sélection
-      final id = app.selectedSupport;
-      final sel = id == null ? null : await app.repo.object(id);
-      if (!mounted) return;
-      final gone = sel == null || sel.abandoned;
-      if (gone && id != null && app.selectedSupport == id) app.selectSupport(null);
-      setState(() {
-        _inView = objects;
-        _statuses = statuses;
-        if (app.selectedSupport == null) {
-          _selection = null;
-        } else if (!gone && app.selectedSupport == sel.id) {
-          _selection = sel;
-        }
-      });
     });
   }
 
@@ -538,6 +623,7 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
   /// Support choisi dans le bandeau de recherche : sélectionné et repéré.
   void _selectResult(GeoObject o) {
     FocusManager.instance.primaryFocus?.unfocus();
+    _spanFrom = null;
     context.read<AppProvider>().selectSupport(o.id);
     _locate(o);
   }
@@ -580,6 +666,32 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
                     },
                   );
                 }),
+              // option du tirage : câbles superposés en parallèle, légende des capacités
+              SwitchListTile(
+                contentPadding: const EdgeInsets.only(left: 30),
+                title: Text(tr('Câbles en parallèle')),
+                subtitle: Text(tr('Un trait par câble, à la couleur de sa capacité')),
+                value: _parallel,
+                onChanged: _layers.contains(MapLayer.cables)
+                    ? (v) {
+                        setState(() => _parallel = v);
+                        setSheetState(() {});
+                      }
+                    : null,
+              ),
+              if (_parallel && _layers.contains(MapLayer.cables))
+                Padding(
+                  padding: const EdgeInsets.only(left: 30, bottom: 4),
+                  child: Wrap(spacing: 12, runSpacing: 4, children: [
+                    for (final (i, (max, color)) in cableCapacities.indexed)
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Container(width: 18, height: 3, color: color),
+                        const SizedBox(width: 4),
+                        Text(max == null ? tr('> {0} FO', [cableCapacities[i - 1].$1]) : tr('≤ {0} FO', [max]),
+                            style: t.bodySmall),
+                      ]),
+                  ]),
+                ),
               const Divider(height: 24),
               Text(tr('Renseignement des supports'), style: t.titleMedium),
               const SizedBox(height: 8),
@@ -593,6 +705,39 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
               ]),
               const SizedBox(height: 4),
               Text(tr('Encre bleue : appui énergie. Pastille magenta : modifié.'), style: t.bodySmall),
+              const SizedBox(height: 12),
+              Text(tr('Équipement optique porté'), style: t.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(spacing: 16, runSpacing: 8, children: [
+                for (final m in OpticalMark.values)
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    SupportSymbol(family: 'CHB', mark: m, size: 22),
+                    const SizedBox(width: 8),
+                    // libellé long (« autre équipement optique… ») : sur plusieurs lignes plutôt que hors du panneau
+                    Flexible(child: Text(tr(m.lib))),
+                  ]),
+              ]),
+              const SizedBox(height: 12),
+              Text(tr('Immeuble, armoire de rue, adresses'), style: t.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(spacing: 16, runSpacing: 8, children: [
+                for (final (family, lib) in const [
+                  ('IMM', 'Immeuble'), // tr
+                  ('SIT', 'Armoire de rue'), // tr
+                  ('SIT-NRO', 'Shelter (NRO)'), // tr
+                ])
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    SupportSymbol(family: family, size: 22),
+                    const SizedBox(width: 8),
+                    Text(tr(lib)),
+                  ]),
+                for (final u in AddressUsage.values)
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    AddressSymbol(usage: u, size: 22),
+                    const SizedBox(width: 8),
+                    Flexible(child: Text(tr(u.lib))),
+                  ]),
+              ]),
               const Divider(height: 24),
               Text(tr('Fond de plan'), style: t.titleMedium),
               const SizedBox(height: 8),
@@ -705,6 +850,9 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
                   if (ev is MapEventMoveEnd || ev is MapEventFlingAnimationEnd || ev is MapEventDoubleTapZoomEnd ||
                       ev is MapEventScrollWheelZoom) {
                     _reload();
+                  } else if (ev is MapEventMove) {
+                    // glissement, lancer, pincement, vol : réseau chargé au-devant du déplacement
+                    _reloadIfOutside();
                   }
                 },
                 onTap: (tap, _) => _onTap(tap.relative),
@@ -720,9 +868,27 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
                   errorTileCallback: (_, _, _) => _onTileError(),
                   reset: _baseMapReload.stream,
                 ),
+                // tirage : bande sous les linéaires, d'autant plus large qu'ils portent de câbles
+                if (_layers.contains(MapLayer.cables) && !_parallel)
+                  PolylineLayer(polylines: [
+                    for (final l in _inView)
+                      if (_cables[l.id] case final cables? when l.line.isNotEmpty) _cableBand(l, cables.length),
+                  ]),
                 PolylineLayer(polylines: [
                   for (final l in displayed.where((o) => o.objectClass == ObjectClass.lin)) _polyline(l, ref),
                 ]),
+                // tirage en parallèle : au-dessus des linéaires (le câble du milieu, sur le linéaire, en serait caché)
+                if (_layers.contains(MapLayer.cables) && _parallel)
+                  PolylineLayer(polylines: [
+                    for (final l in _inView)
+                      if (_cables[l.id] case final cables? when l.line.isNotEmpty) ..._parallelCables(l, cables),
+                  ]),
+                // raccordements (couche Administratif) : trait fin du PBO à l'adresse, à partir du zoom 16
+                if (_layers.contains(MapLayer.administrative) && _ownCables.isNotEmpty)
+                  PolylineLayer(polylines: [
+                    for (final c in _ownCables)
+                      Polyline(points: c.line, color: cableColor, strokeWidth: _zoom < 17 ? 1.2 : 2),
+                  ]),
                 // petites échelles : supports dessinés en une seule couche (des centaines de widgets déplacés à
                 // chaque image saccadent le déplacement de la carte) ; la sélection reste un marqueur
                 if (_points)
@@ -752,7 +918,16 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: compact ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
-                      if (sel != null)
+                      if (_spanFrom case final pole?)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: compact ? _Preview.compactWidth : double.infinity),
+                            child: _DestinationPrompt(
+                                pole: pole, warning: _spanWarning, onCancel: () => _waitDestination(null)),
+                          ),
+                        )
+                      else if (sel != null)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: ConstrainedBox(
@@ -762,7 +937,13 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
                               maxHeight: math.max(0, c.maxHeight - 40),
                             ),
                             child: SingleChildScrollView(
-                              child: _Preview(object: sel, referenceData: ref, status: _statuses[sel.id], compact: compact),
+                              child: _Preview(
+                                object: sel,
+                                referenceData: ref,
+                                status: _statuses[sel.id],
+                                compact: compact,
+                                onAddDestination: () => _waitDestination(sel),
+                              ),
                             ),
                           ),
                         ),
@@ -827,8 +1008,27 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
     final hits = targetsAt(screen, targets, tolerance: _points ? 14 : 22);
     final choice = hits.length > 1 ? await _pickAmong(hits, ref) : hits.firstOrNull;
     if (!mounted || (choice == null && hits.isNotEmpty)) return;
+    if (_spanFrom != null) {
+      if (choice != null) await _addDestination(_spanFrom!, choice);
+      return;
+    }
     context.read<AppProvider>().selectSupport(choice?.id);
     setState(() => _selection = choice);
+  }
+
+  /// Destination [dest] désignée pour une nouvelle portée de [pole] : sa rosace s'ouvre, la portée ajoutée et choisie,
+  /// à enregistrer (déjà reliés : la portée existante) ; le poteau lui-même n'est pas une destination.
+  Future<void> _addDestination(GeoObject pole, GeoObject dest) async {
+    if (dest.id == pole.id) {
+      setState(() => _spanWarning = tr('Touchez un autre support que {0}', [pole.lib ?? tr('le poteau')]));
+      return;
+    }
+    final fresh = await context.read<AppProvider>().repo.object(pole.id);
+    if (!mounted) return;
+    _waitDestination(null);
+    if (fresh == null || fresh.abandoned) return;
+    await Navigator.push(context, MaterialPageRoute(
+        settings: tabSettings(fresh, 'portees'), builder: (_) => RosetteScreen(pole: fresh, destination: dest)));
   }
 
   /// Supports qui se valent sous le doigt : l'utilisateur désigne le sien.
@@ -841,19 +1041,28 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
               child: Text(tr('{0} supports à cet endroit', [objects.length]), style: Theme.of(sheetContext).textTheme.titleMedium),
             ),
             for (final o in objects)
-              ListTile(
-                leading: SupportSymbol(
-                  family: ref.familyCode(o.typeKey),
-                  fill: _statuses[o.id]?.color,
-                  energy: o.typeKey == 15,
+              if (o.objectClass == ObjectClass.adr)
+                ListTile(
+                  leading: AddressSymbol(usage: AddressUsage.of(o, ref), size: 24),
+                  title: Text(addressLabel(o)),
+                  subtitle: Text(tr(AddressUsage.of(o, ref).lib)),
+                  onTap: () => Navigator.pop(sheetContext, o),
+                )
+              else
+                ListTile(
+                  leading: SupportSymbol(
+                    family: SupportSymbol.familyOf(o.typeKey, ref),
+                    fill: _statuses[o.id]?.color,
+                    energy: o.typeKey == 15,
+                    mark: OpticalMark.of(o, ref),
+                  ),
+                  title: Text(o.lib ?? tr('Sans étiquette')),
+                  subtitle: Text([
+                    ref.typeLabel(o.typeKey),
+                    if (o.props['GEOL_MOD_KEY'] == 8) tr('position à relever'),
+                  ].join(' · ')),
+                  onTap: () => Navigator.pop(sheetContext, o),
                 ),
-                title: Text(o.lib ?? tr('Sans étiquette')),
-                subtitle: Text([
-                  ref.typeLabel(o.typeKey),
-                  if (o.props['GEOL_MOD_KEY'] == 8) tr('position à relever'),
-                ].join(' · ')),
-                onTap: () => Navigator.pop(sheetContext, o),
-              ),
           ]),
         ),
       );
@@ -868,6 +1077,32 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
 
   static const _labelStyle =
       TextStyle(fontSize: 11, height: 1.5, fontWeight: FontWeight.w700, color: Nge.slateDark);
+
+  /// Câbles [cables] du linéaire [l] côte à côte, centrés sur lui, dans un ordre stable (identifiant), chacun à la
+  /// couleur de sa capacité et cerné de blanc, qui le détache de ses voisins et du fond de plan ; trait de 2 à 4
+  /// pixels selon le zoom, les liserés de deux câbles voisins accolés.
+  List<Polyline> _parallelCables(GeoObject l, List<GeoObject> cables) {
+    final sorted = [...cables]..sort((a, b) => a.id.compareTo(b.id));
+    final (width, border) = _zoom < 16 ? (2.0, 0.75) : (_zoom < 18 ? (3.0, 1.0) : (4.0, 1.5));
+    final gap = width + 2 * border;
+    return [
+      for (final (i, c) in sorted.indexed)
+        Polyline(
+          points: offsetLine(l.line, (i - (sorted.length - 1) / 2) * gap, _zoom),
+          color: cableCapacityColor(c.props['CAB_CAPA'] as int?),
+          strokeWidth: width,
+          borderStrokeWidth: border,
+          borderColor: Colors.white,
+        ),
+    ];
+  }
+
+  /// Bande du tirage sous le linéaire [l] qui porte [count] câbles : 4 à 10 de large selon le nombre (au-delà de
+  /// quatre câbles, la même), plus fine aux petites échelles.
+  Polyline _cableBand(GeoObject l, int count) {
+    final width = (_zoom < 16 ? 3.0 : 6.0) + 2.0 * (math.min(count, 4) - 1);
+    return Polyline(points: l.line, color: cableColor.withValues(alpha: 0.55), strokeWidth: width);
+  }
 
   Polyline _polyline(GeoObject l, ReferenceData ref) {
     final family = ref.familyCode(l.typeKey);
@@ -889,19 +1124,21 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
   }
 
   /// Support : picto FibReady, carré intérieur à la couleur du statut de renseignement (FOA Explorer), encre bleue
-  /// pour l'énergie, point aux petites échelles ; sélection : halo jaune cerclé de bleu ; modifié : pastille magenta ;
-  /// étiquette à partir du zoom 18 (et toujours pour la sélection), marquée du statut. Adresse : point orange.
-  /// Les touchers sont traités par la carte ([_onTap]), pas par les marqueurs.
+  /// pour l'énergie, marque au coin bas droit de l'équipement optique porté ([OpticalMark]), point aux petites
+  /// échelles ; sélection : halo jaune cerclé de bleu ; modifié : pastille magenta ; étiquette à partir du zoom 18 (et
+  /// toujours pour la sélection), marquée du statut. Adresse : picto FibReady de son usage ([AddressUsage]). Les
+  /// touchers sont traités par la carte ([_onTap]), pas par les marqueurs.
   Marker _marker(GeoObject n, ReferenceData ref) {
     if (n.objectClass == ObjectClass.adr) {
+      final size = _zoom >= 18 ? 20.0 : 16.0;
       return Marker(
         point: n.point!,
-        width: 14,
-        height: 14,
-        child: const Center(child: SupportPoint(fill: addressColor, ink: Colors.white, size: 8)),
+        width: size,
+        height: size,
+        child: AddressSymbol(usage: AddressUsage.of(n, ref), size: size),
       );
     }
-    final family = ref.familyCode(n.typeKey);
+    final family = SupportSymbol.familyOf(n.typeKey, ref);
     final selected = _selection?.id == n.id;
     final status = _statuses[n.id];
     final energy = n.typeKey == 15;
@@ -935,7 +1172,13 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
                   ),
                 ),
               showSymbol
-                  ? SupportSymbol(family: family, fill: status?.color, energy: energy, size: size)
+                  ? SupportSymbol(
+                      family: family,
+                      fill: status?.color,
+                      energy: energy,
+                      mark: OpticalMark.of(n, ref),
+                      size: size,
+                    )
                   : SupportPoint(
                       fill: status?.color ?? SupportSymbol.paper,
                       ink: energy ? energyColor : Colors.black,
@@ -984,21 +1227,27 @@ class _MapViewState extends State<_MapView> with TickerProviderStateMixin {
 
 /// Couches métier du panneau Couches.
 enum MapLayer {
-  aerial('Aérien', 'Poteaux, portées, façades', telecomColor), // tr
-  underground('Souterrain', 'Chambres, fourreaux', undergroundColor), // tr
-  administrative('Administratif', 'Adresses, à partir du zoom 16', addressColor); // tr
+  aerial('Aérien', 'Poteaux, façades', telecomColor), // tr
+  underground('Souterrain', 'Chambres', undergroundColor), // tr
+  infra('Parcours d\'infra', 'Portées, façades, fourreaux : cheminements entre supports', infraColor), // tr
+  administrative('Administratif', 'Adresses et leurs raccordements, à partir du zoom 16', addressColor), // tr
+  cables('Tirage', 'Câbles optiques le long de leur parcours', cableColor); // tr
 
   const MapLayer(this.lib, this.detail, this.color);
   final String lib;
   final String detail;
   final Color color;
 
-  /// Couche d'un objet (null : toujours affiché).
+  /// Couche d'un objet (null : toujours affiché). Linéaires (cheminements GraceTHD `t_cheminement` : portées,
+  /// façades, fourreaux) : parcours d'infra, sa propre couche (notes equipements rep2) ; relier deux supports
+  /// reviendra à compléter ce linéaire. Les câbles n'ont pas de géométrie : la couche Tirage les dessine sur les
+  /// linéaires de leur parcours.
   static MapLayer? of(GeoObject o, ReferenceData ref) {
     if (o.objectClass == ObjectClass.adr) return administrative;
+    if (o.objectClass == ObjectClass.lin) return infra;
     return switch (ref.familyCode(o.typeKey)) {
-      'POT' || 'FAC' || 'LIN-AER' || 'LIN-FAC' => aerial,
-      'CHB' || 'LIN-SOUT' => underground,
+      'POT' || 'FAC' => aerial,
+      'CHB' => underground,
       _ => null,
     };
   }
@@ -1038,7 +1287,8 @@ class _Attribution extends StatelessWidget {
   }
 }
 
-/// Bandeau « Identification support » (maquette Figma) : recherche d'un support par son étiquette, menu de la zone.
+/// Bandeau « Identification support » (maquette Figma) : recherche d'un support par son étiquette ou par une entité
+/// associée (équipement, câble, adresse : [SearchMatch]), chaque résultat menant au support ; menu de la zone.
 class _Banner extends StatelessWidget {
   const _Banner({required this.zone, required this.author, required this.onSelected});
 
@@ -1047,6 +1297,21 @@ class _Banner extends StatelessWidget {
   final ValueChanged<GeoObject> onSelected;
 
   static const _round = BorderRadius.all(Radius.circular(24));
+
+  /// Ce qui mène au support [h] : son type, ou l'entité trouvée et le support.
+  static String _found(SearchHit h, ReferenceData ref) {
+    final support = h.support.lib ?? tr('Sans étiquette');
+    return switch (h.match) {
+      SearchMatch.support => ref.typeLabel(h.support.typeKey),
+      SearchMatch.equipment => tr('Équipement sur {0}', [support]),
+      SearchMatch.cable => tr('Câble, extrémité {0}', [support]),
+      SearchMatch.address => tr('Adresse de {0}', [support]),
+      SearchMatch.servedAddress => tr('Desservie par {0} sur {1}', [
+          Optical.of(h.support, h.equipment)?['EQO_LIB'] ?? tr('un équipement'),
+          support,
+        ]),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1063,17 +1328,17 @@ class _Banner extends StatelessWidget {
           child: Row(children: [
             Expanded(
               child: LayoutBuilder(
-                builder: (context, c) => Autocomplete<GeoObject>(
-                  displayStringForOption: (o) => o.lib ?? '',
-                  optionsBuilder: (v) => v.text.trim().isEmpty ? const <GeoObject>[] : app.repo.search(v.text),
-                  onSelected: onSelected,
+                builder: (context, c) => Autocomplete<SearchHit>(
+                  displayStringForOption: (h) => h.text,
+                  optionsBuilder: (v) => v.text.trim().isEmpty ? const <SearchHit>[] : app.repo.search(v.text),
+                  onSelected: (h) => onSelected(h.support),
                   fieldViewBuilder: (context, ctl, focus, validate) => TextField(
                     controller: ctl,
                     focusNode: focus,
                     textInputAction: TextInputAction.search,
                     onSubmitted: (_) => validate(),
                     decoration: InputDecoration(
-                      hintText: tr('Identification support'),
+                      hintText: tr('Support, équipement, câble, adresse'),
                       isDense: true,
                       prefixIcon: const Icon(Icons.search, color: Nge.slateDark),
                       border: const OutlineInputBorder(borderRadius: _round),
@@ -1102,11 +1367,12 @@ class _Banner extends StatelessWidget {
                       child: ConstrainedBox(
                         constraints: BoxConstraints(maxHeight: 320, maxWidth: c.maxWidth),
                         child: ListView(shrinkWrap: true, padding: EdgeInsets.zero, children: [
-                          for (final o in options)
+                          for (final h in options)
                             ListTile(
-                              title: Text(o.lib ?? ''),
-                              subtitle: Text(app.referenceData.typeLabel(o.typeKey)),
-                              onTap: () => choose(o),
+                              leading: supportSymbolOf(h.support, app.referenceData),
+                              title: Text(h.text),
+                              subtitle: Text(_found(h, app.referenceData)),
+                              onTap: () => choose(h),
                             ),
                         ]),
                       ),
@@ -1134,24 +1400,103 @@ class _Banner extends StatelessWidget {
   }
 }
 
-/// Aperçu du support sélectionné, avant d'ouvrir sa fiche. [compact] (carte large, où la carte borne le carton à
+/// Consigne à la place de l'aperçu pendant qu'on désigne la destination d'une nouvelle portée de [pole].
+class _DestinationPrompt extends StatelessWidget {
+  const _DestinationPrompt({required this.pole, required this.onCancel, this.warning});
+
+  final GeoObject pole;
+  final VoidCallback onCancel;
+
+  /// Support touché refusé (le poteau lui-même).
+  final String? warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Card(
+      elevation: 4,
+      shadowColor: Nge.slateDark.withValues(alpha: 0.4),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            const Icon(Icons.add_link, color: Nge.petrolBlue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(tr('Nouvelle portée depuis {0}', [pole.lib ?? tr('Sans étiquette')]), style: t.titleMedium),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text(tr('Touchez sur la carte le support de destination.'), style: t.bodyMedium),
+          if (warning != null)
+            Text(warning!, style: t.bodyMedium?.copyWith(color: Nge.red, fontWeight: FontWeight.w600)),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(onPressed: onCancel, child: Text(tr('Annuler'))),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Aperçu du support sélectionné, avant d'ouvrir sa fiche : étiquette, statut de renseignement, type ; ses
+/// équipements, chacun ouvrant directement son écran dédié (module optique : visuels, liens fibres ; au-delà de
+/// [maxEquipmentChips], une seule pastille propose le choix) ; Portées d'un poteau, Ouvrir (les visuels). [compact] (carte large, où la carte borne le carton à
 /// [compactWidth]) : boutons à leur taille naturelle, à droite ; sinon, boutons sur toute la largeur.
 class _Preview extends StatelessWidget {
-  const _Preview({required this.object, required this.referenceData, this.status, this.compact = false});
+  const _Preview({
+    required this.object,
+    required this.referenceData,
+    this.status,
+    this.compact = false,
+    this.onAddDestination,
+  });
 
   final GeoObject object;
   final ReferenceData referenceData;
   final Completion? status;
   final bool compact;
 
+  /// « Ajouter une destination » d'un poteau : la carte attend le support de destination.
+  final VoidCallback? onAddDestination;
+
   /// Largeur du carton compact : de l'ordre d'une colonne de téléphone.
   static const compactWidth = 360.0;
+
+  /// Équipements nommés chacun par une pastille ; au-delà, une pastille « n équipements » ouvre le choix.
+  static const maxEquipmentChips = 3;
 
   /// Carton compact sur une carte d'au moins 600 dp de large (seuil Material entre fenêtres « compactes » et
   /// « moyennes ») : tablette et téléphone en paysage (640 dp et plus), où la rosace des portées passe en deux
   /// colonnes, fenêtre Windows assez large, et tablette en portrait, où toute la largeur étirerait aussi le carton.
   /// Téléphone en portrait (360 à 412 dp) : carton sur toute la largeur.
   static bool compactFor(double mapWidth) => mapWidth >= 600;
+
+  /// Équipements présents du support : une pastille par équipement, qui ouvre son écran dédié au-dessus de la carte ;
+  /// null sans équipement.
+  Widget? _equipmentChips(BuildContext context) {
+    final presents = [
+      for (final e in SupportEquipment.presentOf(object))
+        if (e['EQU_CODE_EXT'] is String) e,
+    ];
+    if (presents.isEmpty) return null;
+    Widget chip(String label, VoidCallback onPressed) => ActionChip(
+          avatar: const SvgIcon(SvgIcon.equipment, size: 18),
+          label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          visualDensity: VisualDensity.compact,
+          onPressed: onPressed,
+        );
+    return Wrap(spacing: 8, runSpacing: 4, children: [
+      if (presents.length > maxEquipmentChips)
+        chip(trn(presents.length, '{0} équipement', '{0} équipements'),
+            () => openEquipment(context, object, fromMap: true))
+      else
+        for (final e in presents)
+          chip(SupportEquipment.title(object, e, referenceData),
+              () => openEquipment(context, object, equipment: e['EQU_CODE_EXT'] as String, fromMap: true)),
+    ]);
+  }
 
   /// Bouton à sa taille naturelle (carton compact : réduit seulement s'il n'y a pas la place, traduction longue ou
   /// grand texte) ou partageant la largeur du carton.
@@ -1170,19 +1515,22 @@ class _Preview extends StatelessWidget {
           Row(children: [
             Expanded(child: Text(object.lib ?? tr('Sans étiquette'), style: t.titleMedium?.copyWith(fontSize: 18))),
             if (status != null)
-              // rétrécie avec de grands caractères plutôt que de déborder du carton
+              // à droite (notes rep12) ; rétrécie avec de grands caractères plutôt que de déborder du carton
               Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: status!.color,
-                    border: Border.all(color: Colors.black26),
-                    borderRadius: BorderRadius.circular(12),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: status!.color,
+                      border: Border.all(color: Colors.black26),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(tr(status!.lib),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Nge.slateDark)),
                   ),
-                  child: Text(tr(status!.lib),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Nge.slateDark)),
                 ),
               ),
           ]),
@@ -1195,9 +1543,19 @@ class _Preview extends StatelessWidget {
             ].join(' · '),
             style: t.bodySmall,
           ),
+          if (_equipmentChips(context) case final chips?) ...[const SizedBox(height: 8), chips],
           const SizedBox(height: 10),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             if (family == 'POT' && object.point != null) ...[
+              // création d'une portée par la carte, privilégiée sur la rosace (notes poteaux rep2)
+              if (onAddDestination != null && !object.outOfZone) ...[
+                IconButton.outlined(
+                  tooltip: tr('Ajouter une destination'),
+                  onPressed: onAddDestination,
+                  icon: const Icon(Icons.add_link),
+                ),
+                const SizedBox(width: 10),
+              ],
               _fit(
                 OutlinedButton.icon(
                   onPressed: () => Navigator.push(context,

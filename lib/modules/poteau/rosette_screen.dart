@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/geo_object.dart';
 import '../../data/reference_data.dart';
 import '../../lng.dart';
+import '../../map/geo.dart';
 import '../../providers/app_provider.dart';
 import '../../theme.dart';
 import '../../widgets/back_to_map.dart';
@@ -26,7 +27,7 @@ import '../../widgets/messages.dart';
 /// face à la place du poteau, sur son écran des parcours (portées, aperçu des masques), avec le carton du retour.
 /// Barre commune du support, Portées active ; « Direction » ajoute une portée.
 class RosetteScreen extends StatefulWidget {
-  const RosetteScreen({super.key, required this.pole, this.span, this.linear});
+  const RosetteScreen({super.key, required this.pole, this.span, this.linear, this.destination});
 
   final GeoObject pole;
 
@@ -36,6 +37,10 @@ class RosetteScreen extends StatefulWidget {
 
   /// Autre parcours (hors portée) sélectionné à l'arrivée, avec son carton.
   final String? linear;
+
+  /// Destination désignée sur la carte (« Ajouter une destination ») : une portée vers elle est ajoutée à l'arrivée,
+  /// choisie et à enregistrer ; si le poteau y est déjà relié, cette portée est choisie.
+  final GeoObject? destination;
 
   @override
   State<RosetteScreen> createState() => _RosetteScreenState();
@@ -58,8 +63,20 @@ class _RosetteScreenState extends State<RosetteScreen> {
     _editor = RosetteEditor(app.repo, widget.pole, author: app.author, intervention: () => app.intervention)
       ..addListener(_onEditor);
     _editor.load().then((_) {
-      final s = _editor.spans.where((p) => p.id == widget.span).firstOrNull;
-      if (mounted && s != null) _editor.select(s);
+      if (!mounted) return;
+      final dest = widget.destination;
+      final s = dest != null
+          ? _editor.activeSpans.where((p) => p.destinationId == dest.id).firstOrNull
+          : _editor.spans.where((p) => p.id == widget.span).firstOrNull;
+      if (s != null) {
+        _editor.select(s);
+      } else if (dest != null) {
+        _editor.add(existing: dest);
+      }
+      if (dest != null && s != null) {
+        ScaffoldMessenger.of(context).replaceSnackBar(SnackBar(
+            content: Text(tr('{0} est déjà relié à {1}', [widget.pole.lib ?? tr('Le poteau'), s.destinationLabel]))));
+      }
     });
     _loadOthers();
   }
@@ -150,7 +167,8 @@ class _RosetteScreenState extends State<RosetteScreen> {
                   );
         return EntryScreen(
           changed: _editor.changed,
-          message: tr('Les portées modifiées ne seront pas enregistrées.'),
+          onSave: _save,
+          message: tr('Les portées ont été modifiées.'),
           child: Scaffold(
             appBar: AppBar(
               title: ScreenTitle(
@@ -315,7 +333,8 @@ class _PanelState extends State<_Panel> with UndoMessage<_Panel> {
         Section(title: tr('Portées'), children: [
           Text(
             spans.isEmpty
-                ? tr('Aucune portée. « Direction » en ajoute une ; orientez ensuite l\'aiguille en la faisant glisser.')
+                ? tr('Aucune portée. Sur la carte, « Ajouter une destination » de l\'aperçu du poteau la crée en '
+                    'touchant le support d\'en face ; « Direction » en ajoute une ici.')
                 : tr('Touchez une aiguille ou une portée pour la modifier.'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -325,7 +344,7 @@ class _PanelState extends State<_Panel> with UndoMessage<_Panel> {
               leading: _Dots(span: p, referenceData: referenceData),
               title: Text(p.destinationLabel),
               subtitle: Text('${p.angle.toStringAsFixed(1)} gr'
-                  '${p.surveyedAngle == null ? ' (${tr('géométrie')})' : ''}'
+                  '${p.surveyedAngle == null ? ' (${p.direction == null ? tr('géométrie') : tr('destination')})' : ''}'
                   ' · ${trn(p.cables.length, '{0} câble', '{0} câbles')}'
                   '${editor.newNodes.containsKey(p.destinationId) ? ' · ${tr('destination nouvelle')}' : ''}'),
               // la portée choisie montre son détail et son carton « Naviguer vers » (tenu par l'écran)
@@ -383,8 +402,8 @@ class _PanelState extends State<_Panel> with UndoMessage<_Panel> {
             ),
           ),
         ]),
-        if (p.surveyedAngle == null)
-          Text(tr('Angle calculé depuis la géométrie : orientez l\'aiguille pour le relever.'), style: t.bodySmall),
+        ?_directionNote(context, p),
+        ?_realignButton(p),
         const SizedBox(height: 8),
         _NumberInput(
           key: ValueKey('lng-${p.id}'),
@@ -417,6 +436,59 @@ class _PanelState extends State<_Panel> with UndoMessage<_Panel> {
           style: TextButton.styleFrom(foregroundColor: Nge.red),
         ),
       ],
+    );
+  }
+
+  /// « Recaler sur la carte » : l'angle relevé prend la direction de la destination, ou celle de la géométrie
+  /// ([RosetteEditor.realign]) ; inactif quand il y est déjà, absent sans direction cartographique (destination créée
+  /// pendant la session, qui suit l'aiguille).
+  Widget? _realignButton(PoleSpan p) {
+    final d = editor.mapDirection(p);
+    if (d == null) return null;
+    final a = p.surveyedAngle;
+    final aligned = a != null && (Geo.normalize(a - d + 200) - 200).abs() < 0.05;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: aligned ? null : () => editor.realign(p),
+        icon: const Icon(Icons.my_location),
+        label: Text(tr('Recaler sur la carte ({0})', [_grads(d)])),
+      ),
+    );
+  }
+
+  /// Angle écrit comme celui de la portée (au dixième, en grades).
+  static String _grads(double g) => '${g.toStringAsFixed(1)} gr';
+
+  /// Sous l'angle : la direction de la destination qui le dicte et l'écart de l'aiguille, la butée atteinte (en
+  /// orangé), un angle relevé hors marge (venu du BE, gardé tel quel) ; sans destination connue, l'origine de l'angle.
+  Widget? _directionNote(BuildContext context, PoleSpan p) {
+    final small = Theme.of(context).textTheme.bodySmall;
+    final warn = small?.copyWith(color: limitColor, fontWeight: FontWeight.w600);
+    final d = p.direction;
+    if (d == null) {
+      return p.surveyedAngle == null
+          ? Text(tr('Angle calculé depuis la géométrie : orientez l\'aiguille pour le relever.'), style: small)
+          : null;
+    }
+    final gap = p.deviation;
+    final margin = _grads(directionMargin);
+    final outside = gap != null && gap.abs() > directionMargin + 0.05;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, spacing: 2, children: [
+        Text(
+          gap == null || gap.abs() < 0.05
+              ? tr('Direction de la destination : {0} ; ajustable de ± {1} à l\'aiguille.', [_grads(d), margin])
+              : tr('Direction de la destination : {0} ; écart de l\'aiguille : {1}{2}.',
+                  [_grads(d), gap > 0 ? '+' : '−', _grads(gap.abs())]),
+          style: small,
+        ),
+        if (p.limited)
+          Text(tr('Écart limité à ± {0} : si la destination est mal placée, corrigez sa position.', [margin]), style: warn)
+        else if (outside)
+          Text(tr('Angle relevé hors de la marge de ± {0} : l\'aiguille le ramène dans la marge.', [margin]), style: warn),
+      ]),
     );
   }
 

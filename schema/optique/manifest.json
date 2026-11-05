@@ -1,9 +1,9 @@
 {
   "code": "optique",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "libelle": "Optique : matériel optique, câbles et parcours, lovages, fibres, cassettes et positions, routes, mesures",
   "fichier": "optique.sqlite",
-  "spatial": false,
+  "spatial": true,
   "dependances": ["noyau", "infra"],
   "espace_geojson": "opt",
   "scripts": ["schema.sql", "referentiels.sql"],
@@ -18,6 +18,7 @@
     {"table": "OPT_CABLE", "colonne": "MAT_KEY", "cible": "infra.MAT_CABLE.MAT_ID"},
     {"table": "OPT_CABLE", "colonne": "NOE1_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
     {"table": "OPT_CABLE", "colonne": "NOE2_KEY", "cible": "noyau.PRJ_NOE.NOE_ID"},
+    {"table": "OPT_CABLE", "colonne": "ADR2_KEY", "cible": "noyau.PRJ_ADRESSE.ADR_ID"},
     {"table": "OPT_CABLE", "colonne": "EQU1_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"},
     {"table": "OPT_CABLE", "colonne": "EQU2_KEY", "cible": "infra.INF_EQUIPEMENT.EQU_ID"},
     {"table": "OPT_CABLE", "colonne": "AVCT_KEY", "cible": "noyau.DEF_AVANCEMENT.AVCT_ID"},
@@ -44,12 +45,16 @@
     {"type": "SIT", "code": "ETIQUETTE", "lib": "Étiquettes", "ordre": 3, "obligatoire": "OUI"},
     {"type": "SIT", "code": "TIROIR", "lib": "Tiroirs", "ordre": 4, "obligatoire": "NON"},
     {"type": "SIT", "code": "FOURREAU", "lib": "Arrivée des fourreaux", "ordre": 5, "obligatoire": "NON"},
-    {"type": "SIT", "code": "TERRE", "lib": "Mise à la terre", "ordre": 6, "obligatoire": "NON"}
+    {"type": "SIT", "code": "TERRE", "lib": "Mise à la terre", "ordre": 6, "obligatoire": "NON"},
+    {"entite": "INF_EQUIPEMENT", "code": "FERME", "lib": "Boîtier fermé", "ordre": 1, "obligatoire": "NON"},
+    {"entite": "INF_EQUIPEMENT", "code": "OUVERT", "lib": "Boîtier ouvert", "ordre": 2, "obligatoire": "NON"},
+    {"entite": "INF_EQUIPEMENT", "code": "CASSETTES", "lib": "Cassettes", "ordre": 3, "obligatoire": "NON"},
+    {"entite": "INF_EQUIPEMENT", "code": "MESURES", "lib": "Mesures photométriques", "ordre": 4, "obligatoire": "NON"}
   ],
   "completude": "À définir avec l'activité retour fin de travaux (boîtiers posés, câbles tirés, épissures, mesures).",
   "grace": {
     "OPT_EQUIPEMENT": "t_ebp (bp_typelog, bp_typephy, bp_pt_code ou bp_lt_code), t_baie, t_tiroir",
-    "OPT_CABLE": "t_cable (cb_nd1, cb_nd2) + t_cable_patch201 (cb_bp1, cb_bp2, cb_ba1, cb_ba2)",
+    "OPT_CABLE": "t_cable (cb_nd1, cb_nd2) + t_cable_patch201 (cb_bp1, cb_bp2, cb_ba1, cb_ba2) ; raccordement final (RA) : câble de branchement du PBO à l'adresse (cb_nd2 = nœud du site utilisateur, adresse portée par l'adresse), tracé propre",
     "OPT_PASSAGE": "t_cab_cond + t_cond_chem (conduite AER ou NC d'un cheminement aérien : câble porté)",
     "OPT_LOVE": "t_love",
     "OPT_FIBRE": "t_fibre (fo_nincab, fo_numtub, fo_nintub, fo_color, fo_reper)",

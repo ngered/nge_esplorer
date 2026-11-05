@@ -98,9 +98,10 @@ class RouteCard extends StatelessWidget {
 }
 
 /// Carte des linéaires d'un nœud (conduites de la chambre, autres parcours du poteau, portées et parcours des autres
-/// supports) : type et extrémité, longueur, conduites, câbles portés ; toucher une ligne suit le linéaire jusqu'au
-/// support à l'autre extrémité ([onOpen], par défaut [follow]), ou le sélectionne ([onSelect]) : l'écran montre alors
-/// son carton « Naviguer vers ». [extra] : lignes ajoutées à la fin (conduites sans destination connue).
+/// supports) : pictogramme et extrémité, longueur, conduites, câbles portés ; toucher une ligne ou sa pastille jaune
+/// de direction suit le linéaire jusqu'au support à l'autre extrémité ([onOpen], par défaut [follow] ; aperçu des
+/// masques), ou le sélectionne ([onSelect]) : l'écran montre alors son carton « Naviguer vers » (rosace, autres
+/// supports). [extra] : lignes ajoutées à la fin (conduites sans destination connue).
 class LinearList extends StatelessWidget {
   const LinearList({
     super.key,
@@ -112,6 +113,7 @@ class LinearList extends StatelessWidget {
     this.onOpen,
     this.onSelect,
     this.selected,
+    this.note,
   });
 
   final GeoObject node;
@@ -129,6 +131,10 @@ class LinearList extends StatelessWidget {
   /// Identifiant du linéaire sélectionné, mis en avant.
   final String? selected;
 
+  /// Précision ajoutée entre parenthèses à l'intitulé d'un linéaire (aperçu des masques : masques où ses conduites
+  /// sont placées, notes rep13) ; null : rien.
+  final String? Function(GeoObject linear)? note;
+
   @override
   Widget build(BuildContext context) {
     if (data.linears.isEmpty && extra.isEmpty) return const SizedBox.shrink();
@@ -138,26 +144,33 @@ class LinearList extends StatelessWidget {
           final other = data.ends[l.noe1 == node.id ? l.noe2 : l.noe1];
           void open() => onOpen == null ? follow(context, l, other!) : onOpen!(l, other!);
           final select = onSelect;
+          // support d'en face atteignable : présent dans le paquet et non supprimé
+          final reachable = other != null && !other.abandoned;
           return ListTile(
             dense: true,
-            contentPadding: select == null ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             selected: l.id == selected,
             selectedTileColor: Nge.slate.withValues(alpha: 0.08),
             shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
             // pictogramme du support d'en face, comme sur la carte
             leading: other == null ? null : supportSymbolOf(other, referenceData),
-            title: Text(linearTitle(referenceData, l, other)),
-            subtitle: Text(linearDetails(l)),
-            // pas de chevron, confondu avec le dépliage des cartes : l'icône « ouvrir » mène au support d'en face ;
-            // en sélection, c'est le carton de l'écran qui y mène
-            trailing: other == null || select != null
+            title: Text([linearTitle(referenceData, l, other), if (note?.call(l) case final n?) '($n)'].join(' ')),
+            // suivi impossible (aperçu des masques) : la ligne dit pourquoi
+            subtitle: Text([
+              linearDetails(l),
+              if (select == null && !reachable) other == null ? tr('support absent du paquet') : tr('support supprimé'),
+            ].where((t) => t.isNotEmpty).join(' · ')),
+            // pastille jaune de direction (notes rep11) : d'une touche au support d'en face, sans carton ; en
+            // sélection, c'est le carton de l'écran qui y mène
+            trailing: !reachable || select != null
                 ? null
-                : IconButton(
-                    tooltip: tr('Ouvrir {0}', [other.lib ?? tr('Sans étiquette')]),
-                    icon: const Icon(Icons.open_in_new, color: Nge.slate),
+                : IconButton.filled(
+                    tooltip: tr('Naviguer vers {0}', [other.lib ?? tr('Sans étiquette')]),
+                    style: IconButton.styleFrom(backgroundColor: Nge.yellow, foregroundColor: Nge.slateDark),
+                    icon: const Icon(Icons.near_me_outlined),
                     onPressed: open,
                   ),
-            onTap: select != null ? () => select(l) : (other == null ? null : open),
+            onTap: select != null ? () => select(l) : (reachable ? open : null),
           );
         }),
       ...extra,

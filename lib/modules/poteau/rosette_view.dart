@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../map/colors.dart';
 import '../../map/geo.dart';
@@ -14,6 +15,9 @@ const unknownColor = Color(0xFF8A8A8A);
 const poleColor = Color(0xFF0070C0);
 const selectionColor = Color(0xFFD5168B);
 
+/// Aiguille à la butée de la direction de sa destination, angle hors marge.
+const limitColor = Color(0xFFE65100);
+
 Color networkColor(Network r) => switch (r) {
       Network.telecom => telecomColor,
       Network.energy => energyColor,
@@ -22,7 +26,8 @@ Color networkColor(Network r) => switch (r) {
 
 /// Rosace des portées : rapporteur en grades orienté au nord (0 en haut, sens horaire), une aiguille par
 /// portée et une flèche par câble porté. On sélectionne une aiguille en la touchant et on l'oriente en la
-/// faisant glisser, comme dans Hirondelle.
+/// faisant glisser, comme dans Hirondelle ; vers une destination de position connue, l'aiguille choisie reste dans
+/// le secteur dessiné autour de sa direction ([directionMargin]).
 class RosetteView extends StatefulWidget {
   const RosetteView({super.key, required this.editor, required this.referenceData});
 
@@ -93,7 +98,10 @@ class _RosetteViewState extends State<RosetteView> {
             final p = _dragged;
             if (p == null) return;
             final (a, _) = _polarAt(d.globalPosition, size, d.localPosition);
+            final wasLimited = p.limited;
             widget.editor.orient(p, a);
+            // butée de la direction de la destination : sentie sous le doigt (Android)
+            if (p.limited && !wasLimited) HapticFeedback.mediumImpact();
           },
           onPanEnd: (_) => _dragged = null,
           child: ListenableBuilder(
@@ -133,6 +141,8 @@ class _RosettePainter extends CustomPainter {
     final r = size.shortestSide / 2 - 4;
     final ink = theme.colorScheme.onSurface;
     _protractor(canvas, c, r, ink);
+    final s = editor.selection;
+    if (s?.direction case final d?) _sector(canvas, c, r, d, s!.limited);
     for (final p in editor.activeSpans) {
       _span(canvas, c, r, p, p == editor.selection, ink);
     }
@@ -142,7 +152,6 @@ class _RosettePainter extends CustomPainter {
       ..color = ink
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1);
-    final s = editor.selection;
     if (s != null) {
       _drawText(canvas, '${s.angle.toStringAsFixed(1)} gr', Offset(c.dx - r, c.dy - r + 4),
           TextStyle(color: selectionColor, fontSize: r * 0.075, fontWeight: FontWeight.bold), aligned: false);
@@ -179,6 +188,27 @@ class _RosettePainter extends CustomPainter {
       }
     }
     _drawText(canvas, 'N', c + _dir(0) * (r * 0.72), TextStyle(color: ink.withValues(alpha: 0.5), fontSize: r * 0.06));
+  }
+
+  /// Secteur permis à l'aiguille choisie, de part et d'autre de la direction de sa destination [d] (trait tireté) ;
+  /// orangé quand l'aiguille est à la butée.
+  void _sector(Canvas canvas, Offset c, double r, double d, bool limited) {
+    final color = limited ? limitColor : selectionColor;
+    final rect = Rect.fromCircle(center: c, radius: r * 0.80);
+    // angle de dessin : depuis l'axe des x, sens horaire ; rosace : depuis le nord, en grades
+    double rad(double grads) => (grads - 100) * math.pi / 200;
+    canvas.drawArc(rect, rad(d - directionMargin), directionMargin * math.pi / 100, true,
+        Paint()..color = color.withValues(alpha: 0.14));
+    final edge = Paint()
+      ..color = color.withValues(alpha: 0.6)
+      ..strokeWidth = 1;
+    for (final g in [d - directionMargin, d + directionMargin]) {
+      canvas.drawLine(c + _dir(g) * (r * 0.12), c + _dir(g) * (r * 0.80), edge);
+    }
+    final axis = _dir(d);
+    for (var t = 0.12; t < 0.80; t += 0.05) {
+      canvas.drawLine(c + axis * (r * t), c + axis * (r * math.min(t + 0.025, 0.80)), edge);
+    }
   }
 
   void _span(Canvas canvas, Offset c, double r, PoleSpan p, bool selected, Color ink) {

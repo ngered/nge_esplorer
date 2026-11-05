@@ -10,11 +10,14 @@ import 'package:nge_esplorer/data/memory_repository.dart';
 import 'package:nge_esplorer/data/geo_object.dart';
 import 'package:nge_esplorer/data/bundle.dart';
 import 'package:nge_esplorer/modules/chambre/mask_editor.dart';
+import 'package:nge_esplorer/modules/immeuble/building.dart';
 import 'package:nge_esplorer/modules/infra/cables.dart';
+import 'package:nge_esplorer/modules/optique/optical.dart';
 import 'package:nge_esplorer/modules/poteau/rosette_editor.dart';
 
-/// Petit paquet de publication : un poteau, un voisin à l'est (portée relevée) et un au nord (portée sans angle).
-Uint8List testBundle({String version = '0.1.0', Map<String, String>? modules}) {
+/// Petit paquet de publication : un poteau, un voisin à l'est (portée relevée) et un au nord (portée sans angle) ;
+/// [features] : objets ajoutés.
+Uint8List testBundle({String version = '0.1.0', Map<String, String>? modules, List<Map<String, dynamic>> features = const []}) {
   final header = {
     'format': 'nge-esplorer-paquet',
     'version': version,
@@ -22,7 +25,7 @@ Uint8List testBundle({String version = '0.1.0', Map<String, String>? modules}) {
     'date': '2026-10-31T08:00:00Z',
     'projet': {'code': 'TEST', 'lib': 'Test', 'modele': '0.1.0'},
     'zone': {'code': 'Z1', 'lib': 'Zone 1', 'emprise': [2.0, 45.0, 2.01, 45.01]},
-    'modules': modules ?? {'noyau': '0.1.0', 'infra': '0.1.0', 'poteau': '0.1.0'},
+    'modules': modules ?? {'noyau': '0.1.0', 'infra': '0.2.0', 'poteau': '0.1.0'},
   };
   Map<String, dynamic> node(String id, String lib, double lon, double lat) => {
         'type': 'Feature',
@@ -74,6 +77,7 @@ Uint8List testBundle({String version = '0.1.0', Map<String, String>? modules}) {
         },
         'properties': {'classe': 'LIN', 'TYPE_KEY': 1002, 'NOE1_KEY': 'P3', 'NOE2_KEY': 'P1'},
       },
+      ...features,
     ],
   };
   final ref = {
@@ -131,16 +135,45 @@ void main() {
       expect(() => Bundle.read(testBundle(version: '1.0.0')), throwsFormatException);
     });
 
-    test('version mineure : un paquet 0.1.0 (sans commentaires) reste lisible', () {
-      expect(Bundle.version, '0.2.0');
-      for (final v in ['0.1.0', '0.2.0']) {
+    test('version mineure : un paquet 0.1.0 (sans commentaires), 0.2.0 (sans câbles), 0.3.0 (photos d\'équipement '
+        'sans EQU_KEY) ou 0.4.0 (sans raccordements) reste lisible', () {
+      expect(Bundle.version, '0.5.0');
+      for (final v in ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0']) {
         expect(Bundle.read(testBundle(version: v)).objects, hasLength(5));
       }
     });
 
+    test('modules optique et immeuble lus ; câble sans géométrie, compté au retour', () {
+      final cable = {
+        'type': 'Feature',
+        'id': 'CB1',
+        'geometry': null,
+        'properties': {
+          'classe': 'CAB',
+          'CAB_LIB': 'CDI-1015',
+          'NOE1_KEY': 'P1',
+          'NOE2_KEY': 'P2',
+          'fibres': [
+            {'FIB_NUM': 1, 'FIB_TUBE': 1, 'FIB_NUM_TUBE': 1, 'COUL_KEY': 1, 'TUBE_COUL_KEY': 1},
+          ],
+        },
+      };
+      final p = Bundle.read(testBundle(
+        version: '0.3.0',
+        modules: {'noyau': '0.2.0', 'infra': '0.2.0', 'poteau': '0.2.0', 'optique': '0.1.0', 'immeuble': '0.1.0'},
+        features: [cable],
+      ));
+      final c = p.objects.firstWhere((o) => o.id == 'CB1');
+      expect([c.objectClass, c.geometry, c.lib, c.bounds], [ObjectClass.cab, null, 'CDI-1015', null]);
+      expect(() => Bundle.read(testBundle(modules: {'noyau': '0.2.0', 'optique': '1.0.0'})), throwsFormatException);
+      final zip = Bundle.writeReturn(base: p.header, intervention: {'INT_CODE_EXT': 'i1'}, objects: [c]);
+      final header = jsonDecode(utf8.decode(ZipDecoder().decodeBytes(zip).findFile('paquet.json')!.content)) as Map;
+      expect(header['effectifs'], {'NOE': 0, 'LIN': 0, 'ADR': 0, 'CAB': 1, 'fichiers': 0});
+    });
+
     test('module chambre antérieur à 0.3.0 refusé : masques dans l\'ancien repère, paquet à republier', () {
       Bundle read(String chambre) =>
-          Bundle.read(testBundle(modules: {'noyau': '0.2.0', 'infra': '0.1.0', 'chambre': chambre, 'poteau': '0.2.0'}));
+          Bundle.read(testBundle(modules: {'noyau': '0.2.0', 'infra': '0.2.0', 'chambre': chambre, 'poteau': '0.2.0'}));
       for (final v in ['0.1.0', '0.2.0', '0.2.9']) {
         expect(
           () => read(v),
@@ -153,6 +186,17 @@ void main() {
         expect(read(v).objects, hasLength(5));
       }
       expect(() => read('1.0.0'), throwsFormatException);
+    });
+
+    test('module infra antérieur à 0.2.0 refusé : câbles des conduites sans rang, paquet à republier (notes rep11)', () {
+      Bundle read(String infra) =>
+          Bundle.read(testBundle(modules: {'noyau': '0.2.0', 'infra': infra, 'chambre': '0.3.0', 'poteau': '0.2.0'}));
+      expect(
+        () => read('0.1.0'),
+        throwsA(isA<FormatException>().having((e) => e.message, 'message',
+            'module infra en version 0.1.0, antérieure à 0.2.0 (câbles des conduites sans rang) : paquet à republier')),
+      );
+      expect(read('0.2.0').objects, hasLength(5));
     });
   });
 
@@ -170,8 +214,8 @@ void main() {
     });
 
     test('recherche par étiquette : nœuds seulement, les plus courtes d\'abord', () async {
-      expect((await repo.search('10')).map((o) => o.lib), ['100', '101', '102']);
-      expect((await repo.search(' 101 ')).map((o) => o.id), ['P2']);
+      expect((await repo.search('10')).map((h) => h.support.lib), ['100', '101', '102']);
+      expect((await repo.search(' 101 ')).map((h) => h.support.id), ['P2']);
       expect(await repo.search('L1'), isEmpty);
       expect(await repo.search(''), isEmpty);
     });
@@ -299,6 +343,61 @@ void main() {
     print('${p.zone} : $chambers chambres relevées, $bores alvéoles, ${withoutDuct.length} sans conduite ; faces : $sizes');
     expect(withoutDuct.length, lessThan(bores / 100 + 1), reason: withoutDuct.take(10).join(', '));
     expect(outside, isEmpty, reason: outside.take(10).join(', '));
+  }, skip: realBundle == null ? 'PAQUET_REEL non défini' : false);
+
+  test('paquet réel : liens fibres des équipements optiques et locaux des adresses', () async {
+    final p = Bundle.read(File(realBundle!).readAsBytesSync());
+    final repo = MemoryRepository();
+    await repo.load(p);
+    var boxes = 0, positions = 0, measures = 0, premises = 0;
+    final unknown = <String>[], unserved = <String>[];
+    for (final n in p.objects.where((o) => o.objectClass == ObjectClass.noe)) {
+      for (final e in (n.namespace('opt')?['equipements'] as List?)?.cast<Map<String, dynamic>>() ?? const []) {
+        boxes++;
+        expect((await repo.nodeOfEquipment(e['EQU_KEY'] as String))?.id, n.id);
+        for (final c in Optical.cassettes(e)) {
+          for (final pos in Optical.positions(c)) {
+            positions++;
+            for (final f in [?Optical.fibre(pos, '1'), ?Optical.fibre(pos, '2')]) {
+              final cable = await repo.object(f.cable);
+              if (cable == null || !Optical.fibres(cable).any((x) => x['FIB_NUM'] == f.num)) {
+                unknown.add('${e['EQO_LIB']} ${f.cable} F${f.num}');
+              }
+            }
+          }
+        }
+        measures += Optical.measures(e).length;
+      }
+    }
+    for (final a in await repo.addresses()) {
+      for (final l in Building.premises(a)) {
+        premises++;
+        final equ = l['EQU_KEY'] as String?;
+        if (equ != null && !(await repo.addressesServedBy(equ)).contains(a)) unserved.add('${a.id} $equ');
+      }
+    }
+    // ignore: avoid_print
+    print('${p.zone} : $boxes équipements optiques, $positions positions, $measures mesures, '
+        '${p.objects.where((o) => o.objectClass == ObjectClass.cab).length} câbles, $premises locaux');
+    expect(unknown, isEmpty, reason: unknown.take(10).join(', '));
+    expect(unserved, isEmpty, reason: unserved.take(10).join(', '));
+  }, skip: realBundle == null ? 'PAQUET_REEL non défini' : false);
+
+  test('paquet réel : photos embarquées, chacune citée par son objet', () {
+    final watch = Stopwatch()..start();
+    final p = Bundle.read(File(realBundle!).readAsBytesSync());
+    final cited = [
+      for (final o in p.objects)
+        for (final f in (o.props['fichiers'] as List?) ?? const [])
+          if ((f as Map)['fichier'] is String) f['fichier'] as String,
+    ];
+    final missing = cited.where((c) => !p.files.containsKey(c)).toList();
+    final size = p.files.values.fold<int>(0, (s, b) => s + b.length);
+    // ignore: avoid_print
+    print('${p.zone} : ${p.files.length} fichiers embarqués (${size ~/ 1000000} Mo), ${cited.length} cités, '
+        'lu en ${watch.elapsedMilliseconds} ms');
+    expect(missing, isEmpty, reason: missing.take(10).join(', '));
+    expect(p.files.keys.toSet().difference(cited.toSet()), isEmpty);
   }, skip: realBundle == null ? 'PAQUET_REEL non défini' : false);
 
   test('style des flèches (légende Hirondelle)', () {

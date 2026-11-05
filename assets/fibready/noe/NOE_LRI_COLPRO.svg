@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <title>Logement collectif pro</title>
+  <path d="M2.3,11 V8.44 Q2.3,7.48 3.42,7.48 H7.58 Q8.7,7.48 8.7,8.44 V11 Z" fill="#E91616" stroke="#000000" stroke-width="0.72" stroke-linejoin="round"/>
+  <rect x="4.86" y="6.36" width="1.28" height="1.44" fill="#FFCC00"/>
+  <circle cx="5.5" cy="4.6" r="2.08" fill="#E91616" stroke="#000000" stroke-width="0.72"/>
+  <path d="M3.78,4.76 A1.72,1.72 0 0 0 7.22,4.76 Z" fill="#FFCC00"/>
+  <circle cx="5.5" cy="4.6" r="2.08" fill="none" stroke="#000000" stroke-width="0.72"/>
+  <path d="M7,14.4 V11.68 Q7,10.66 8.19,10.66 H12.61 Q13.8,10.66 13.8,11.68 V14.4 Z" fill="#E91616" stroke="#000000" stroke-width="0.765" stroke-linejoin="round"/>
+  <rect x="9.72" y="9.47" width="1.36" height="1.53" fill="#FFCC00"/>
+  <circle cx="10.4" cy="7.6" r="2.21" fill="#E91616" stroke="#000000" stroke-width="0.765"/>
+  <path d="M8.5725,7.77 A1.8275,1.8275 0 0 0 12.2275,7.77 Z" fill="#FFCC00"/>
+  <circle cx="10.4" cy="7.6" r="2.21" fill="none" stroke="#000000" stroke-width="0.765"/>
+</svg>

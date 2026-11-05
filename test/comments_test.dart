@@ -194,7 +194,7 @@ void main() {
     final (_, bytes) = await app.returnBundle();
     final a = ZipDecoder().decodeBytes(bytes);
     final header = jsonDecode(utf8.decode(a.findFile('paquet.json')!.content)) as Map;
-    expect(header['version'], '0.2.0');
+    expect(header['version'], Bundle.version);
     expect([header['intervention']['INT_CODE_EXT'], header['intervention']['INT_AUTEUR']],
         [mine['INT_CODE_EXT'], 'Jean Dupont']);
     final features = (jsonDecode(utf8.decode(a.findFile('objets.geojson')!.content)) as Map)['features'] as List;

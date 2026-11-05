@@ -6,10 +6,10 @@ Un dossier par domaine : `manifest.json` + scripts SQL. Décisions et contexte :
 | Domaine | Fichier | Contenu |
 | --- | --- | --- |
 | [noyau](noyau/) | `noyau.sqlite` (SpatiaLite, EPSG:2154) | Projet, modules, types, référentiels communs, zones, adresses, nœuds, linéaires, interventions, fichiers, commentaires, vues photographiées |
-| [infra](infra/) | `infra.sqlite` | Conduites et sous-tubage, occupation par câbles, portées et câbles portés, matériel sur support ; catalogues câbles, COMAC, équipements |
+| [infra](infra/) | `infra.sqlite` | Conduites et sous-tubage, occupation par câbles (état, taux), portées et câbles portés, matériel sur support ; diamètres normalisés des alvéoles ; catalogues câbles, COMAC, équipements |
 | [chambre](chambre/) | `chambre.sqlite` | Chambres, faces et positions des conduites en m (miroir), masques logiques ; catalogue `MAT_CHAMBRE` |
 | [poteau](poteau/) | `poteau.sqlite` | Poteaux, contrôles ; catalogue `MAT_POTEAU` (dont codes GESPOT) |
-| [optique](optique/) | `optique.sqlite` | Contenu optique du matériel posé, câbles identifiés et leurs passages, lovages, fibres, cassettes et positions, routes optiques, mesures ; sites techniques (NRO, SRO) |
+| [optique](optique/) | `optique.sqlite` (SpatiaLite depuis 0.3.0) | Contenu optique du matériel posé, câbles identifiés et leurs passages, câbles de raccordement des adresses (tracé propre), lovages, fibres, cassettes et positions, routes optiques, mesures ; sites techniques (NRO, SRO) |
 | [immeuble](immeuble/) | `immeuble.sqlite` | Attributs BAL des adresses (logements, habitat, convention), locaux desservis et leur PBO ; immeubles (type `IMM`) |
 
 ## Conventions
@@ -20,9 +20,14 @@ Un dossier par domaine : `manifest.json` + scripts SQL. Décisions et contexte :
 - `XXX_LIB` : libellé terrain (n° de chambre, n° d'appui Orange) ; aucune unicité.
 - Traçabilité : `DATE_CREA`, `DATE_MODIF`, `SRC_MODIF`, `DATE_ABD`, `SRC_ABD` (abandon daté plutôt que suppression) ;
   géolocalisation : `GEOL_QLT`, `GEOL_MOD_KEY`, `GEOL_CLASSE_KEY`, `GEOL_SRC`. Dates ISO 8601 UTC.
-- Toutes les géométries sont dans le noyau (`GEOMETRY`) ; les modules ne contiennent que des tables attributaires.
+- Les géométries sont dans le noyau (`GEOMETRY`) ; les modules ne contiennent que des tables attributaires, sauf le
+  tracé propre d'un câble de raccordement (`OPT_CABLE.GEOMETRY`, optique 0.3.0), qui ne suit pas les linéaires.
 - Les types (`DEF_TYPE`) reprennent les identifiants FOA quand ils existent (13 poteau, 16 chambre, 30 façade…) ;
   les vues d'un type valent pour ses sous-types.
+- Vues photographiées (`DEF_VUE`, noyau 0.3.0) : d'un type de support (`TYPE_KEY`, galerie du support) ou des éléments
+  d'une table porteuse (`VUE_ENTITE`, l'un ou l'autre : `INF_EQUIPEMENT` pour la galerie d'un équipement, vues du
+  module optique) ; une photo (`PRJ_FICHIER`) est rangée dans une vue attendue (`VUE_KEY`) ou dans un visuel libre
+  (`VIS_CODE`, `VIS_LIB`) de son porteur (`ENT_KEY`, `OBJ_KEY`). Manifeste : une vue porte `type` ou `entite`.
 
 ## Modules et intégrité
 
@@ -82,6 +87,34 @@ Jusqu'au module chambre 0.2.0, faces (`FAC_NB_COL` × `FAC_NB_LIG`) et positions
 dessinées carrées sur le terminal : les masques FOA y étaient étirés de 1,4 fois en hauteur. Reprise : étape 0.3.0
 ci-dessous.
 
+Une conduite a au plus une position par chambre (une à chaque bout du fourreau). Miroir : la position d'en face est
+proposée par le terminal, `X' = W' × (1 − X / W)` et `Y' = Y` (même profondeur), bornée à la face, `POS_MIROIR` = 1 ;
+rien d'autre n'est enregistré, la conduite étant commune aux deux chambres.
+
+## Conduites et occupation
+
+Module infra 0.2.0 (modèle du projet 0.4.0), repris d'Infra Explorer (FOA Explorer) :
+- **états** (`DEF_CD_ETAT`) : V, R, X, XR, M et XM (occupée et mauvaise, FOA 32). Règle de FOA : une conduite qui
+  porte un câble ou un sous-tube est occupée, V → X, R → XR, M → XM ;
+- **diamètres normalisés** (`DEF_CD_DIAM`) : diamètre nominal (`CD_DIAM`) → diamètre intérieur, 20 à 150 mm ; 20 à
+  33 mm proposés au sous-tubage (`DIAM_SOUS_TUBE`). Diamètres intérieurs de 28 à 150 mm : ceux qu'encode l'abaque
+  d'occupation de FOA (`cab_occupation.csv`) ; 20 → 16 et 24 → 20 mm à confirmer ;
+- **câbles constatés** (`INF_CD_CABLE`) : une ligne pour `CDC_NB` câbles (au moins 1) de même diamètre `CDC_DIAM` et
+  de même nature `CDC_NATURE` (`FO` fibre, `CU` cuivre ; FOA `CAB_TYPE` 0 / 1), rang `CDC_RANG` unique dans la conduite
+  (clé naturelle dans le paquet), référence `MAT_KEY` facultative (le câble identifié relève du module optique) ;
+- **taux d'occupation** `CD_OCCUP` (%) : Σ `CDC_NB` × (`CDC_DIAM` / `DIAM_INT`)² × 100, arrondi au dixième ; sans
+  câble, 100 pour M et XM, 0 sinon ; vide s'il n'est pas calculable (diamètre nominal hors référentiel, câble sans
+  diamètre). Écrit par le terminal, recalculé au BE par `recalculer_occupation` de
+  [tools/schema/projet.py](../tools/schema/projet.py) (reprise, chargements) ; les sous-tubes ne comptent pas dans le
+  taux de leur parent ;
+- **sous-tube** : `CD_PARENT_KEY` vers une conduite du même porteur (même `LIN_KEY`, ou même `NOE_KEY` sans
+  destination), dont il hérite la destination ; un seul niveau ; `CD_NUM` = rang dans le parent (affiché N.k) ;
+  position propre dans la même face que le parent. Chargement FOA : le sous-tube prend le porteur de son alvéole, et
+  la suit quand elle passe sur le linéaire.
+
+Échange : [docs/paquet.md](../docs/paquet.md#conduites-et-occupation) ; contrôles de `verifier` (rang, nombre et nature
+des câbles, parent du même porteur et d'un seul niveau, une position par conduite et par chambre).
+
 ## Optique
 
 Module 0.1.0 (novembre 2026), calqué sur GraceTHD v2.0.1 et établi sur le DOE Evicom du SRO-2-02HG
@@ -94,6 +127,11 @@ Module 0.1.0 (novembre 2026), calqué sur GraceTHD v2.0.1 et établi sur le DOE 
   est celui des linéaires de ses passages (`OPT_PASSAGE`, rangés depuis `NOE1`), chacun relié à la ligne de l'infra
   qui le porte : câble porté (`INF_PORTEE_CABLE`, aérien et façade) ou occupation de la conduite (`INF_CD_CABLE`,
   souterrain). Un câble de colonne a ses deux extrémités dans l'immeuble et aucun passage ;
+- câble de raccordement final (module 0.3.0, fonction `RA`) : du PBO (`NOE1_KEY`, `EQU1_KEY`) à l'adresse desservie
+  (`ADR2_KEY`, sans `NOE2_KEY` : la boîte aux lettres est portée par l'adresse), avec son tracé propre
+  (`GEOMETRY`, ligne en Lambert 93, orientée du PBO vers l'adresse), sans passages ; `NOE2_KEY` ou `ADR2_KEY`
+  obligatoire (contrôle de la table). La base du module devient SpatiaLite (Lambert 93 seul déclaré). DOE Evicom :
+  363 câbles de la base FibReady (aériens 214, en fourreau 127, en immeuble 22), à poser, du PBO à 337 adresses ;
 - lovages (`OPT_LOVE`) ; fibres (`OPT_FIBRE` : rang dans le câble, tube et rang dans le tube, couleurs du code
   Orange `DEF_FO_COULEUR` ; au-delà de 12 tubes, la couleur revient avec des bagues noires) ;
 - cassettes d'un boîtier ou d'un tiroir (`OPT_CASSETTE` ; cassette 0 : fibres en passage hors platines) et positions
@@ -105,16 +143,26 @@ Module 0.1.0 (novembre 2026), calqué sur GraceTHD v2.0.1 et établi sur le DOE 
   d'événement, plus forte pente, ORL, conformité aux seuils de la mesure ; trace (`.sor`) dans `PRJ_FICHIER`,
   rattachée à la mesure ;
 - types de nœud : site technique `SIT` (NRO `SIT-NRO`, SRO `SIT-SRO`) et ses vues (armoire fermée, ouverte,
-  étiquettes, tiroirs, arrivée des fourreaux, mise à la terre).
+  étiquettes, tiroirs, arrivée des fourreaux, mise à la terre) ;
+- galerie d'un équipement (module 0.2.0) : vues `VUE_ENTITE` = `INF_EQUIPEMENT` (boîtier fermé `FERME`, boîtier
+  ouvert `OUVERT`, `CASSETTES`, mesures photométriques `MESURES`, aucune obligatoire : un équipement préexistant n'a
+  pas à être renseigné en détail) et visuels libres, photos `PRJ_FICHIER` d'`ENT_KEY` `INF_EQUIPEMENT`. Un support
+  pouvant porter plusieurs équipements, la vue « Boîtier optique » (`BOITIER`) des chambres, poteaux et immeubles est
+  retirée (chambre 0.4.0, poteau 0.3.0, immeuble 0.2.0).
 
-Pas encore d'espace `opt` dans le paquet ([docs/paquet.md](../docs/paquet.md)) : le module n'est pas publié ; les
-câbles portés et l'occupation des conduites le sont, l'étiquette du câble en commentaire.
+Échange depuis le format 0.3.0 ([docs/paquet.md](../docs/paquet.md#optique)) : câbles en objets de la classe `CAB`
+(parcours, lovages, fibres), contenu optique des équipements dans l'espace `opt` de leur nœud (cassettes, positions,
+mesures) ; fibre désignée par son câble et son rang ; routes au BE seulement. Depuis le format 0.4.0, une photo
+d'équipement désigne son équipement (`EQU_KEY`, [docs/paquet.md](../docs/paquet.md#fichiers-et-visuels)) ; depuis
+le format 0.5.0, un câble de raccordement mène à son adresse (`ADR2_KEY`) et porte son tracé en géométrie
+([docs/paquet.md](../docs/paquet.md#câbles-de-raccordement)). Le terminal les lit (liens fibres d'un équipement)
+sans les modifier.
 
 ## Immeubles et BAL
 
 Module 0.1.0 (novembre 2026), d'après GraceTHD v2.0.1 (`t_adresse`, `t_suf`, `t_sitetech` de type BAT) :
 - immeuble = nœud du noyau de type `IMM` (identifiant FOA 12) à son adresse, avec ses vues (vue d'ensemble, boîtes
-  aux lettres, boîtier optique, colonne montante) ; son local technique héberge le matériel (emplacement dans
+  aux lettres, colonne montante ; le boîtier optique a la galerie de son équipement) ; son local technique héberge le matériel (emplacement dans
   `OPT_EQUIPEMENT`) ;
 - `IMB_ADRESSE`, ce que l'adresse dessert, relevé au BAL : logements, locaux professionnels, prises à construire,
   habitat (pavillon, immeuble), état (cible, signé, en cours de déploiement, déployé, abandonné), immeuble neuf, code
@@ -123,7 +171,9 @@ Module 0.1.0 (novembre 2026), d'après GraceTHD v2.0.1 (`t_adresse`, `t_suf`, `t
 - `IMB_LOCAL`, local desservi (site utilisateur final) : type (résidentiel, professionnel, opérateur, technique),
   raccordement (programmé … abonné), bâtiment, escalier, étage, PBO qui le dessert (zone du PBO).
 
-Pas encore d'espace `imb` dans le paquet : le module n'est pas publié ; les adresses de la zone le sont.
+Échange depuis le format 0.3.0 ([docs/paquet.md](../docs/paquet.md#immeubles-et-locaux)) : espace `imb` de
+l'adresse (colonnes de `IMB_ADRESSE` et ses `locaux`), lu par le terminal (immeuble et BAL de l'adresse, locaux
+desservis d'un PBO).
 
 ## Reprise d'un projet existant
 
@@ -172,8 +222,58 @@ Idempotente : une étape déjà faite n'est pas rejouée, une seconde exécution
 - rapport : faces et positions converties, positions dont le centre sort de leur face (aucune attendue) ;
 - module chambre et modèle portés à 0.3.0.
 
-Un projet construit avant la 0.3.0 n'est pas publié tant qu'il n'est pas repris : `paquet.py publier` refuse un
-projet dont un module est en retard sur son schéma.
+**Étape 0.4.0, occupation des conduites** (module infra 0.2.0) :
+- `DEF_CD_DIAM` créée si elle manque, lignes du référentiel ajoutées ; état XM ajouté à `DEF_CD_ETAT` (lignes lues dans
+  `infra/referentiels.sql`, ajoutées sans écraser l'existant) ;
+- câbles recopiés en miroir retirés : le chargement FOA d'avant le module infra 0.2.0 reprenait dans la conduite
+  commune les câbles des deux alvéoles d'un miroir, que FOA recopie d'un côté à l'autre (taux doublés). Pour une
+  conduite placée dans deux chambres, dont toutes les lignes viennent d'un chargement (`SRC_MODIF = 'import'`) et dont
+  la liste, dans l'ordre des `CDC_ID`, est faite de deux moitiés identiques (`CDC_NB`, `CDC_DIAM`, `MAT_KEY`,
+  `CDC_COMMENT`), la seconde moitié est supprimée, sauf si un passage optique (`OPT_PASSAGE.CDC_KEY`) y renvoie
+  (conduite gardée et signalée). Une liste d'au moins deux lignes qui ne se scinde pas ainsi est signalée, à contrôler
+  sur la base FOA (relevé divergent des deux côtés, ou câbles réellement différents). Jeu d'essai : 40 lignes retirées
+  sur 23 conduites, `ESS-CD4332` signalée (27 mm d'un côté, 4 mm de l'autre ; un chargement neuf ne garde que le 27 mm) ;
+- `INF_CD_CABLE` reconstruite d'après `infra/schema.sql` (comme à l'étape 0.3.0 : lignes, identifiants, séquence et
+  index gardés, les références `OPT_PASSAGE.CDC_KEY` du module optique restent valides) : `CDC_RANG` = rang de la
+  ligne dans sa conduite, dans l'ordre des `CDC_ID` ; `CDC_NATURE` = `FO` pour un câble dont la référence `MAT_KEY`
+  désigne un câble à fibres du catalogue (`MAT_CABLE.CAB_NB_FIB` > 0, comme un chargement DOE neuf), vide sinon (nature
+  inconnue : la nature FOA `CAB_TYPE` n'était pas reprise) ; le rapport compte les lignes FO et de nature inconnue ;
+- sous-tubes renumérotés dans leur parent (`CD_NUM` = 1, 2…, dans l'ordre de l'ancien numéro, numéro FOA de l'alvéole
+  dans la chambre) ;
+- état et taux d'occupation recalculés (`recalculer_occupation`) ;
+- annulent la reprise : une table absente, un câble de conduite sans conduite, un `CDC_NB` non entier ou inférieur à
+  1, une ligne du référentiel déjà prise par une autre valeur ; déjà faite : `INF_CD_CABLE` porte `CDC_RANG` et
+  `CDC_NATURE` (retrait des recopies compris ; numérotation et recalcul, idempotents, sont repassés) ;
+- module infra porté à 0.2.0, modèle à 0.4.0. Les tables `DEF_CD_ETAT` et `INF_CONDUITE` ne sont pas reconstruites :
+  leur texte est resté celui du module 0.1.0.
+
+**Étape 0.5.0, visuels des équipements** (noyau 0.3.0, optique 0.2.0, chambre 0.4.0, poteau 0.3.0, immeuble 0.2.0) :
+- `DEF_VUE` reconstruite d'après `noyau/schema.sql` (`VUE_ENTITE` vide, `TYPE_KEY` facultatif, mêmes `VUE_ID` :
+  `PRJ_FICHIER.VUE_KEY` reste valide ; contrôle des clés étrangères différé à la fin de la transaction) ;
+- vues de la galerie d'un équipement ajoutées d'après le manifeste optique, si le module est inscrit ;
+- vue `BOITIER` des supports retirée ; ses photos, abandonnées comprises, passent dans le visuel libre « Boîtier
+  optique » (`VUE_KEY` vide, `VIS_CODE` déterministe : UUID v5 du projet, du porteur et de la vue) de leur équipement
+  s'il en est déjà le porteur (`ENT_KEY` `INF_EQUIPEMENT`) ou si leur nœud porte exactement un équipement non
+  abandonné, sinon de leur nœud ; rangs renumérotés par visuel, la première en photo de référence. Une photo portée
+  par une autre table que `PRJ_NOE`, `CHB_CHAMBRE`, `POT_POTEAU` ou `INF_EQUIPEMENT` annule la reprise ;
+- ordres des vues des supports alignés sur les manifestes ; déjà faite : `DEF_VUE` porte `VUE_ENTITE`, aucune vue
+  `BOITIER` de support ne reste ;
+- Evicom (copie, avant rechargement) : 68 photos reprises dans 53 visuels d'équipement, aucune de support ; Nancy :
+  aucune photo `BOITIER`, deux vues retirées.
+
+**Étape 0.6.0, câbles de raccordement** (optique 0.3.0) :
+- `OPT_CABLE` reconstruite d'après `optique/schema.sql` (`NOE2_KEY` facultatif, `ADR2_KEY` vide, contrôle
+  « `NOE2_KEY` ou `ADR2_KEY` », index ; mêmes `CAB_ID` et séquence), colonne `GEOMETRY` ajoutée vide ; les tables qui
+  la référencent (passages, lovages, fibres, et par elles positions, routes et mesures) restent intactes : clés
+  étrangères différées le temps de la reconstruction, puis contrôlées ; déjà faite : `OPT_CABLE` porte `ADR2_KEY` ;
+- après la transaction, la base du module est déclarée à SpatiaLite (métadonnées, Lambert 93,
+  `RecoverGeometryColumn` de `OPT_CABLE.GEOMETRY`) : SpatiaLite ne déclare une colonne que dans la base principale
+  d'une connexion, pas dans une base attachée ;
+- Evicom (copie, avant rechargement) : 99 câbles, 183 passages, 195 lovages et 6 000 fibres gardés ; Nancy : pas de
+  module optique, modèle porté à 0.6.0.
+
+Un projet construit avant la dernière étape n'est pas publié tant qu'il n'est pas repris : `paquet.py publier`
+refuse un projet dont un module est en retard sur son schéma.
 
 ## Construction et essai
 
@@ -184,10 +284,12 @@ python -I tools\schema\projet.py construire docs\essai\projet_vide `
 
 [tools/schema/projet.py](../tools/schema/projet.py) est l'implémentation de référence de la future bibliothèque
 noyau C# : construction, ouverture (attachement, dépendances, triggers d'intégrité), recherche d'orphelins, reprise
-d'un projet existant, et un scénario d'essai (deux chambres reliées par une conduite vue des deux côtés, faces aux
-dimensions du catalogue et positions en m, une alvéole sans destination, deux poteaux et leur portée, une
-façade, photo, intervention, journal de commentaires, un PBO et le câble tiré sur la portée avec ses fibres, une
-cassette, une route et sa mesure, une adresse de deux logements desservis par le PBO, refus attendus), annulé à la
+d'un projet existant, et un scénario d'essai (deux chambres reliées par une conduite vue des deux côtés, sous-tubée et
+occupée par des câbles cuivre et fibre, état et taux recalculés, faces aux dimensions du catalogue et positions en m,
+une alvéole mauvaise sans destination, deux poteaux et leur portée, une
+façade, photo, vues des supports et d'un équipement, intervention, journal de commentaires, un PBO et le câble tiré sur la portée avec ses fibres, une
+cassette, une route et sa mesure, une adresse de deux logements desservis par le PBO et raccordée par un câble au
+tracé propre, refus attendus), annulé à la
 fin. La recherche d'orphelins ne porte que sur les modules attachés : un projet construit avant les modules optique
 et immeuble reste contrôlable.
 
@@ -219,9 +321,14 @@ température ambiante (`RELEVE` + `PCB_FLECHE`, `PCB_TEMP`).
 - Règle de complétude du poteau.
 - Rattachement `ENT_KEY` / `OBJ_KEY` (`PRJ_FICHIER`, `PRJ_COMMENTAIRE`, `PRJ_INT_OBJET`) : `ENT_KEY` est une vraie
   clé étrangère, mais l'existence de l'objet visé n'est contrôlée ni par trigger ni par la recherche d'orphelins.
-- Optique et immeuble : espaces `opt` et `imb` du paquet, lecture par le terminal ; complétude des activités retour
-  fin de travaux, relevé BAL et relevé immeubles.
+- Optique et immeuble : saisie sur le terminal (câble tiré constaté, épissure, relevé BAL) et son intégration ;
+  complétude des activités retour fin de travaux, relevé BAL et relevé immeubles.
 - Étiquette d'un équipement : portée par `OPT_EQUIPEMENT` (matériel optique) ; à remonter dans `INF_EQUIPEMENT` si le
   matériel électrique en a besoin.
 - Orientation des appuis tirée des études COMAC (`POT_ANG_CARTO`) : reprise telle quelle, repère de l'étude à
   confirmer (nord géographique ou du quadrillage).
+- Occupation : diamètres intérieurs des sous-tubes de 20 et 24 mm à confirmer ; place des sous-tubes dans le taux de
+  leur parent (aujourd'hui ignorés, comme dans FOA) ; diamètres GraceTHD hors palette FOA (DOE Evicom : 40 et 63 mm,
+  pas de taux) ; export GraceTHD (`cd_occup` = `CD_OCCUP`, `cd_nbcable` = Σ `CDC_NB`).
+- DOE FibReady : `cd_dia_int` et `cd_dia_ext` exportés inversés (40 / 33 pour un PEHD 40) ; le chargement prend le
+  plus grand comme diamètre nominal.

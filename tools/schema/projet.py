@@ -10,7 +10,15 @@ Implémentation de référence de la future bibliothèque noyau C# :
 - migrer : reprise d'un projet construit avec un modèle antérieur, étapes en attente appliquées dans l'ordre, en
   une seule transaction : 0.2.0, journal des commentaires (champs libres NOE_COMMENT, CHB_COMMENT et POT_COMMENT
   repris dans PRJ_COMMENTAIRE, colonnes retirées) ; 0.3.0, masques métriques (faces et positions des chambres
-  converties des cellules FOA en m). migrer-commentaires, ancien nom de la commande, en est un simple alias.
+  converties des cellules FOA en m) ; 0.4.0, occupation des conduites (module infra 0.2.0 : état XM, référentiel des
+  diamètres DEF_CD_DIAM, rang et nature des câbles de conduite, sous-tubes numérotés dans leur parent, état et taux
+  d'occupation recalculés) ; 0.5.0, visuels des équipements (DEF_VUE.VUE_ENTITE, vues de la galerie d'un équipement,
+  vue « Boîtier optique » des supports retirée, ses photos reprises en visuel libre de l'équipement ou du support) ;
+  0.6.0, câbles de raccordement (module optique 0.3.0 : OPT_CABLE.NOE2_KEY facultatif, adresse desservie ADR2_KEY,
+  tracé propre GEOMETRY, base du module déclarée à SpatiaLite après la transaction).
+  migrer-commentaires, ancien nom de la commande, en est un simple alias ;
+- recalculer_occupation : règle d'état de FOA (conduite portant un câble ou un sous-tube : V → X, R → XR, M → XM) et
+  taux d'occupation CD_OCCUP par la formule des sections, pour tout le projet.
 
 Usage :
   python -I tools/schema/projet.py construire <dossier> <base FOA> <dossier QGIS bin> [--essai]
@@ -24,7 +32,9 @@ sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 RACINE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCHEMA = os.path.join(RACINE, 'schema')
-MODELE_VERSION = '0.3.0'        # 0.2.0 : journal des commentaires (PRJ_COMMENTAIRE) ; 0.3.0 : masques métriques
+# 0.2.0 : journal des commentaires (PRJ_COMMENTAIRE) ; 0.3.0 : masques métriques ; 0.4.0 : occupation des conduites ;
+# 0.5.0 : visuels des équipements ; 0.6.0 : câbles de raccordement (optique 0.3.0)
+MODELE_VERSION = '0.6.0'
 FORMAT_DATE = '%Y-%m-%dT%H:%M:%SZ'
 
 # Fenêtre de dessin d'une face dans FOA Explorer : 9 x 12 cellules de 6,3 x 4,5 unités, 1 unité = 1 cm, soit
@@ -178,6 +188,20 @@ def corriger_mat_poteau(cibles, lignes, rapport):
 
 # Construction ----------------------------------------------------------------------------------
 
+def inserer_vue(noyau, module, v):
+    """Vue attendue v d'un manifeste (DEF_VUE) : d'un type de support (« type » : TYPE_CODE) ou des éléments d'une
+    table porteuse (« entite » : INF_EQUIPEMENT, galerie d'un équipement, noyau 0.3.0)."""
+    if ('type' in v) == ('entite' in v):
+        raise ValueError(f'vue {v["code"]} du module {module} : « type » ou « entite », l\'un ou l\'autre')
+    type_id = None
+    if 'type' in v:
+        type_id = noyau.execute('SELECT TYPE_ID FROM DEF_TYPE WHERE TYPE_CODE = ?', (v['type'],)).fetchone()[0]
+    noyau.execute('INSERT INTO DEF_VUE (TYPE_KEY, VUE_ENTITE, VUE_CODE, VUE_LIB, VUE_ORDRE, VUE_OBLIGATOIRE, '
+                  'VUE_ACTION, MOD_CODE) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                  (type_id, v.get('entite'), v['code'], v['lib'], v['ordre'], v['obligatoire'], v.get('action'),
+                   module))
+
+
 def construire(dossier, foa_chemin, qgis_bin, code_projet='ESSAI', lib_projet='Projet d\'essai'):
     os.makedirs(dossier, exist_ok=True)
     mods = manifestes()
@@ -212,10 +236,7 @@ def construire(dossier, foa_chemin, qgis_bin, code_projet='ESSAI', lib_projet='P
             noyau.execute('INSERT INTO DEF_ENTITE (ENT_TABLE, MOD_CODE, ENT_LIB) VALUES (?, ?, ?)',
                           (e['table'], m['code'], e['lib']))
         for v in m['vues']:
-            type_id = noyau.execute('SELECT TYPE_ID FROM DEF_TYPE WHERE TYPE_CODE = ?', (v['type'],)).fetchone()[0]
-            noyau.execute('INSERT INTO DEF_VUE (TYPE_KEY, VUE_CODE, VUE_LIB, VUE_ORDRE, VUE_OBLIGATOIRE, VUE_ACTION, '
-                          'MOD_CODE) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                          (type_id, v['code'], v['lib'], v['ordre'], v['obligatoire'], v.get('action'), m['code']))
+            inserer_vue(noyau, m['code'], v)
     noyau.execute('COMMIT')
     noyau.close()
     completer_fabricants(dossier, qgis_bin, rapport)
@@ -362,12 +383,11 @@ def date_reprise(date_modif, date_crea):
     return datetime.now(timezone.utc).strftime(FORMAT_DATE)
 
 
-def instructions(module, table):
-    """Instructions des scripts d'un module qui créent une table non spatiale et ses index : mise à niveau d'un
-    projet existant à partir du schéma, sans le recopier. Seuls les commentaires qui précèdent l'instruction sont
-    retirés : ceux de son corps restent, comme dans le texte que SQLite conserve pour un projet neuf."""
+def instructions_du_module(module):
+    """Instructions des scripts d'un module, dans l'ordre, sans les commentaires qui les précèdent : ceux de leur
+    corps restent, comme dans le texte que SQLite conserve pour un projet neuf."""
     m = next(m for m in manifestes() if m['code'] == module)
-    trouvees, courante = [], ''
+    courante = ''
     for script in m['scripts']:
         for ligne in open(os.path.join(m['dossier'], script), encoding='utf-8'):
             courante += ligne
@@ -375,11 +395,23 @@ def instructions(module, table):
                 lignes = courante.splitlines()
                 while lignes and (not lignes[0].strip() or lignes[0].lstrip().startswith('--')):
                     lignes.pop(0)
-                sql = '\n'.join(lignes).strip()
-                if re.match(rf'CREATE (UNIQUE )?(TABLE|INDEX \w+ ON) {table}\b', sql):
-                    trouvees.append(sql)
+                yield '\n'.join(lignes).strip()
                 courante = ''
-    return trouvees
+
+
+def instructions(module, table):
+    """Instructions des scripts d'un module qui créent une table non spatiale et ses index : mise à niveau d'un
+    projet existant à partir du schéma, sans le recopier."""
+    return [sql for sql in instructions_du_module(module)
+            if re.match(rf'CREATE (UNIQUE )?(TABLE|INDEX \w+ ON) {table}\b', sql)]
+
+
+def insertions(module, table, schema):
+    """Instructions des scripts d'un module qui remplissent un référentiel, à exécuter dans la base attachée schema
+    sans écraser l'existant (INSERT OR IGNORE : une ligne déjà là, par sa clé ou un code unique, est gardée telle
+    quelle) : lignes du schéma ajoutées à un projet existant."""
+    return [re.sub(r'^INSERT INTO (\w+)', rf'INSERT OR IGNORE INTO {schema}.\1', sql, count=1)
+            for sql in instructions_du_module(module) if re.match(rf'INSERT INTO {table}\b', sql)]
 
 
 def qualifier(sql, schema):
@@ -485,9 +517,10 @@ def reconstruire(con, module, tables, valeurs, retirees):
     AUTOINCREMENT et index gardés : copie temporaire, suppression des enfants aux parents, création et recopie des
     parents aux enfants, clés étrangères actives (contrôlées à chaque ligne recopiée). Le texte des tables est alors
     celui d'un projet neuf. tables : des parents aux enfants ; valeurs : {(table, colonne) : expression SQL sur
-    l'ancienne ligne}, pour une colonne nouvelle ou convertie ; retirees : {table : colonnes que le schéma ne porte
-    plus}, seules à pouvoir se perdre. Une autre colonne perdue, une colonne nouvelle sans valeur ou un effectif
-    changé annulent la reprise. Rend les effectifs par table."""
+    l'ancienne ligne}, pour une colonne nouvelle ou convertie (une colonne nouvelle laissée vide y figure aussi, avec
+    l'expression 'NULL' : toute colonne nouvelle est un choix explicite de l'étape, jamais un oubli) ; retirees :
+    {table : colonnes que le schéma ne porte plus}, seules à pouvoir se perdre. Une autre colonne perdue, une colonne
+    nouvelle absente de valeurs ou un effectif changé annulent la reprise. Rend les effectifs par table."""
     s = schema_de(module)
     sequences = dict(con.execute(f'SELECT name, seq FROM {s}.sqlite_sequence').fetchall())
     for t in tables:
@@ -587,31 +620,456 @@ def reprendre_masques(con, inscrits, rapport):
     return {'chambre'}
 
 
-# Étapes de la reprise, dans l'ordre des versions du modèle : (version, libellé, étape). Une étape (con, modules
-# inscrits, rapport) est idempotente et rend les modules mis à son niveau, maintenant ou avant.
-ETAPES = ((VERSION_JOURNAL, 'journal des commentaires', reprendre_commentaires),
-          (VERSION_MASQUES, 'masques métriques', reprendre_masques))
+# Occupation des conduites (module infra 0.2.0) ------------------------------------------------------
+
+# Règle d'état de FOA Explorer : une conduite qui porte un câble ou un sous-tube est occupée (FOA ajoute « 2 » au code
+# d'état dès qu'il y a des câbles). Un état vide vaut V.
+ETAT_OCCUPE = (('V', 'X'), ('R', 'XR'), ('M', 'XM'))
+ETATS_MAUVAIS = ('M', 'XM')         # taux de 100 % sans câble
+DECIMALES_OCCUPATION = 1            # taux arrondi au dixième
+
+
+def recalculer_occupation(con, schema='infra'):
+    """État et taux d'occupation de toutes les conduites du projet, recalculés d'après leurs câbles (INF_CD_CABLE) et
+    leurs sous-tubes non abandonnés : comme le terminal à chaque modification des câbles.
+    - état : une conduite qui porte un câble ou un sous-tube passe de V (ou vide) à X, de R à XR, de M à XM ;
+    - CD_OCCUP (%) = Σ CDC_NB × (CDC_DIAM / DIAM_INT)² × 100, DIAM_INT diamètre intérieur du diamètre nominal CD_DIAM
+      (DEF_CD_DIAM), arrondi au dixième ; sans câble, 100 pour une conduite M ou XM, 0 sinon ; NULL si le calcul est
+      impossible (CD_DIAM absent de DEF_CD_DIAM, câble sans diamètre). Les sous-tubes ne comptent pas dans le taux de
+      leur parent, comme dans FOA.
+    Idempotent. Rend ({(ancien état, nouvel état) : conduites}, nombre de taux modifiés)."""
+    s = schema
+    etats = dict(con.execute(f'SELECT ETAT_CODE, ETAT_ID FROM {s}.DEF_CD_ETAT'))
+    manquants = sorted({c for paire in ETAT_OCCUPE for c in paire} - set(etats))
+    if manquants:
+        raise RuntimeError(f'{s}.DEF_CD_ETAT sans les états {manquants}')
+    cables = (f'SELECT 1 FROM {s}.INF_CD_CABLE c WHERE c.CD_KEY = INF_CONDUITE.CD_ID AND c.DATE_ABD IS NULL')
+    sous_tubes = (f'SELECT 1 FROM {s}.INF_CONDUITE e WHERE e.CD_PARENT_KEY = INF_CONDUITE.CD_ID '
+                  'AND e.DATE_ABD IS NULL')
+    passages = Counter()
+    for avant, apres in ETAT_OCCUPE:
+        n = con.execute(f'UPDATE {s}.INF_CONDUITE SET ETAT_KEY = ? WHERE COALESCE(ETAT_KEY, ?) = ? '
+                        f'AND (EXISTS ({cables}) OR EXISTS ({sous_tubes}))',
+                        (etats[apres], etats['V'], etats[avant])).rowcount
+        if n:
+            passages[avant, apres] = n
+    mauvais = ', '.join(str(etats[c]) for c in ETATS_MAUVAIS)
+    taux = (f'CASE WHEN NOT EXISTS ({cables}) THEN CASE WHEN ETAT_KEY IN ({mauvais}) THEN 100.0 ELSE 0.0 END '
+            f'ELSE (SELECT CASE WHEN COUNT(c.CDC_DIAM) = COUNT(*) AND d.DIAM_INT > 0 THEN '
+            f'ROUND(SUM(c.CDC_NB * (c.CDC_DIAM / d.DIAM_INT) * (c.CDC_DIAM / d.DIAM_INT)) * 100, '
+            f'{DECIMALES_OCCUPATION}) END FROM {s}.INF_CD_CABLE c LEFT JOIN {s}.DEF_CD_DIAM d '
+            f'ON d.DIAM_NOMINAL = INF_CONDUITE.CD_DIAM WHERE c.CD_KEY = INF_CONDUITE.CD_ID AND c.DATE_ABD IS NULL) END')
+    modifies = con.execute(f'UPDATE {s}.INF_CONDUITE SET CD_OCCUP = {taux} WHERE CD_OCCUP IS NOT ({taux})').rowcount
+    return passages, modifies
+
+
+def numeroter_sous_tubes(con, schema='infra'):
+    """CD_NUM d'un sous-tube = son rang dans son parent (1, 2… ; affiché N.k), dans l'ordre de l'ancien numéro (numéro
+    de l'alvéole dans la chambre pour un sous-tube repris de FOA), puis de CD_ID. Idempotent. Rend le nombre de
+    sous-tubes renumérotés."""
+    rangs, n = Counter(), 0
+    for cd, parent, num in con.execute(f'SELECT CD_ID, CD_PARENT_KEY, CD_NUM FROM {schema}.INF_CONDUITE '
+                                       'WHERE CD_PARENT_KEY IS NOT NULL ORDER BY CD_PARENT_KEY, CD_NUM IS NULL, CD_NUM, '
+                                       'CD_ID').fetchall():
+        rangs[parent] += 1
+        if num != rangs[parent]:
+            con.execute(f'UPDATE {schema}.INF_CONDUITE SET CD_NUM = ? WHERE CD_ID = ?', (rangs[parent], cd))
+            n += 1
+    return n
+
+
+def resume_occupation(con, schema='infra'):
+    """Constat sur l'occupation : câbles de conduite, taux calculés, non calculables, au-delà de 100 %."""
+    lignes, cables = con.execute(f'SELECT COUNT(*), COALESCE(SUM(CDC_NB), 0) FROM {schema}.INF_CD_CABLE '
+                                 'WHERE DATE_ABD IS NULL').fetchone()
+    calcules, vides, pleins = con.execute(
+        f'SELECT COUNT(CD_OCCUP), SUM(CD_OCCUP IS NULL), SUM(CD_OCCUP > 100) FROM {schema}.INF_CONDUITE').fetchone()
+    return (f'{lignes} ligne{"s" * (lignes > 1)} de câbles ({cables} câble{"s" * (cables > 1)}), {calcules} taux '
+            f'calculés, {vides or 0} non calculables, {pleins or 0} au-delà de 100 %')
+
+
+CLES_RECOPIE = ('CDC_NB', 'CDC_DIAM', 'MAT_KEY', 'CDC_COMMENT')    # colonnes comparées des deux moitiés d'une liste
+
+
+def retirer_recopies_miroir(con, inscrits):
+    """Câbles recopiés en miroir par le chargement FOA antérieur au module infra 0.2.0 : FOA recopie les câbles d'une
+    alvéole dans l'alvéole d'en face (RepliqueCoCab), et l'ancien tools/essai/charger_essai.py reprenait les deux
+    listes dans la conduite commune. Pour une conduite placée (positions non abandonnées) dans deux chambres distinctes,
+    dont toutes les lignes viennent d'un chargement (SRC_MODIF = 'import') et dont la liste, dans l'ordre des CDC_ID,
+    est faite de deux moitiés identiques sur CLES_RECOPIE, la seconde moitié est retirée, sauf si un passage du module
+    optique (OPT_PASSAGE.CDC_KEY) y renvoie (conduite laissée telle quelle et signalée). Une liste d'au moins deux lignes
+    qui ne se scinde pas ainsi (relevé divergent des deux côtés, ou câbles différents réellement présents) est signalée,
+    à contrôler sur la base FOA. Sans module chambre, rien n'est fait. Rend (lignes retirées, conduites dédoublées,
+    conduites gardées pour un passage optique, conduites à contrôler), codes CD_CODE_EXT."""
+    if 'chambre' not in inscrits:
+        return 0, [], [], []
+    deux = {r[0] for r in con.execute(
+        'SELECT p.CD_KEY FROM chambre.CHB_POSITION p JOIN chambre.CHB_FACE f ON f.FAC_ID = p.FAC_KEY '
+        'WHERE p.DATE_ABD IS NULL GROUP BY p.CD_KEY HAVING COUNT(DISTINCT f.CHB_KEY) >= 2')}
+    listes, importees = {}, {}
+    for cdc, cd, src, *cles in con.execute(f'SELECT CDC_ID, CD_KEY, SRC_MODIF, {", ".join(CLES_RECOPIE)} '
+                                           'FROM infra.INF_CD_CABLE ORDER BY CDC_ID'):
+        if cd in deux:
+            listes.setdefault(cd, []).append((cdc, tuple(cles)))
+            importees[cd] = importees.get(cd, True) and src == 'import'
+    codes = dict(con.execute('SELECT CD_ID, CD_CODE_EXT FROM infra.INF_CONDUITE'))
+    optique = 'optique' in inscrits
+    retirees, dedoublees, gardees, a_controler = 0, [], [], []
+    for cd, lignes in sorted(listes.items()):
+        if len(lignes) < 2 or not importees[cd]:
+            continue
+        n = len(lignes) // 2
+        if len(lignes) % 2 or [c for _, c in lignes[:n]] != [c for _, c in lignes[n:]]:
+            a_controler.append(codes[cd])
+            continue
+        ids = [i for i, _ in lignes[n:]]
+        marques = ','.join('?' * len(ids))
+        if optique and con.execute(f'SELECT 1 FROM optique.OPT_PASSAGE WHERE CDC_KEY IN ({marques})', ids).fetchone():
+            gardees.append(codes[cd])
+            continue
+        con.execute(f'DELETE FROM infra.INF_CD_CABLE WHERE CDC_ID IN ({marques})', ids)
+        retirees += len(ids)
+        dedoublees.append(codes[cd])
+    return retirees, dedoublees, gardees, a_controler
+
+
+def liste_codes(codes, nombre=10):
+    return ', '.join(codes[:nombre]) + (f'… ({len(codes)} en tout)' if len(codes) > nombre else '')
+
+
+def reprendre_occupation(con, inscrits, rapport):
+    """Étape 0.4.0, occupation des conduites (module infra 0.2.0) : référentiel des diamètres DEF_CD_DIAM créé et
+    rempli, état XM (FOA 32) ajouté à DEF_CD_ETAT (lignes du schéma ajoutées sans écraser l'existant) ; câbles recopiés
+    en miroir par l'ancien chargement retirés (retirer_recopies_miroir) ; INF_CD_CABLE reconstruite d'après
+    schema/infra/schema.sql (reconstruire) avec CDC_RANG = rang de la ligne dans sa conduite dans l'ordre des CDC_ID et
+    CDC_NATURE = FO pour un câble dont la référence MAT_CABLE a des fibres (CAB_NB_FIB > 0), vide sinon (nature
+    inconnue) ; sous-tubes numérotés dans leur parent (numeroter_sous_tubes), puis état et taux d'occupation recalculés
+    (recalculer_occupation). Annulent la reprise : une table absente, un câble de conduite sans conduite, un CDC_NB
+    inférieur à 1, une ligne du référentiel occupée par une autre valeur (identifiant ou code déjà pris). Faite quand
+    INF_CD_CABLE porte CDC_RANG et CDC_NATURE (retrait des recopies compris) ; numérotation et recalcul, idempotents,
+    sont toujours repassés. Rend {'infra'} quand le module est au niveau, maintenant ou avant."""
+    if 'infra' not in inscrits:
+        rapport.append('INF_CD_CABLE : module infra non inscrit au projet, rien à reprendre')
+        return set()
+    absentes = [t for t in ('DEF_CD_ETAT', 'INF_CONDUITE', 'INF_CD_CABLE')
+                if not con.execute(f'PRAGMA infra.table_info({t})').fetchall()]
+    if absentes:
+        raise RuntimeError(f'infra.{", infra.".join(absentes)} : absente{"s" * (len(absentes) > 1)} (base du '
+                           f'module incomplète), reprise annulée')
+    # référentiels : table créée si elle manque, lignes du schéma ajoutées
+    for table in ('DEF_CD_DIAM', 'DEF_CD_ETAT'):
+        creee = not con.execute(f'PRAGMA infra.table_info({table})').fetchall()
+        if creee:
+            for sql in instructions('infra', table):
+                con.execute(qualifier(sql, 'infra'))
+        avant = con.execute(f'SELECT COUNT(*) FROM infra.{table}').fetchone()[0]
+        for sql in insertions('infra', table, 'infra'):
+            con.execute(sql)
+        ajout = con.execute(f'SELECT COUNT(*) FROM infra.{table}').fetchone()[0] - avant
+        rapport.append(f'{table} : ' + ('table créée, ' if creee else '')
+                       + (f'{ajout} ligne{"s" * (ajout > 1)} ajoutée{"s" * (ajout > 1)}' if ajout
+                          else 'lignes du schéma déjà présentes'))
+    attendus = {'DEF_CD_ETAT': ('ETAT_ID', 'ETAT_CODE', [(5, 'XM')]),
+                'DEF_CD_DIAM': ('DIAM_ID', 'DIAM_NOMINAL', [(1, 20), (2, 24), (3, 28), (4, 33), (5, 45), (6, 60),
+                                                             (7, 80), (8, 100), (9, 150)])}
+    for table, (cle, code, lignes) in attendus.items():
+        lues = dict(con.execute(f'SELECT {cle}, {code} FROM infra.{table}'))
+        ecarts = [f'{cle} {i} : {lues.get(i)} au lieu de {v}' for i, v in lignes if lues.get(i) != v]
+        if ecarts:
+            raise RuntimeError(f'{table} : ligne déjà prise par une autre valeur ({", ".join(ecarts)}), reprise annulée')
+    colonnes = {r[1] for r in con.execute('PRAGMA infra.table_info(INF_CD_CABLE)')}
+    nouvelles = {'CDC_RANG', 'CDC_NATURE'}
+    if nouvelles <= colonnes:
+        rapport.append('INF_CD_CABLE : CDC_RANG et CDC_NATURE déjà là (reprise faite), rien à reconstruire')
+    elif nouvelles & colonnes:
+        raise RuntimeError(f'INF_CD_CABLE : {", ".join(sorted(nouvelles & colonnes))} sans '
+                           f'{", ".join(sorted(nouvelles - colonnes))}, reprise annulée')
+    else:
+        orphelines = con.execute('SELECT COUNT(*) FROM infra.INF_CD_CABLE c WHERE NOT EXISTS '
+                                 '(SELECT 1 FROM infra.INF_CONDUITE d WHERE d.CD_ID = c.CD_KEY)').fetchone()[0]
+        if orphelines:
+            raise RuntimeError(f'INF_CD_CABLE : {orphelines} câble{"s" * (orphelines > 1)} sans conduite, reprise '
+                               f'annulée')
+        n = con.execute("SELECT COUNT(*) FROM infra.INF_CD_CABLE WHERE NOT (typeof(CDC_NB) = 'integer' "
+                        'AND CDC_NB >= 1)').fetchone()[0]
+        if n:
+            raise RuntimeError(f'INF_CD_CABLE : {n} ligne{"s" * (n > 1)} de CDC_NB non entier ou inférieur à 1, '
+                               f'reprise annulée')
+        retirees, dedoublees, gardees, a_controler = retirer_recopies_miroir(con, inscrits)
+        rapport.append('INF_CD_CABLE : ' + (
+            f'{retirees} ligne{"s" * (retirees > 1)} recopiée{"s" * (retirees > 1)} en miroir retirée'
+            f'{"s" * (retirees > 1)} ({len(dedoublees)} conduite{"s" * (len(dedoublees) > 1)} : '
+            f'{liste_codes(dedoublees)})' if retirees
+            else 'aucune ligne recopiée en miroir') + (
+            f' ; gardées, un passage optique y renvoyant : {liste_codes(gardees)}' if gardees else '') + (
+            f' ; listes divergentes des deux côtés, à contrôler sur la base FOA : {liste_codes(a_controler)}'
+            if a_controler else ''))
+        effectifs = reconstruire(con, 'infra', ('INF_CD_CABLE',), {
+            ('INF_CD_CABLE', 'CDC_RANG'): 'ROW_NUMBER() OVER (PARTITION BY CD_KEY ORDER BY CDC_ID)',
+            ('INF_CD_CABLE', 'CDC_NATURE'): "CASE WHEN EXISTS (SELECT 1 FROM infra.MAT_CABLE m WHERE m.MAT_ID = "
+                                            "reprise_INF_CD_CABLE.MAT_KEY AND m.CAB_NB_FIB > 0) THEN 'FO' END"}, {})
+        rangs = con.execute('SELECT COUNT(DISTINCT CD_KEY), MAX(CDC_RANG), SUM(CDC_NATURE IS NOT NULL), '
+                            'SUM(CDC_NATURE IS NULL) FROM infra.INF_CD_CABLE').fetchone()
+        n, pl = effectifs['INF_CD_CABLE'], 's' * (effectifs['INF_CD_CABLE'] > 1)
+        rapport.append(f'INF_CD_CABLE : {n} ligne{pl} reconstruite{pl} d\'après schema/infra/schema.sql, identifiants, '
+                       f'séquence et index gardés ; CDC_RANG dans l\'ordre des CDC_ID ({rangs[0]} conduite'
+                       f'{"s" * (rangs[0] > 1)}, rang maximal {rangs[1] or 0}) ; CDC_NATURE : FO {rangs[2] or 0} '
+                       f'(référence à fibres), inconnue {rangs[3] or 0}')
+    n = numeroter_sous_tubes(con)
+    rapport.append(f'INF_CONDUITE : {n} sous-tube{"s" * (n > 1)} renuméroté{"s" * (n > 1)} (CD_NUM = rang dans le '
+                   f'parent)' if n else 'INF_CONDUITE : sous-tubes déjà numérotés dans leur parent')
+    passages, modifies = recalculer_occupation(con)
+    detail = ', '.join(f'{a} → {b} {n}' for (a, b), n in sorted(passages.items()))
+    rapport.append('INF_CONDUITE : ' + (f'états passés à occupé ({detail})' if passages
+                                         else 'aucun état à passer à occupé')
+                   + f', {modifies} taux d\'occupation recalculé{"s" * (modifies > 1)}')
+    return {'infra'}
+
+
+# Visuels des équipements (noyau 0.3.0, optique 0.2.0) -------------------------------------------------
+
+VERSION_VISUELS = '0.5.0'           # version du modèle qui donne aux équipements leur galerie
+VUE_BOITIER = 'BOITIER'             # vue « Boîtier optique » des supports jusqu'à chambre 0.3.0, poteau 0.2.0, immeuble 0.1.0
+VUE_BOITIER_LIB = 'Boîtier optique'
+VISUELS_VERSIONS = {'noyau': '0.3.0', 'optique': '0.2.0', 'chambre': '0.4.0', 'poteau': '0.3.0', 'immeuble': '0.2.0'}
+# Tables porteuses des photos d'un support : table → (table du module, clé, colonne du nœud) ; None : PRJ_NOE lui-même.
+PORTEUR_NOEUD = {'PRJ_NOE': None, 'CHB_CHAMBRE': ('chambre.CHB_CHAMBRE', 'CHB_ID', 'NOE_KEY'),
+                 'POT_POTEAU': ('poteau.POT_POTEAU', 'POT_ID', 'NOE_KEY')}
+
+
+def code_visuel_boitier(code_projet, table, code_objet):
+    """VIS_CODE du visuel libre « Boîtier optique » repris de la vue BOITIER, porté par l'objet code_objet (NOE_CODE_EXT
+    ou EQU_CODE_EXT) de la table PRJ_NOE ou INF_EQUIPEMENT : UUID v5, le même d'une reprise ou d'un chargement à
+    l'autre (tools/essai/charger_essai.py)."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL,
+                          f'urn:nge-esplorer:{code_projet}:visuel:{table}:{code_objet}:{VUE_BOITIER}'))
+
+
+def porteur_boitier(con, ent_table, obj, equipements):
+    """Porteur d'une photo de la vue BOITIER : (table, identifiant) de l'équipement auquel elle est déjà rattachée
+    (INF_EQUIPEMENT), sinon du seul équipement non abandonné de son nœud, sinon du nœud (PRJ_NOE). equipements : nœud →
+    équipements non abandonnés. Une autre table porteuse annule la reprise."""
+    if ent_table == 'INF_EQUIPEMENT':
+        return 'INF_EQUIPEMENT', obj
+    if ent_table not in PORTEUR_NOEUD:
+        raise RuntimeError(f'photo de la vue {VUE_BOITIER} portée par {ent_table} : porteur inattendu, reprise annulée')
+    source = PORTEUR_NOEUD[ent_table]
+    noe = obj if source is None else (con.execute(f'SELECT {source[2]} FROM {source[0]} WHERE {source[1]} = ?',
+                                                  (obj,)).fetchone() or [None])[0]
+    if noe is None:
+        raise RuntimeError(f'photo de la vue {VUE_BOITIER} de {ent_table} {obj} sans nœud, reprise annulée')
+    equ = equipements.get(noe, [])
+    return ('INF_EQUIPEMENT', equ[0]) if len(equ) == 1 else ('PRJ_NOE', noe)
+
+
+def reprendre_visuels(con, inscrits, rapport):
+    """Étape 0.5.0, visuels des équipements : DEF_VUE reconstruite d'après schema/noyau/schema.sql (reconstruire :
+    VUE_ENTITE vide, TYPE_KEY facultatif, mêmes VUE_ID, PRJ_FICHIER.VUE_KEY intact) ; vues de la galerie d'un
+    équipement (VUE_ENTITE INF_EQUIPEMENT) ajoutées d'après le manifeste optique si le module est inscrit ; vue
+    « Boîtier optique » (BOITIER) des supports retirée : ses photos, abandonnées comprises, deviennent le visuel libre
+    « Boîtier optique » (VUE_KEY vide, VIS_CODE déterministe : code_visuel_boitier) de leur équipement s'il est déjà
+    leur porteur ou si leur nœud porte exactement un équipement non abandonné, sinon de leur nœud (porteur_boitier) ;
+    rangs renumérotés par porteur dans l'ordre FIC_RANG, FIC_ID, la première en photo de référence. Ordres des vues des
+    supports alignés sur les manifestes. Idempotente : une seconde reprise ne trouve ni colonne à créer, ni vue à
+    ajouter, ni vue BOITIER. Rend les modules au niveau."""
+    au_niveau = {'noyau'}
+    colonnes = {r[1] for r in con.execute('PRAGMA main.table_info(DEF_VUE)')}
+    if 'VUE_ENTITE' in colonnes:
+        rapport.append('DEF_VUE : VUE_ENTITE déjà présente (reprise faite)')
+    else:
+        # PRJ_FICHIER.VUE_KEY désigne DEF_VUE : contrôle des références différé à la fin de la transaction, les vues
+        # étant recopiées avec leurs identifiants
+        con.execute('PRAGMA defer_foreign_keys = ON')
+        n = reconstruire(con, 'noyau', ('DEF_VUE',), {('DEF_VUE', 'VUE_ENTITE'): 'NULL'}, {})['DEF_VUE']
+        rapport.append(f'DEF_VUE : reconstruite d\'après schema/noyau/schema.sql ({n} vues, VUE_ENTITE, TYPE_KEY '
+                       f'facultatif, identifiants gardés)')
+    mods = {m['code']: m for m in manifestes()}
+    if 'optique' in inscrits:
+        ajoutees = []
+        for v in mods['optique']['vues']:
+            if 'entite' in v and not con.execute('SELECT 1 FROM DEF_VUE WHERE VUE_ENTITE = ? AND VUE_CODE = ?',
+                                                 (v['entite'], v['code'])).fetchone():
+                inserer_vue(con, 'optique', v)
+                ajoutees.append(v['code'])
+        rapport.append(f'DEF_VUE : vues d\'équipement ajoutées ({", ".join(ajoutees)})' if ajoutees
+                       else 'DEF_VUE : vues d\'équipement déjà présentes')
+        au_niveau.add('optique')
+    else:
+        rapport.append('DEF_VUE : module optique non inscrit, pas de vue d\'équipement')
+    ids = [r[0] for r in con.execute('SELECT VUE_ID FROM DEF_VUE WHERE TYPE_KEY IS NOT NULL AND VUE_CODE = ?',
+                                     (VUE_BOITIER,))]
+    if ids:
+        code_projet = con.execute('SELECT PRJ_CODE_EXT FROM SYS_PROJET').fetchone()[0]
+        entites = dict(con.execute('SELECT ENT_ID, ENT_TABLE FROM DEF_ENTITE'))
+        ent_id = {t: i for i, t in entites.items()}
+        equipements = {}
+        if 'infra' in inscrits:
+            for equ, noe in con.execute('SELECT EQU_ID, NOE_KEY FROM infra.INF_EQUIPEMENT WHERE DATE_ABD IS NULL '
+                                        'ORDER BY EQU_ID'):
+                equipements.setdefault(noe, []).append(equ)
+        codes = {'PRJ_NOE': 'SELECT NOE_CODE_EXT FROM PRJ_NOE WHERE NOE_ID = ?',
+                 'INF_EQUIPEMENT': 'SELECT EQU_CODE_EXT FROM infra.INF_EQUIPEMENT WHERE EQU_ID = ?'}
+        groupes, effectifs = {}, Counter()
+        marques = ','.join('?' * len(ids))
+        for fic, ent, obj in con.execute(f'SELECT FIC_ID, ENT_KEY, OBJ_KEY FROM PRJ_FICHIER WHERE VUE_KEY IN ({marques}) '
+                                         f'ORDER BY FIC_RANG, FIC_ID', ids).fetchall():
+            table, porteur = porteur_boitier(con, entites.get(ent), obj, equipements)
+            if table not in ent_id:
+                raise RuntimeError(f'DEF_ENTITE : {table} absente, reprise annulée')
+            code = con.execute(codes[table], (porteur,)).fetchone()
+            if code is None:
+                raise RuntimeError(f'{table} {porteur} absent, porteur de la photo {fic}, reprise annulée')
+            groupes.setdefault((table, porteur, code[0]), []).append(fic)
+            effectifs[table] += 1
+        for (table, porteur, code), fics in groupes.items():
+            vis = code_visuel_boitier(code_projet, table, code)
+            for rang, fic in enumerate(fics, 1):
+                con.execute('UPDATE PRJ_FICHIER SET ENT_KEY = ?, OBJ_KEY = ?, VUE_KEY = NULL, VIS_CODE = ?, '
+                            'VIS_LIB = ?, FIC_RANG = ?, FIC_PRINCIPALE = ? WHERE FIC_ID = ?',
+                            (ent_id[table], porteur, vis, VUE_BOITIER_LIB, rang, int(rang == 1), fic))
+        con.execute(f'DELETE FROM DEF_VUE WHERE VUE_ID IN ({marques})', ids)
+        rapport.append(f'PRJ_FICHIER : photos de la vue {VUE_BOITIER} reprises en visuel libre « {VUE_BOITIER_LIB} » : '
+                       f'{effectifs["INF_EQUIPEMENT"]} d\'équipement, {effectifs["PRJ_NOE"]} de support '
+                       f'({len(groupes)} visuel{"s" * (len(groupes) > 1)})' if groupes
+                       else f'PRJ_FICHIER : aucune photo de la vue {VUE_BOITIER}')
+        rapport.append(f'DEF_VUE : {len(ids)} vue{"s" * (len(ids) > 1)} {VUE_BOITIER} retirée{"s" * (len(ids) > 1)}')
+    else:
+        rapport.append(f'DEF_VUE : aucune vue {VUE_BOITIER} de support (reprise faite)')
+    # ordres des vues des supports d'après les manifestes (BOITIER retirée en tête des chambres et des poteaux)
+    reordonnees = 0
+    for code, m in mods.items():
+        if code not in inscrits:
+            continue
+        for v in m['vues']:
+            if 'type' in v:
+                reordonnees += con.execute(
+                    'UPDATE DEF_VUE SET VUE_ORDRE = ? WHERE VUE_CODE = ? AND VUE_ORDRE <> ? AND TYPE_KEY = '
+                    '(SELECT TYPE_ID FROM DEF_TYPE WHERE TYPE_CODE = ?)',
+                    (v['ordre'], v['code'], v['ordre'], v['type'])).rowcount
+        if code in ('chambre', 'poteau', 'immeuble'):
+            au_niveau.add(code)
+    if reordonnees:
+        rapport.append(f'DEF_VUE : {reordonnees} ordre{"s" * (reordonnees > 1)} de vue aligné{"s" * (reordonnees > 1)} '
+                       f'sur les manifestes')
+    return au_niveau
+
+# Câbles de raccordement (module optique 0.3.0) -------------------------------------------------------
+
+VERSION_RACCORDEMENT = '0.6.0'      # version du modèle qui passe le module optique en 0.3.0
+OPTIQUE_RACCORDEMENT = '0.3.0'
+
+
+def reprendre_raccordements(con, inscrits, rapport):
+    """Étape 0.6.0, câbles de raccordement (module optique 0.3.0) : OPT_CABLE reconstruite d'après
+    schema/optique/schema.sql (reconstruire : NOE2_KEY facultatif, ADR2_KEY vide, contrôle « NOE2_KEY ou ADR2_KEY »,
+    index ; mêmes CAB_ID et séquence), puis colonne GEOMETRY ajoutée vide (tracé propre d'un câble de raccordement),
+    déclarée à SpatiaLite après la transaction (spatialiser_optique). Les tables qui référencent OPT_CABLE (passages,
+    lovages, fibres, et par elles positions, routes et mesures) restent intactes : clés étrangères différées le temps
+    de la reconstruction (supprimer l'ancienne table orpheline un instant leurs lignes, la recopie les rattache), puis
+    contrôlées (foreign_key_check) avant de rendre la main. Annulent la reprise : une table absente, une référence
+    interne sans cible avant ou après. Faite quand OPT_CABLE porte ADR2_KEY. Rend {'optique'} quand le module est au
+    niveau, maintenant ou avant."""
+    if 'optique' not in inscrits:
+        rapport.append('OPT_CABLE : module optique non inscrit au projet, rien à reprendre')
+        return set()
+    colonnes = {r[1] for r in con.execute('PRAGMA optique.table_info(OPT_CABLE)')}
+    if not colonnes:
+        raise RuntimeError('optique.OPT_CABLE absente (base du module incomplète), reprise annulée')
+    if 'ADR2_KEY' in colonnes:
+        rapport.append('OPT_CABLE : adresse desservie et tracé propre déjà en place (reprise faite)')
+        return {'optique'}
+
+    def orphelines():
+        return Counter(f'{t} → {parent}' for t, _, parent, _ in con.execute('PRAGMA optique.foreign_key_check'))
+
+    avant = orphelines()
+    if avant:
+        detail = ', '.join(f'{k} {v}' for k, v in sorted(avant.items()))
+        raise RuntimeError(f'optique : références internes sans cible ({detail}), reprise annulée')
+    # contraintes différées jusqu'à la fin de la transaction (remises d'office au COMMIT ou au ROLLBACK)
+    con.execute('PRAGMA defer_foreign_keys = ON')
+    effectifs = reconstruire(con, 'optique', ('OPT_CABLE',), {('OPT_CABLE', 'ADR2_KEY'): 'NULL'}, {})
+    con.execute('ALTER TABLE optique.OPT_CABLE ADD COLUMN GEOMETRY LINESTRING')
+    apres = orphelines()
+    if apres:
+        detail = ', '.join(f'{k} {v}' for k, v in sorted(apres.items()))
+        raise RuntimeError(f'optique : références perdues par la reconstruction ({detail}), reprise annulée')
+    enfants = {t: con.execute(f'SELECT COUNT(*) FROM optique.{t}').fetchone()[0]
+               for t in ('OPT_PASSAGE', 'OPT_LOVE', 'OPT_FIBRE')}
+    rapport.append(f'OPT_CABLE : {effectifs["OPT_CABLE"]} câbles, table reconstruite d\'après '
+                   f'schema/optique/schema.sql (NOE2_KEY facultatif, ADR2_KEY, GEOMETRY), identifiants et séquence '
+                   f'gardés ; tables qui la référencent intactes (' + ', '.join(f'{t} {n}' for t, n in enfants.items())
+                   + ')')
+    return {'optique'}
+
+
+def spatialiser_optique(dossier, qgis_bin, rapport):
+    """Base du module optique déclarée à SpatiaLite (module spatial depuis la version 0.3.0) : métadonnées sans les
+    EPSG inutiles (Lambert 93 seul, comme un projet neuf), puis colonne OPT_CABLE.GEOMETRY déclarée
+    (RecoverGeometryColumn : ligne 2154, contrôles de type et de SRID à l'écriture). SpatiaLite ne déclare une colonne
+    que dans la base principale d'une connexion : faite sur une connexion à la base du module, après la transaction de
+    la reprise. Idempotente ; sans effet si la colonne n'existe pas encore (reprise annulée)."""
+    noyau = connecter(os.path.join(dossier, 'noyau.sqlite'))
+    try:
+        r = noyau.execute("SELECT MOD_FICHIER FROM SYS_MODULE WHERE MOD_CODE = 'optique'").fetchone()
+    finally:
+        noyau.close()
+    if r is None:
+        return
+    con = connecter(os.path.join(dossier, r[0]), qgis_bin, True)
+    try:
+        if 'GEOMETRY' not in {c[1] for c in con.execute('PRAGMA table_info(OPT_CABLE)')}:
+            return
+        existe = lambda t: con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                                       (t,)).fetchone() is not None
+        if not existe('geometry_columns'):
+            con.execute("SELECT InitSpatialMetadata(1, 'NONE')")
+            rapport.append('optique : métadonnées SpatiaLite créées')
+        if not con.execute('SELECT 1 FROM spatial_ref_sys WHERE srid = 2154').fetchone():
+            con.execute('SELECT InsertEpsgSrid(2154)')
+        if not con.execute("SELECT 1 FROM geometry_columns WHERE lower(f_table_name) = 'opt_cable' "
+                           "AND lower(f_geometry_column) = 'geometry'").fetchone():
+            if con.execute("SELECT RecoverGeometryColumn('OPT_CABLE', 'GEOMETRY', 2154, 'LINESTRING', 'XY')"
+                           ).fetchone()[0] != 1:
+                raise RuntimeError('OPT_CABLE.GEOMETRY : RecoverGeometryColumn en échec')
+            rapport.append('OPT_CABLE.GEOMETRY : déclarée à SpatiaLite (LINESTRING, EPSG:2154)')
+    finally:
+        con.close()
+
+
+# Étapes de la reprise, dans l'ordre des versions du modèle : (version du modèle, libellé, étape, version de chaque
+# module mis au niveau par l'étape). Une étape (con, modules inscrits, rapport) est idempotente et rend les modules mis
+# à son niveau, maintenant ou avant.
+VERSION_OCCUPATION = '0.4.0'        # version du modèle qui passe le module infra en 0.2.0
+ETAPES = ((VERSION_JOURNAL, 'journal des commentaires', reprendre_commentaires,
+           {'noyau': VERSION_JOURNAL, 'chambre': VERSION_JOURNAL, 'poteau': VERSION_JOURNAL}),
+          (VERSION_MASQUES, 'masques métriques', reprendre_masques, {'chambre': VERSION_MASQUES}),
+          (VERSION_OCCUPATION, 'occupation des conduites', reprendre_occupation, {'infra': '0.2.0'}),
+          (VERSION_VISUELS, 'visuels des équipements', reprendre_visuels, VISUELS_VERSIONS),
+          (VERSION_RACCORDEMENT, 'câbles de raccordement', reprendre_raccordements,
+           {'optique': OPTIQUE_RACCORDEMENT}))
 
 
 def migrer(dossier, qgis_bin):
     """Reprise d'un projet construit avec un modèle antérieur : applique dans l'ordre les étapes en attente (ETAPES)
     en une seule transaction sur le noyau et les modules. Un module inscrit dont le fichier manque est refusé par
     ouvrir, avant toute écriture ; une table absente ou une anomalie propre à une étape annulent toute la reprise. Les
-    modules rendus par une étape passent à sa version dans SYS_MODULE, le modèle du projet
-    (SYS_PROJET.MODELE_VERSION) à celle de chaque étape passée ; un module non inscrit est ignoré. Idempotente : une
-    seconde exécution ne change rien."""
+    modules rendus par une étape passent à la version que l'étape leur donne (ETAPES) dans SYS_MODULE, le modèle du
+    projet (SYS_PROJET.MODELE_VERSION) à celle de chaque étape passée ; un module non inscrit est ignoré. Idempotente :
+    une seconde exécution ne change rien. Après la transaction, la base du module optique est déclarée à SpatiaLite
+    (spatialiser_optique), ce qui ne se fait pas dans une base attachée."""
     con = ouvrir(dossier, qgis_bin, integrite=False)
     rapport = []
     inscrits = {r[0] for r in con.execute('SELECT MOD_CODE FROM SYS_MODULE')}
     con.execute('BEGIN')
     try:
-        for etape_version, libelle, etape in ETAPES:
+        for etape_version, libelle, etape, versions in ETAPES:
             lignes = []
             au_niveau = etape(con, inscrits, lignes)
             for code, v in con.execute('SELECT MOD_CODE, MOD_VERSION FROM SYS_MODULE ORDER BY MOD_ID').fetchall():
-                if code in au_niveau and version(v) < version(etape_version):
-                    con.execute('UPDATE SYS_MODULE SET MOD_VERSION = ? WHERE MOD_CODE = ?', (etape_version, code))
-                    lignes.append(f'SYS_MODULE : {code} {v} → {etape_version}')
+                if code in au_niveau and version(v) < version(versions[code]):
+                    con.execute('UPDATE SYS_MODULE SET MOD_VERSION = ? WHERE MOD_CODE = ?', (versions[code], code))
+                    lignes.append(f'SYS_MODULE : {code} {v} → {versions[code]}')
             modele = con.execute('SELECT MODELE_VERSION FROM SYS_PROJET').fetchone()[0]
             if version(modele) < version(etape_version):
                 con.execute('UPDATE SYS_PROJET SET MODELE_VERSION = ?', (etape_version,))
@@ -633,7 +1091,14 @@ def migrer(dossier, qgis_bin):
                        + (f' ({", ".join(f"{l:g} x {h:g} m : {n}" for l, h, n in faces)})' if faces else '')
                        + f', {con.execute("SELECT COUNT(*) FROM chambre.CHB_POSITION").fetchone()[0]} positions, '
                        f'{positions_hors_face(con)} hors de leur face')
+    if 'infra' in inscrits:
+        rapport.append(f'Occupation : {resume_occupation(con)}')
+    if 'optique' in inscrits:
+        n, rac = con.execute('SELECT COUNT(*), SUM(ADR2_KEY IS NOT NULL) FROM optique.OPT_CABLE').fetchone()
+        rapport.append(f'Câbles : {n}, dont {rac or 0} de raccordement d\'une adresse')
     con.close()
+    if 'optique' in inscrits:
+        spatialiser_optique(dossier, qgis_bin, rapport)
     return rapport
 
 
@@ -667,18 +1132,25 @@ def essai(con):
         l2 = lineaire('essai-l2', 'LIN-AER', 0, p1, p2)
         lineaire('essai-l3', 'LIN-FAC', 2, p1, f1)
 
-        etat_x = q("SELECT ETAT_ID FROM infra.DEF_CD_ETAT WHERE ETAT_CODE = 'X'")[0]
+        etats = dict(con.execute('SELECT ETAT_CODE, ETAT_ID FROM infra.DEF_CD_ETAT'))
+        # alvéole réservée de 45 mm, sous-tubée (un sous-tube de 28 mm, rang 1 dans son parent), occupée par trois
+        # câbles constatés : deux cuivres de 6 mm (5/9) et une fibre de 10 mm
         con.execute('INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, CD_NUM, CD_DIAM, ETAT_KEY) '
-                    'VALUES (?, ?, 1, 45, ?)', ('essai-cd1', l1, etat_x))
+                    'VALUES (?, ?, 1, 45, ?)', ('essai-cd1', l1, etats['R']))
         cd1 = q('SELECT last_insert_rowid()')[0]
         con.execute('INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, CD_PARENT_KEY, CD_NUM, CD_DIAM) '
                     'VALUES (?, ?, ?, 1, 28)', ('essai-cd2', l1, cd1))
-        # alvéole sans destination connue : conduite rattachée à la chambre, sans linéaire
-        con.execute("INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, NOE_KEY, CD_NUM, CD_DIAM) VALUES ('essai-cd3', ?, 2, 45)",
-                    (c1,))
+        cd2 = q('SELECT last_insert_rowid()')[0]
+        # alvéole mauvaise sans destination connue : conduite rattachée à la chambre, sans linéaire
+        con.execute('INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, NOE_KEY, CD_NUM, CD_DIAM, ETAT_KEY) '
+                    "VALUES ('essai-cd3', ?, 2, 45, ?)", (c1, etats['M']))
         cd3 = q('SELECT last_insert_rowid()')[0]
         cable = q("SELECT MAT_ID FROM infra.MAT_CABLE WHERE MAT_LIB = '5/9'")[0]
-        con.execute('INSERT INTO infra.INF_CD_CABLE (CD_KEY, MAT_KEY, CDC_NB) VALUES (?, ?, 2)', (cd1, cable))
+        con.execute('INSERT INTO infra.INF_CD_CABLE (CD_KEY, CDC_RANG, MAT_KEY, CDC_NB, CDC_DIAM, CDC_NATURE) '
+                    "VALUES (?, 1, ?, 2, 6, 'CU')", (cd1, cable))
+        con.execute("INSERT INTO infra.INF_CD_CABLE (CD_KEY, CDC_RANG, CDC_DIAM, CDC_NATURE) VALUES (?, 2, 10, 'FO')",
+                    (cd1,))
+        recalculer_occupation(con)
         con.execute('INSERT INTO infra.INF_PORTEE (LIN_KEY, PRT_ANG1, PRT_ANG2, PRT_LNG) VALUES (?, 0, 200, 31)', (l2,))
         prt = q('SELECT last_insert_rowid()')[0]
         con.execute('INSERT INTO infra.INF_PORTEE_CABLE (PRT_KEY, PCB_RANG, MAT_KEY, PCB_LNG, PCB_NAPPE, PCB_TENSION) '
@@ -774,6 +1246,12 @@ def essai(con):
         for i in (1, 2):
             con.execute("INSERT INTO immeuble.IMB_LOCAL (LOC_CODE_EXT, ADR_KEY, LTYP_KEY, RACCO_KEY, LOC_ETAGE, EQU_KEY) "
                         "VALUES (?, ?, 1, 3, ?, ?)", (f'essai-loc{i}', a1, str(i - 1), e1))
+        # raccordement final : du PBO de 437997 à l'adresse, tracé propre (pas de linéaire, pas de nœud aval)
+        con.execute("INSERT INTO optique.OPT_CABLE (CAB_CODE_EXT, CAB_LIB, CFON_KEY, CAB_CAPA, NOE1_KEY, EQU1_KEY, "
+                    "ADR2_KEY, GEOMETRY) SELECT 'essai-rac1', 'RAC-1', CFON_ID, 1, ?, ?, ?, "
+                    "MakeLine(MakePoint(636130, 6835060, 2154), MakePoint(636135, 6835070, 2154)) "
+                    "FROM optique.DEF_CAB_FONCTION WHERE CFON_CODE = 'RA'", (p2, e1, a1))
+        rac1 = q('SELECT last_insert_rowid()')[0]
 
         # lectures attendues
         miroir = con.execute(
@@ -787,6 +1265,23 @@ def essai(con):
             (cd3,)).fetchall()
         constats.append(('alvéole sans destination : conduite rattachée à sa chambre, sans linéaire',
                          sans_dest == [('1476', 0.25)], sans_dest))
+        # 45 mm → 38 mm intérieurs : (2 x (6 / 38)² + (10 / 38)²) x 100 = 11,9 %
+        occupation = con.execute(
+            'SELECT cd.CD_CODE_EXT, e.ETAT_CODE, cd.CD_OCCUP, p.CD_CODE_EXT FROM infra.INF_CONDUITE cd '
+            'LEFT JOIN infra.DEF_CD_ETAT e ON e.ETAT_ID = cd.ETAT_KEY LEFT JOIN infra.INF_CONDUITE p '
+            'ON p.CD_ID = cd.CD_PARENT_KEY WHERE cd.CD_ID IN (?, ?, ?) ORDER BY 1', (cd1, cd2, cd3)).fetchall()
+        constats.append(('occupation recalculée : alvéole réservée occupée par ses câbles et son sous-tube (R → XR, '
+                         '11,9 %), sous-tube vide (0 %), alvéole mauvaise sans câble (100 %)',
+                         occupation == [('essai-cd1', 'XR', 11.9, None), ('essai-cd2', None, 0.0, 'essai-cd1'),
+                                        ('essai-cd3', 'M', 100.0, None)], occupation))
+        cables_cd1 = con.execute('SELECT CDC_RANG, CDC_NB, CDC_DIAM, CDC_NATURE FROM infra.INF_CD_CABLE '
+                                 'WHERE CD_KEY = ? ORDER BY CDC_RANG', (cd1,)).fetchall()
+        constats.append(('câbles de conduite rangés dans leur conduite, nature fibre / cuivre',
+                         cables_cd1 == [(1, 2, 6.0, 'CU'), (2, 1, 10.0, 'FO')], cables_cd1))
+        diametres = con.execute('SELECT DIAM_NOMINAL, DIAM_INT FROM infra.DEF_CD_DIAM WHERE DIAM_SOUS_TUBE = 1 '
+                                'ORDER BY 1').fetchall()
+        constats.append(('diamètres proposés pour le sous-tubage (nominal, intérieur)',
+                         [d for d, _ in diametres] == [20, 24, 28, 33], diametres))
         dims = con.execute('SELECT n.NOE_LIB, f.FAC_CODE, f.FAC_LARG, f.FAC_HAUT FROM chambre.CHB_FACE f '
                            'JOIN chambre.CHB_CHAMBRE c ON c.CHB_ID = f.CHB_KEY JOIN PRJ_NOE n ON n.NOE_ID = c.NOE_KEY '
                            'WHERE c.CHB_ID IN (?, ?) ORDER BY 1, 2', (chambres[c1], chambres[c2])).fetchall()
@@ -807,7 +1302,12 @@ def essai(con):
             'WITH RECURSIVE anc(id) AS (SELECT TYPE_KEY FROM PRJ_NOE WHERE NOE_ID = ? UNION '
             'SELECT t.TYPE_PARENT_KEY FROM DEF_TYPE t JOIN anc ON t.TYPE_ID = anc.id WHERE t.TYPE_PARENT_KEY IS NOT NULL) '
             'SELECT v.VUE_CODE FROM DEF_VUE v JOIN anc ON v.TYPE_KEY = anc.id ORDER BY v.VUE_ORDRE', (c1,)).fetchall()
-        constats.append(('vues d\'une chambre FT héritées du type CHB', len(vues) == 8, [v[0] for v in vues]))
+        constats.append(('vues d\'une chambre FT héritées du type CHB, sans boîtier optique (porté par l\'équipement)',
+                         [v[0] for v in vues] == ['ENV', 'DESSUS', 'A', 'B', 'C', 'D', 'MES'], [v[0] for v in vues]))
+        vues_equ = [v[0] for v in con.execute("SELECT VUE_CODE FROM DEF_VUE WHERE VUE_ENTITE = 'INF_EQUIPEMENT' "
+                                              'ORDER BY VUE_ORDRE')]
+        constats.append(('vues d\'un équipement (galerie propre, module optique)',
+                         vues_equ == ['FERME', 'OUVERT', 'CASSETTES', 'MESURES'], vues_equ))
         journal = con.execute(
             'SELECT c.COM_TYPE, c.COM_AUTEUR, c.COM_ORIGINE, i.INT_CODE_EXT FROM PRJ_COMMENTAIRE c '
             'LEFT JOIN PRJ_INTERVENTION i ON i.INT_ID = c.INT_KEY WHERE c.ENT_KEY = ? AND c.OBJ_KEY = ? '
@@ -836,6 +1336,14 @@ def essai(con):
             'JOIN infra.INF_EQUIPEMENT e ON e.EQU_ID = l.EQU_KEY WHERE i.ADR_KEY = ? GROUP BY i.IAD_ID', (a1,)).fetchall()
         constats.append(('BAL : logements, habitat, locaux desservis par le PBO', bal == [(2, 'Pavillon', 2, 'essai-e1')],
                          bal))
+        rac = con.execute(
+            'SELECT c.CAB_LIB, f.CFON_CODE, n.NOE_LIB, a.ADR_CODE_EXT, c.NOE2_KEY, GeometryType(c.GEOMETRY), '
+            'round(GLength(c.GEOMETRY), 2), (SELECT COUNT(*) FROM optique.OPT_PASSAGE WHERE CAB_KEY = c.CAB_ID) '
+            'FROM optique.OPT_CABLE c JOIN optique.DEF_CAB_FONCTION f ON f.CFON_ID = c.CFON_KEY '
+            'JOIN PRJ_NOE n ON n.NOE_ID = c.NOE1_KEY JOIN PRJ_ADRESSE a ON a.ADR_ID = c.ADR2_KEY '
+            'WHERE c.CAB_ID = ?', (rac1,)).fetchall()
+        constats.append(('câble de raccordement : du PBO à l\'adresse, sans nœud aval ni passage, tracé propre',
+                         rac == [('RAC-1', 'RA', '437997', 'essai-a1', None, 'LINESTRING', 11.18, 0)], rac))
 
         # refus attendus
         for libelle, sql, params in (
@@ -853,6 +1361,13 @@ def essai(con):
                 ('conduite sur un linéaire inexistant',
                  "INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY) VALUES ('x', 999999)", ()),
                 ('conduite sans linéaire ni chambre', "INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT) VALUES ('x')", ()),
+                ('deux câbles de même rang dans une conduite',
+                 'INSERT INTO infra.INF_CD_CABLE (CD_KEY, CDC_RANG) VALUES (?, 1)', (cd1,)),
+                ('câble de conduite sans rang', 'INSERT INTO infra.INF_CD_CABLE (CD_KEY) VALUES (?)', (cd1,)),
+                ('câble de conduite de nature inconnue',
+                 "INSERT INTO infra.INF_CD_CABLE (CD_KEY, CDC_RANG, CDC_NATURE) VALUES (?, 3, 'AL')", (cd1,)),
+                ('ligne de câbles de conduite sans câble (CDC_NB 0)',
+                 'INSERT INTO infra.INF_CD_CABLE (CD_KEY, CDC_RANG, CDC_NB) VALUES (?, 3, 0)', (cd1,)),
                 ('conduite sur un linéaire et une chambre',
                  "INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, NOE_KEY) VALUES ('x', ?, ?)", (l1, c1)),
                 ('suppression d\'un nœud porteur d\'un poteau',
@@ -873,6 +1388,12 @@ def essai(con):
                  "VALUES ('x', ?, ?, 'x', '  ')", (ent_noe, c1)),
                 ('câble vers un nœud inexistant',
                  "INSERT INTO optique.OPT_CABLE (CAB_CODE_EXT, NOE1_KEY, NOE2_KEY) VALUES ('x', ?, 999999)", (p1,)),
+                ('câble sans nœud ni adresse aval',
+                 "INSERT INTO optique.OPT_CABLE (CAB_CODE_EXT, NOE1_KEY) VALUES ('x', ?)", (p1,)),
+                ('raccordement d\'une adresse inexistante',
+                 "INSERT INTO optique.OPT_CABLE (CAB_CODE_EXT, NOE1_KEY, ADR2_KEY) VALUES ('x', ?, 999999)", (p1,)),
+                ('suppression d\'une adresse raccordée',
+                 'DELETE FROM PRJ_ADRESSE WHERE ADR_ID = ?', (a1,)),
                 ('passage sur un linéaire inexistant',
                  'INSERT INTO optique.OPT_PASSAGE (CAB_KEY, LIN_KEY) VALUES (?, 999999)', (cb1,)),
                 ('passage à la fois porté et en conduite',
@@ -885,7 +1406,15 @@ def essai(con):
                  'DELETE FROM infra.INF_EQUIPEMENT WHERE EQU_ID = ?', (e1,)),
                 ('BAL d\'une adresse inexistante',
                  'INSERT INTO immeuble.IMB_ADRESSE (ADR_KEY) VALUES (999999)', ()),
-                ('suppression d\'une adresse porteuse de locaux', 'DELETE FROM PRJ_ADRESSE WHERE ADR_ID = ?', (a1,))):
+                ('suppression d\'une adresse porteuse de locaux', 'DELETE FROM PRJ_ADRESSE WHERE ADR_ID = ?', (a1,)),
+                ('vue à la fois d\'un type et d\'un équipement',
+                 "INSERT INTO DEF_VUE (TYPE_KEY, VUE_ENTITE, VUE_CODE, VUE_LIB, VUE_ORDRE, MOD_CODE) "
+                 "SELECT TYPE_ID, 'INF_EQUIPEMENT', 'X', 'x', 9, 'x' FROM DEF_TYPE WHERE TYPE_CODE = 'CHB'", ()),
+                ('vue sans type ni porteur',
+                 "INSERT INTO DEF_VUE (VUE_CODE, VUE_LIB, VUE_ORDRE, MOD_CODE) VALUES ('X', 'x', 9, 'x')", ()),
+                ('deux vues d\'équipement de même code',
+                 "INSERT INTO DEF_VUE (VUE_ENTITE, VUE_CODE, VUE_LIB, VUE_ORDRE, MOD_CODE) "
+                 "VALUES ('INF_EQUIPEMENT', 'FERME', 'x', 9, 'x')", ())):
             try:
                 con.execute('SAVEPOINT refus')
                 con.execute(sql, params)

@@ -47,7 +47,7 @@ class _CommentsCardState extends State<CommentsCard> {
 
   /// Retire le commentaire [c] après confirmation, son texte rappelé. Pas d'« Annuler » dans un message : la carte,
   /// sortie de la liste au défilement d'une longue saisie, ne pourrait plus l'honorer, et le message survivrait à
-  /// « Quitter sans enregistrer ».
+  /// « Abandonner les modifications ».
   Future<void> _remove(Map<String, dynamic> c) async {
     final ok = await showDialog<bool>(
       context: context,

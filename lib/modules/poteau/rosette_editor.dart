@@ -17,6 +17,11 @@ bool isSpan(GeoObject l) => l.typeKey == aerialSpanType || l.typeKey == facadeRu
 /// Types de nœuds proposés pour une destination nouvelle.
 const destinationTypes = {14: 'Poteau télécom', 15: 'Poteau BT', 30: 'Ancrage façade', 999: 'Autre point'}; // tr
 
+/// Écart permis (grades) entre l'angle relevé d'une portée et la direction de sa destination, quand la position de
+/// celle-ci est connue : l'aiguille ajuste la direction, elle ne la contredit pas (destination mal placée : corriger
+/// sa position).
+const directionMargin = 5.0;
+
 /// Une portée vue depuis le poteau : le linéaire (copie en cours d'édition) et le côté du poteau.
 class PoleSpan {
   PoleSpan(this.linear, {required this.isStart, this.destination});
@@ -29,6 +34,13 @@ class PoleSpan {
   bool changed = false;
   bool abandoned = false;
 
+  /// Direction de la destination depuis le poteau (grades), quand sa position est connue ([RosetteEditor.directionOf]) :
+  /// elle dicte l'angle, ajustable de [directionMargin] ; null sinon (orientation libre).
+  double? direction;
+
+  /// Dernière orientation arrêtée à la butée de [directionMargin].
+  bool limited = false;
+
   String get id => linear.id;
   String? get destinationId => isStart ? linear.noe2 : linear.noe1;
   String get colAngle => isStart ? 'PRT_ANG1' : 'PRT_ANG2';
@@ -37,10 +49,17 @@ class PoleSpan {
   Map<String, dynamic> get span => linear.namespace('inf', create: true)!.putIfAbsent('portee', () => <String, dynamic>{})
       as Map<String, dynamic>;
 
-  /// Angle relevé au poteau (grades) ; à défaut, azimut du premier segment de la géométrie.
+  /// Angle relevé au poteau (grades) ; à défaut, direction de la destination, puis azimut du premier segment de la
+  /// géométrie.
   double? get surveyedAngle => (span[colAngle] as num?)?.toDouble();
 
-  double get angle => surveyedAngle ?? mapAngle ?? 0;
+  double get angle => surveyedAngle ?? direction ?? mapAngle ?? 0;
+
+  /// Écart signé (grades, -200 à 200) de l'angle relevé à la direction de la destination ; null sans l'un des deux.
+  double? get deviation {
+    final a = surveyedAngle, d = direction;
+    return a == null || d == null ? null : Geo.normalize(a - d + 200) - 200;
+  }
 
   double? get mapAngle {
     final pts = linear.line;
@@ -91,11 +110,14 @@ class RosetteEditor extends ChangeNotifier {
       p.destination = await repo.object(p.destinationId ?? '');
       read.add(p);
     }
+    newNodes.clear();
+    for (final p in read) {
+      p.direction = directionOf(p.destination);
+    }
     spans
       ..clear()
       ..addAll(read)
       ..sort((a, b) => a.angle.compareTo(b.angle));
-    newNodes.clear();
     selection = null;
     loaded = true;
     notifyListeners();
@@ -106,9 +128,30 @@ class RosetteEditor extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Oriente la portée ; une destination créée pendant la session suit l'aiguille.
+  /// Direction de [destination] depuis le poteau (grades), si sa position est connue : ni créée pendant la session
+  /// (elle suit l'aiguille), ni à relever (`GEOL_MOD_KEY` 8, position provisoire).
+  double? directionOf(GeoObject? destination) {
+    final from = pole.point, to = destination?.point;
+    if (from == null || to == null || newNodes.containsKey(destination!.id)) return null;
+    if (destination.props['GEOL_MOD_KEY'] == 8) return null;
+    return Geo.azimuthGrads(from, to);
+  }
+
+  /// Oriente la portée, au dixième de grade : à moins de [directionMargin] de la direction de sa destination si elle
+  /// est connue (au-delà, arrêtée à la butée : [PoleSpan.limited]) ; une destination créée pendant la session suit
+  /// l'aiguille.
   void orient(PoleSpan p, double grads) {
-    final a = (Geo.normalize(grads) * 10).roundToDouble() / 10;
+    var a = Geo.normalize(grads);
+    final d = p.direction;
+    p.limited = false;
+    if (d != null) {
+      final gap = Geo.normalize(a - d + 200) - 200;
+      if (gap.abs() > directionMargin) {
+        a = Geo.normalize(d + directionMargin * gap.sign);
+        p.limited = true;
+      }
+    }
+    a = (a * 10).roundToDouble() / 10;
     p.span[p.colAngle] = a >= 400 ? 0.0 : a;
     p.changed = true;
     final dest = newNodes[p.destinationId];
@@ -121,6 +164,17 @@ class RosetteEditor extends ChangeNotifier {
       p.span[p.colAngleOpposite] = Geo.normalize(a + 200);
     }
     notifyListeners();
+  }
+
+  /// Direction cartographique de la portée, sur laquelle la recaler ([realign]) : celle de sa destination si sa
+  /// position est connue, sinon l'azimut de la géométrie ; null vers une destination créée pendant la session (sa
+  /// géométrie suit l'aiguille) ou sans géométrie.
+  double? mapDirection(PoleSpan p) => newNodes.containsKey(p.destinationId) ? null : p.direction ?? p.mapAngle;
+
+  /// Recale la portée sur la carte : l'angle relevé prend la direction cartographique ([mapDirection]).
+  void realign(PoleSpan p) {
+    final d = mapDirection(p);
+    if (d != null) orient(p, d);
   }
 
   void setLength(PoleSpan p, double? meters) {
@@ -188,7 +242,9 @@ class RosetteEditor extends ChangeNotifier {
         },
       },
     });
-    final p = PoleSpan(lin, isStart: true, destination: dest)..changed = true;
+    final p = PoleSpan(lin, isStart: true, destination: dest)
+      ..changed = true
+      ..direction = directionOf(dest);
     spans.add(p);
     selection = p;
     notifyListeners();

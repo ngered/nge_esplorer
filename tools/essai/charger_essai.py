@@ -17,7 +17,18 @@ Règles de reprise FOA :
   dimensions de la chambre ; ALV_X / ALV_Y = centre de l'alvéole, origine en bas à gauche, y vers le haut → face de
   0,567 x 0,54 m, POS_X = ALV_X / 100 et POS_Y = (54 - ALV_Y) / 100 (m depuis la gauche et le haut de la face) ;
 - rotation FOA en degrés → grades (CHB_ROTATION : axe A-B de la chambre à 200 grades près) ; dates Unix → ISO 8601
-  UTC.
+  UTC ;
+- états (ALV_ETAT) : 0 ou vide V, 1 R, 2 X, 12 XR, 3 M, 32 XM ; puis règle de FOA, qui ajoute « occupé » à l'état
+  d'une alvéole portant des câbles (FOA ne l'écrit pas en base) ou des sous-tubes : V → X, R → XR, M → XM ;
+- sous-tube (ALV_PARENT_KEY) : conduite fille, qui prend le porteur de son parent (LIN_KEY ou NOE_KEY de la conduite
+  parente, déjà chargée : parents d'abord), quelle que soit sa propre destination FOA ; quand l'alvéole parente passe
+  sur le linéaire (destination connue du côté de son miroir seulement), ses sous-tubes y passent avec elle ; CD_NUM =
+  rang dans le parent, dans l'ordre des ALV_NUM (affiché N.k) ;
+- occupation (PRJ_CHB_ALVCAB) : une ligne INF_CD_CABLE par ligne FOA, rangée dans sa conduite (CDC_RANG, ordre des
+  LNK_ID), nature CAB_TYPE 0 → FO, 1 → CU ; une conduite vue des deux côtés ne reprend que les câbles d'une de ses deux
+  alvéoles (la plus ancienne qui en porte) : FOA recopie les câbles dans l'alvéole miroir (RepliqueCoCab), les deux
+  listes décrivent le même fourreau (Essonne : 23 paires identiques, une seule différente, signalée au chargement) ;
+  taux CD_OCCUP calculé par la formule des sections (projet.recalculer_occupation).
 
 Dates GraceTHD (texte sans fuseau, heure de Paris) → ISO 8601 UTC, comme celles de FOA Explorer.
 
@@ -33,6 +44,7 @@ Usage :
       [<dossier photos>]      (projet d'une seule base FOA, ses catalogues compris, ex. FTTH_OR_NANCY)
 """
 import hashlib, math, os, shutil, sqlite3, sys, tempfile
+from collections import Counter
 
 sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'schema'))
@@ -44,9 +56,13 @@ GRACE = r'c:\NoDrive\Documents\Etudes\Auvergne\projets\test_grace\data\Export\Gr
 
 FOA_HAUT = 54                       # hauteur de la fenêtre de dessin d'une face dans FOA Explorer (unités FOA = cm)
 FOA_PAR_M = 100                     # unités FOA par mètre
-ETAT_FOA = {None: 'V', 0: 'V', 1: 'R', 2: 'X', 12: 'XR', 3: 'M'}
+ETAT_FOA = {None: 'V', 0: 'V', 1: 'R', 2: 'X', 12: 'XR', 3: 'M', 32: 'XM'}
+NATURE_FOA = {0: 'FO', 1: 'CU'}     # PRJ_CHB_ALVCAB.CAB_TYPE → INF_CD_CABLE.CDC_NATURE
 IMPLANT_FOA = {'chaussée': 'CHS', 'chaussee': 'CHS', 'trottoir': 'TRT', 'façade': 'FAC', 'facade': 'FAC'}
-VUE_FOA = {'DESSUS': 'DESSUS', 'ENV': 'ENV', 'A': 'A', 'B': 'B', 'C': 'C', 'D': 'D', 'BOITIER': 'BOITIER'}
+VUE_FOA = {'DESSUS': 'DESSUS', 'ENV': 'ENV', 'A': 'A', 'B': 'B', 'C': 'C', 'D': 'D'}
+# Vue BOITIER de FOA Explorer : plus de vue attendue du support (noyau 0.3.0) ; visuel libre « Boîtier optique » de son
+# équipement s'il est le seul de la chambre, sinon de la chambre, comme la reprise (projet.reprendre_visuels).
+LIEN_BOITIER = 'BOITIER'
 
 
 def iso(ts):
@@ -253,21 +269,30 @@ class Chargeur:
                 cd = conduite[partenaire]
                 stats['miroirs'] += 1
                 miroir = 1
-                if cd in sans_destination and cible is not None:
-                    # destination connue de ce côté seulement : la conduite passe sur le linéaire
-                    con.execute('UPDATE infra.INF_CONDUITE SET LIN_KEY = ?, NOE_KEY = NULL WHERE CD_ID = ?',
-                                (parcours(), cd))
-                    sans_destination.discard(cd)
+                if (cd in sans_destination and cible is not None
+                        and un('SELECT CD_PARENT_KEY FROM infra.INF_CONDUITE WHERE CD_ID = ?', cd) is None):
+                    # destination connue de ce côté seulement : la conduite passe sur le linéaire, ses sous-tubes avec
+                    # elle (un sous-tube garde le porteur de son alvéole)
+                    con.execute('UPDATE infra.INF_CONDUITE SET LIN_KEY = ?, NOE_KEY = NULL WHERE CD_ID = ? '
+                                'OR CD_PARENT_KEY = ?', (parcours(), cd, cd))
+                    sans_destination -= {cd} | {r[0] for r in con.execute(
+                        'SELECT CD_ID FROM infra.INF_CONDUITE WHERE CD_PARENT_KEY = ?', (cd,))}
             else:
                 miroir = 0
+                parent_cd = conduite.get(parent)
+                if parent_cd is not None:
+                    # sous-tube : porteur de son alvéole (même linéaire, ou même chambre sans destination)
+                    lin_k, noe_k = con.execute('SELECT LIN_KEY, NOE_KEY FROM infra.INF_CONDUITE WHERE CD_ID = ?',
+                                               (parent_cd,)).fetchone()
+                else:
+                    lin_k, noe_k = (parcours(), None) if cible else (None, noe)
                 con.execute('INSERT INTO infra.INF_CONDUITE (CD_CODE_EXT, LIN_KEY, NOE_KEY, CD_PARENT_KEY, CD_NUM, '
                             "CD_DIAM, ETAT_KEY, CD_COMMENT, DATE_CREA, SRC_MODIF) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
                             "COALESCE(?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), 'import')",
-                            (f'{prefixe}-CD{a_id}', parcours() if cible else None, None if cible else noe,
-                             conduite.get(parent), num, diam, self.etat[ETAT_FOA.get(etat, 'V')], comment or None,
-                             iso(crea)))
+                            (f'{prefixe}-CD{a_id}', lin_k, noe_k, parent_cd, num, diam,
+                             self.etat[ETAT_FOA.get(etat, 'V')], comment or None, iso(crea)))
                 cd = self.dernier()
-                if cible is None:
+                if noe_k is not None:
                     sans_destination.add(cd)
                 stats['conduites'] += 1
             conduite[a_id] = cd
@@ -278,13 +303,29 @@ class Chargeur:
                          round((FOA_HAUT - y) / FOA_PAR_M, projet.DECIMALES_MASQUE), mlog_k, miroir))
             stats['positions'] += 1
 
-        # occupation par câbles
-        occ = 0
+        # occupation par câbles : rang dans la conduite, nature ; câbles d'une seule des deux alvéoles d'un miroir
+        occ, recopies, differentes, natures = 0, 0, 0, Counter()
         if un("SELECT COUNT(*) FROM src.sqlite_master WHERE name = 'PRJ_CHB_ALVCAB'"):
-            for alv, nb, cdiam in con.execute('SELECT ALV_KEY, CAB_NB, CAB_DIAM FROM src.PRJ_CHB_ALVCAB').fetchall():
+            cols = {r[1] for r in con.execute('PRAGMA src.table_info(PRJ_CHB_ALVCAB)')}
+            nature = 'CAB_TYPE' if 'CAB_TYPE' in cols else 'NULL'
+            par_alv = {}
+            for alv, nb, cdiam, ctype in con.execute(
+                    f'SELECT ALV_KEY, CAB_NB, CAB_DIAM, {nature} FROM src.PRJ_CHB_ALVCAB ORDER BY ALV_KEY, LNK_ID'
+                    ).fetchall():
                 if alv in conduite:
-                    con.execute("INSERT INTO infra.INF_CD_CABLE (CD_KEY, CDC_NB, CDC_DIAM, SRC_MODIF) "
-                                "VALUES (?, ?, ?, 'import')", (conduite[alv], nb or 1, cdiam))
+                    par_alv.setdefault(alv, []).append((nb or 1, cdiam, NATURE_FOA.get(ctype)))
+            retenue = {}                # conduite → alvéole dont les câbles sont repris
+            for alv in sorted(par_alv):
+                cd = conduite[alv]
+                if cd in retenue:       # alvéole miroir : câbles recopiés par FOA, ou relevé divergent
+                    recopies += len(par_alv[alv])
+                    differentes += sorted(par_alv[alv], key=repr) != sorted(par_alv[retenue[cd]], key=repr)
+                    continue
+                retenue[cd] = alv
+                for rang, (nb, cdiam, nat) in enumerate(par_alv[alv], 1):
+                    con.execute('INSERT INTO infra.INF_CD_CABLE (CD_KEY, CDC_RANG, CDC_NB, CDC_DIAM, CDC_NATURE, '
+                                "SRC_MODIF) VALUES (?, ?, ?, ?, ?, 'import')", (cd, rang, nb, cdiam, nat))
+                    natures[nat or 'nature inconnue'] += 1
                     occ += 1
 
         # photos
@@ -293,6 +334,10 @@ class Chargeur:
             ent = self.ent['PRJ_NOE']
             type_chb = self.types['CHB']
             principales = set()
+            equipements = {}
+            for equ, noe in con.execute('SELECT EQU_ID, NOE_KEY FROM infra.INF_EQUIPEMENT WHERE DATE_ABD IS NULL '
+                                        'ORDER BY EQU_ID'):
+                equipements.setdefault(noe, []).append(equ)
             for f_id, chemin, k, lien, ordre, crea in con.execute(
                     'SELECT FILE_ID, FILE_PATH, ENT_KEY, ENT_LINK_NAME, ENT_LINK_ORDER, DATE_CREA '
                     'FROM src.PRJ_ATTACH_FILE ORDER BY ENT_KEY, ENT_LINK_NAME, ENT_LINK_ORDER, FILE_ID').fetchall():
@@ -304,16 +349,25 @@ class Chargeur:
                     continue
                 vue_code = 'MES' if (lien or '').startswith('MES') else VUE_FOA.get(lien)
                 vue = self.vues.get((type_chb, vue_code))
+                ent_f, obj, vis_code, vis_lib = ent, chb_noe[k], None, None
+                if lien == LIEN_BOITIER:
+                    table, obj = projet.porteur_boitier(con, 'PRJ_NOE', chb_noe[k], equipements)
+                    ent_f = self.ent[table]
+                    code_ext = (un('SELECT NOE_CODE_EXT FROM PRJ_NOE WHERE NOE_ID = ?', obj) if table == 'PRJ_NOE'
+                                else un('SELECT EQU_CODE_EXT FROM infra.INF_EQUIPEMENT WHERE EQU_ID = ?', obj))
+                    vis_code = projet.code_visuel_boitier(self.projet, table, code_ext)
+                    vis_lib = projet.VUE_BOITIER_LIB
                 rel = os.path.join('photos', prefixe, f'C{k}', nom)
                 os.makedirs(os.path.join(self.dossier, os.path.dirname(rel)), exist_ok=True)
                 shutil.copy2(source, os.path.join(self.dossier, rel))
                 donnees = open(source, 'rb').read()
                 prise = nom.split('_')[0]
-                cle = (k, vue)
-                con.execute('INSERT INTO PRJ_FICHIER (FIC_CODE_EXT, ENT_KEY, OBJ_KEY, VUE_KEY, FIC_RANG, FIC_PRINCIPALE, '
-                            'FIC_NOM, FIC_CHEMIN, FIC_TYPE, FIC_TAILLE, FIC_SHA256, DATE_PRISE, SRC_MODIF) '
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'image/jpeg', ?, ?, ?, 'import')",
-                            (f'{prefixe}-F{f_id}', ent, chb_noe[k], vue, ordre or 1, int(cle not in principales), nom,
+                cle = (k, vue, vis_code)
+                con.execute('INSERT INTO PRJ_FICHIER (FIC_CODE_EXT, ENT_KEY, OBJ_KEY, VUE_KEY, VIS_CODE, VIS_LIB, '
+                            'FIC_RANG, FIC_PRINCIPALE, FIC_NOM, FIC_CHEMIN, FIC_TYPE, FIC_TAILLE, FIC_SHA256, '
+                            "DATE_PRISE, SRC_MODIF) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'image/jpeg', ?, ?, ?, 'import')",
+                            (f'{prefixe}-F{f_id}', ent_f, obj, vue, vis_code, vis_lib, ordre or 1,
+                             int(cle not in principales), nom,
                              rel.replace('\\', '/'), len(donnees), hashlib.sha256(donnees).hexdigest(),
                              iso(int(prise)) if prise.isdigit() else iso(crea)))
                 principales.add(cle)
@@ -328,8 +382,12 @@ class Chargeur:
             f'({" x ".join(f"{v:g}" for v in projet.FENETRE_FOA)} m), {stats["conduites"]} conduites '
             f'({stats["miroirs"]} vues des deux côtés), {stats["positions"]} positions ({hors_face} hors de leur '
             f'face), {stats["copies"]} copies « MIROIR » non reprises, {len(sans_destination)} conduites sans destination '
-            f'connue, {len(lin)} linéaires, {occ} occupations, {ph} photos ({manq} introuvables), '
-            f'{self.nb_commentaires(zone)} commentaires')
+            f'connue, {len(lin)} linéaires, {occ} câbles de conduite'
+            + (f' ({", ".join(f"{k} {v}" for k, v in sorted(natures.items()))})' if natures else '')
+            + (f', {recopies} câbles d\'alvéole miroir non repris (recopie FOA ; listes différentes des deux côtés : '
+               f'{differentes} conduite{"s" * (differentes > 1)}, câbles de la plus ancienne alvéole gardés)'
+               if recopies else '')
+            + f', {ph} photos ({manq} introuvables), {self.nb_commentaires(zone)} commentaires')
         return zone
 
     # GraceTHD ------------------------------------------------------------------------------------
@@ -405,6 +463,12 @@ class Chargeur:
         return zone
 
     def finir(self):
+        # sous-tubes numérotés dans leur parent ; état et taux d'occupation des conduites (règle de FOA, sections)
+        n = projet.numeroter_sous_tubes(self.con)
+        passages, _ = projet.recalculer_occupation(self.con)
+        etats = ', '.join(f'{a} → {b} {k}' for (a, b), k in sorted(passages.items())) or 'aucun'
+        self.rapport.append(f'Occupation : {projet.resume_occupation(self.con)} ; états passés à occupé : {etats} ; '
+                            f'{n} sous-tubes numérotés dans leur parent')
         # emprise des zones et intervention d'import
         self.con.execute('UPDATE PRJ_ZONE SET GEOMETRY = (SELECT CastToMultiPolygon(Buffer(ConvexHull(Collect(n.GEOMETRY)), 50)) '
                          'FROM PRJ_NOE n WHERE n.ZONE_KEY = PRJ_ZONE.ZONE_ID)')
@@ -428,6 +492,20 @@ def controles(con):
         "AND (SELECT COUNT(*) FROM chambre.CHB_POSITION p WHERE p.CD_KEY = cd.CD_ID) = 1")[0][0])
     print('  conduites sans destination connue, rattachées à leur chambre :', q(
         'SELECT COUNT(*) FROM infra.INF_CONDUITE WHERE NOE_KEY IS NOT NULL')[0][0])
+    print('  états des conduites (code, nombre) :', q(
+        'SELECT e.ETAT_CODE, COUNT(*) FROM infra.INF_CONDUITE c LEFT JOIN infra.DEF_CD_ETAT e ON e.ETAT_ID = c.ETAT_KEY '
+        'GROUP BY 1 ORDER BY 1'))
+    print('  occupation :', projet.resume_occupation(con), '; câbles par nature :', q(
+        'SELECT CDC_NATURE, SUM(CDC_NB) FROM infra.INF_CD_CABLE GROUP BY 1 ORDER BY 1'))
+    print('  sous-tubes (porteur différent de celui du parent, parent lui-même sous-tube) :', q(
+        'SELECT COUNT(*), SUM(s.LIN_KEY IS NOT p.LIN_KEY OR s.NOE_KEY IS NOT p.NOE_KEY), '
+        'SUM(p.CD_PARENT_KEY IS NOT NULL) FROM infra.INF_CONDUITE s JOIN infra.INF_CONDUITE p '
+        'ON p.CD_ID = s.CD_PARENT_KEY')[0])
+    print('  occupées sans câble ni sous-tube (relevé sans détail) / vides avec câbles :', q(
+        "SELECT SUM(e.ETAT_CODE LIKE 'X%' AND NOT EXISTS (SELECT 1 FROM infra.INF_CD_CABLE k WHERE k.CD_KEY = c.CD_ID) "
+        'AND NOT EXISTS (SELECT 1 FROM infra.INF_CONDUITE s WHERE s.CD_PARENT_KEY = c.CD_ID)), '
+        "SUM(e.ETAT_CODE IN ('V', 'R', 'M') AND EXISTS (SELECT 1 FROM infra.INF_CD_CABLE k WHERE k.CD_KEY = c.CD_ID)) "
+        'FROM infra.INF_CONDUITE c JOIN infra.DEF_CD_ETAT e ON e.ETAT_ID = c.ETAT_KEY')[0])
     print('  niveaux de renseignement des chambres :', q('SELECT CHB_NIVEAU, COUNT(*) FROM chambre.CHB_CHAMBRE GROUP BY 1'))
     print('  faces (largeur, hauteur en m, nombre) :', q(
         'SELECT FAC_LARG, FAC_HAUT, COUNT(*) FROM chambre.CHB_FACE GROUP BY 1, 2 ORDER BY 3 DESC'))

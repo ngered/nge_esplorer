@@ -5,12 +5,25 @@
 
 -- Référentiels --------------------------------------------------------------------------------
 
+-- État d'une alvéole ou d'un tube (FOA : 1 R, 2 X, 12 XR, 3 M, 32 XM). Règle de FOA, appliquée par le terminal et au
+-- BE (tools/schema/projet.py, recalculer_occupation) : une conduite qui porte un câble ou un sous-tube est occupée,
+-- V → X, R → XR, M → XM. Texte de la table inchangé depuis le module infra 0.1.0 (la reprise ne la reconstruit pas).
 CREATE TABLE DEF_CD_ETAT (              -- état d'une alvéole ou d'un tube (FOA : 1 R, 2 X, 12 XR, 3 M)
     ETAT_ID         INTEGER PRIMARY KEY,
     ETAT_CODE       TEXT NOT NULL UNIQUE,
     ETAT_LIB        TEXT NOT NULL,
     ETAT_COULEUR    TEXT NOT NULL,
     ETAT_FOA        INTEGER         -- valeur ALV_ETAT de FOA Explorer
+);
+
+-- Diamètres normalisés des alvéoles et des sous-tubes (palette de FOA Explorer) : diamètre nominal (valeur de
+-- CD_DIAM) → diamètre intérieur, base du taux d'occupation (INF_CONDUITE.CD_OCCUP).
+CREATE TABLE DEF_CD_DIAM (
+    DIAM_ID         INTEGER PRIMARY KEY,
+    DIAM_NOMINAL    REAL NOT NULL UNIQUE,   -- diamètre nominal (mm)
+    DIAM_INT        REAL NOT NULL,          -- diamètre intérieur (mm)
+    DIAM_SOUS_TUBE  INTEGER NOT NULL DEFAULT 0 CHECK (DIAM_SOUS_TUBE IN (0, 1)),   -- 1 : proposé pour le sous-tubage
+    CHECK (DIAM_INT > 0 AND DIAM_INT <= DIAM_NOMINAL)
 );
 
 CREATE TABLE DEF_SUPPORT_IMPLANT (      -- implantation d'un support (chambre, poteau)
@@ -87,6 +100,17 @@ CREATE TABLE MAT_EQUIP (                -- FOA MAT_EQUIP (boîtes, manchons…)
 
 -- Alvéole ou tube : portée par le linéaire qui relie deux nœuds ; un sous-tube a pour parent son alvéole.
 -- Destination inconnue (alvéole sans miroir, autorisée) : pas de linéaire, la conduite est rattachée à sa chambre.
+-- Une seule conduite pour les deux bouts du fourreau : une position (chambre CHB_POSITION) dans chaque chambre.
+-- Sous-tube (règles assurées par l'application, contrôlées dans le paquet) : CD_PARENT_KEY vers une conduite du même
+-- porteur (même LIN_KEY, ou même NOE_KEY sans destination), dont il hérite la destination ; un seul niveau (le parent
+-- n'est pas lui-même un sous-tube) ; CD_NUM = rang du sous-tube dans son parent (affiché N.k) ; position propre, dans
+-- la même face que son parent.
+-- Taux d'occupation CD_OCCUP (%), formule des sections : Σ CDC_NB × (CDC_DIAM / DIAM_INT)² × 100 sur les câbles non
+-- abandonnés, DIAM_INT = diamètre intérieur du diamètre nominal CD_DIAM (DEF_CD_DIAM), arrondi au dixième ; sans câble,
+-- 100 pour une conduite mauvaise (M, XM), 0 sinon ; NULL quand il n'est pas calculable (CD_DIAM absent de DEF_CD_DIAM,
+-- câble sans diamètre). Les sous-tubes ne comptent pas dans le taux de leur parent (comme FOA). Écrit par le terminal à
+-- chaque modification des câbles, recalculable au BE (tools/schema/projet.py, recalculer_occupation).
+-- Texte de la table inchangé depuis le module infra 0.1.0 (la reprise ne la reconstruit pas).
 CREATE TABLE INF_CONDUITE (
     CD_ID           INTEGER PRIMARY KEY AUTOINCREMENT,
     CD_CODE_EXT     TEXT NOT NULL UNIQUE,
@@ -106,19 +130,24 @@ CREATE TABLE INF_CONDUITE (
     CHECK ((LIN_KEY IS NULL) <> (NOE_KEY IS NULL))
 );
 
--- Occupation d'une conduite : câbles constatés (non identifiés individuellement).
+-- Occupation d'une conduite : câbles constatés (non identifiés individuellement : c'est le rôle du module optique,
+-- OPT_PASSAGE.CDC_KEY) ; une ligne vaut CDC_NB câbles de même diamètre et de même nature. Ligne identifiée dans le
+-- paquet par CDC_RANG dans sa conduite (comme PCB_RANG pour un câble porté).
 CREATE TABLE INF_CD_CABLE (
     CDC_ID          INTEGER PRIMARY KEY AUTOINCREMENT,
     CD_KEY          INTEGER NOT NULL REFERENCES INF_CONDUITE (CD_ID),
-    MAT_KEY         INTEGER REFERENCES MAT_CABLE (MAT_ID),
-    CDC_NB          INTEGER NOT NULL DEFAULT 1,
+    CDC_RANG        INTEGER NOT NULL,   -- rang dans la conduite, clé naturelle de la ligne
+    MAT_KEY         INTEGER REFERENCES MAT_CABLE (MAT_ID),     -- facultatif
+    CDC_NB          INTEGER NOT NULL DEFAULT 1 CHECK (CDC_NB >= 1),
     CDC_DIAM        REAL,               -- diamètre constaté (mm)
+    CDC_NATURE      TEXT CHECK (CDC_NATURE IN ('FO', 'CU')),   -- fibre optique / cuivre (FOA CAB_TYPE 0 / 1)
     CDC_COMMENT     TEXT,
     DATE_CREA       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     DATE_MODIF      TEXT,
     SRC_MODIF       TEXT,
     DATE_ABD        TEXT,
-    SRC_ABD         TEXT
+    SRC_ABD         TEXT,
+    UNIQUE (CD_KEY, CDC_RANG)
 );
 
 -- Parcours aérien -----------------------------------------------------------------------------

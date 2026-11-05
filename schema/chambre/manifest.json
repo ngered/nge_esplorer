@@ -1,6 +1,6 @@
 {
   "code": "chambre",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "libelle": "Chambres : faces, masques, positions des conduites (en m)",
   "fichier": "chambre.sqlite",
   "spatial": false,
@@ -29,14 +29,13 @@
     {"table": "CHB_CHAMBRE", "lib": "Chambre"}
   ],
   "vues": [
-    {"type": "CHB", "code": "BOITIER", "lib": "Boîtier optique", "ordre": 1, "obligatoire": "NON"},
-    {"type": "CHB", "code": "ENV", "lib": "Environnement", "ordre": 2, "obligatoire": "OUI"},
-    {"type": "CHB", "code": "DESSUS", "lib": "Dessus", "ordre": 3, "obligatoire": "OUI"},
-    {"type": "CHB", "code": "A", "lib": "Vue A", "ordre": 4, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
-    {"type": "CHB", "code": "B", "lib": "Vue B", "ordre": 5, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
-    {"type": "CHB", "code": "C", "lib": "Vue C", "ordre": 6, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
-    {"type": "CHB", "code": "D", "lib": "Vue D", "ordre": 7, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
-    {"type": "CHB", "code": "MES", "lib": "Mesures", "ordre": 8, "obligatoire": "OUI"}
+    {"type": "CHB", "code": "ENV", "lib": "Environnement", "ordre": 1, "obligatoire": "OUI"},
+    {"type": "CHB", "code": "DESSUS", "lib": "Dessus", "ordre": 2, "obligatoire": "OUI"},
+    {"type": "CHB", "code": "A", "lib": "Vue A", "ordre": 3, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "B", "lib": "Vue B", "ordre": 4, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "C", "lib": "Vue C", "ordre": 5, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "D", "lib": "Vue D", "ordre": 6, "obligatoire": "SI_MASQUE", "action": "MASQUE"},
+    {"type": "CHB", "code": "MES", "lib": "Mesures", "ordre": 7, "obligatoire": "OUI"}
   ],
   "completude": "CHB_NIVEAU, principe de FOA Explorer. Complète (2) : au moins une face relevée (positions), vues obligatoires photographiées (environnement, dessus, mesures) et une photo par face ayant des positions (FOA Explorer : 1 masque renseigné = 1 photo). Partielle (1) : une photo ou une face relevée. Non relevée (0) sinon.",
   "grace": {

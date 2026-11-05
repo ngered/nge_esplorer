@@ -5,9 +5,14 @@ import '../data/reference_data.dart';
 import '../lng.dart';
 import '../map/symbols.dart';
 
-/// Pictogramme du support [o] comme sur la carte : famille de son type, encre bleue pour l'énergie.
-Widget supportSymbolOf(GeoObject o, ReferenceData referenceData, {double size = 20}) =>
-    SupportSymbol(family: referenceData.familyCode(o.typeKey), energy: o.typeKey == 15, size: size);
+/// Pictogramme du support [o] comme sur la carte : famille de son type, encre bleue pour l'énergie, marque de
+/// l'équipement optique porté.
+Widget supportSymbolOf(GeoObject o, ReferenceData referenceData, {double size = 20}) => SupportSymbol(
+      family: SupportSymbol.familyOf(o.typeKey, referenceData),
+      energy: o.typeKey == 15,
+      mark: OpticalMark.of(o, referenceData),
+      size: size,
+    );
 
 /// Lien vers le support d'en face (« Vers … » de l'alvéole choisie, notes rep10) : bouton bien visible sur toute la
 /// largeur, avec le pictogramme et le type du support, son étiquette en gras ; une touche y mène.

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../data/data_repository.dart';
@@ -10,6 +11,17 @@ import '../data/visuals.dart';
 import '../lng.dart';
 import '../modules/completion.dart';
 import 'page_exit.dart' if (dart.library.js_interop) 'page_exit_web.dart';
+
+/// Paquet à ouvrir au démarrage (web, développement), demandé par l'adresse de la page, `?paquet=8091` (port du
+/// serveur local, paquet à `/paquet.zip`) ou l'adresse complète du paquet, sinon à la compilation,
+/// `--dart-define=PAQUET=8091` (lanceurs VS Code), servi par l'option `--paquet` de `tools/essai/serveur_photos.py`.
+/// Null sinon, et toujours hors du web : un terminal ouvre ses paquets lui-même.
+Uri? devBundleUrl(Uri pageUrl, {bool web = kIsWeb, String compile = const String.fromEnvironment('PAQUET')}) {
+  if (!web) return null;
+  final v = (pageUrl.queryParameters['paquet'] ?? compile).trim();
+  if (v.isEmpty) return null;
+  return Uri.parse(int.tryParse(v) != null ? 'http://localhost:$v/paquet.zip' : v);
+}
 
 /// État de la session terrain : paquet chargé, compte, intervention en cours.
 class AppProvider extends ChangeNotifier {
@@ -121,6 +133,26 @@ class AppProvider extends ChangeNotifier {
   /// Emprise de la zone [minLon, minLat, maxLon, maxLat].
   List<double>? get bounds =>
       ((header?['zone'] as Map?)?['emprise'] as List?)?.map((v) => (v as num).toDouble()).toList();
+
+  /// Ouvre le paquet servi à [url] (web, développement : [devBundleUrl]) ; une erreur s'affiche sur l'écran de
+  /// démarrage, d'où l'on peut ouvrir un autre paquet.
+  Future<void> loadBundleFrom(Uri url, {http.Client? client}) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    final c = client ?? http.Client();
+    try {
+      final r = await c.get(url);
+      if (r.statusCode == 200) return await loadBundle(r.bodyBytes);
+      error = tr('Paquet introuvable à {0} (HTTP {1})', [url, r.statusCode]);
+    } catch (e) {
+      error = tr('Paquet introuvable à {0} : {1}', [url, e]);
+    } finally {
+      if (client == null) c.close();
+    }
+    loading = false;
+    notifyListeners();
+  }
 
   Future<void> loadBundle(Uint8List zip) async {
     loading = true;

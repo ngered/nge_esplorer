@@ -24,6 +24,9 @@ class ScreenStack extends NavigatorObserver with ChangeNotifier {
 
   /// Remplacements en cours ([hold]).
   int _holds = 0;
+
+  /// Sortie en cours d'un écran de saisie ([leaving]).
+  Future<void>? _leaving;
   SupportScreen? _shown;
   final List<SupportScreen> _visits = [];
 
@@ -78,6 +81,15 @@ class ScreenStack extends NavigatorObserver with ChangeNotifier {
 
   /// Se termine au prochain écran ou dialogue fermé.
   Future<void> _nextRemoval() => (_removal ??= Completer<void>()).future;
+
+  /// Un écran de saisie se quitte ([exit] : la question, l'enregistrement éventuel, la fermeture) : [popTo] l'attend
+  /// avant de juger si l'écran est resté ouvert.
+  void leaving(Future<void> exit) {
+    _leaving = exit;
+    exit.whenComplete(() {
+      if (identical(_leaving, exit)) _leaving = null;
+    }).ignore();
+  }
 
   /// Regroupe les changements de la pile jusqu'à [release] (fermeture du support affiché puis ouverture d'un autre,
   /// onglet remplacé, retour à la carte) : les écoutants ne voient pas les états intermédiaires (la carte un instant
@@ -151,8 +163,8 @@ SupportScreen? supportScreenOf(Route<dynamic> r) {
 }
 
 /// Revient à la carte (premier écran) en fermant les écrans un par un, comme autant de retours arrière : un écran
-/// dont la saisie n'est pas enregistrée pose sa question habituelle, et le retour s'arrête si l'utilisateur y reste
-/// (résultat faux).
+/// dont la saisie n'est pas enregistrée pose sa question habituelle (enregistrer ou abandonner), et le retour
+/// s'arrête si l'utilisateur y reste (résultat faux).
 Future<bool> backToMap(BuildContext context) async {
   final nav = Navigator.of(context);
   // saisie enregistrée juste avant (menu ⋮) : l'écran, reconstruit, ne demande plus confirmation
@@ -176,6 +188,9 @@ Future<bool> popTo(NavigatorState nav, int keep) async {
       await screenStack._nextRemoval();
       await Future<void>.delayed(Duration.zero);
     }
+    // saisie enregistrée avant de quitter : attendre l'enregistrement et la fermeture de l'écran
+    final leaving = screenStack._leaving;
+    if (leaving != null) await leaving;
     if (screenStack._stack.contains(top)) return false;
   }
   return true;

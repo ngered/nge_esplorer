@@ -16,9 +16,15 @@ void main() {
   // Web (provisoire) : dépôt en mémoire, données de test uniquement. Android : SQLite chiffrée (à venir).
   runApp(
     ChangeNotifierProvider(
-      create: (_) => AppProvider(MemoryRepository(), settings: Settings())
-        ..urlPhotoServer = photoServerFromUrl(Uri.base)
-        ..loadSettings(),
+      create: (_) {
+        final app = AppProvider(MemoryRepository(), settings: Settings())
+          ..urlPhotoServer = photoServerFromUrl(Uri.base)
+          ..loadSettings();
+        // lanceurs de développement : paquet ouvert d'office (?paquet=, --dart-define=PAQUET)
+        final bundle = devBundleUrl(Uri.base);
+        if (bundle != null) app.loadBundleFrom(bundle);
+        return app;
+      },
       child: const NgeEsPlorerApp(),
     ),
   );

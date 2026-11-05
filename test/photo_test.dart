@@ -2,9 +2,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:nge_esplorer/data/memory_repository.dart';
 import 'package:nge_esplorer/providers/app_provider.dart';
 import 'package:nge_esplorer/widgets/photo.dart';
+
+import 'bundle_test.dart' show testBundle;
 
 String? _url(ImageProvider? i) => switch (i) {
       ResizeImage(:final NetworkImage imageProvider) => imageProvider.url,
@@ -26,6 +30,25 @@ void main() {
         'http://localhost:9000/');
   });
 
+  test('paquet ouvert au démarrage, demandé par l\'adresse ou à la compilation (web seulement)', () async {
+    Uri? u(String q, {String compile = ''}) =>
+        devBundleUrl(Uri.parse('http://localhost:8080/?$q'), web: true, compile: compile);
+    expect(u('paquet=8091'), Uri.parse('http://localhost:8091/paquet.zip'));
+    expect(u('terminal=smartphone&paquet=http://poste:9000/z.zip'), Uri.parse('http://poste:9000/z.zip'));
+    expect(u('terminal=smartphone'), isNull);
+    expect(u('terminal=smartphone', compile: '8091'), Uri.parse('http://localhost:8091/paquet.zip'));
+    expect(devBundleUrl(Uri.parse('http://x/?paquet=8091'), web: false), isNull);
+
+    // paquet absent du serveur : message sur l'écran de démarrage, rien d'ouvert
+    final app = AppProvider(MemoryRepository());
+    await app.loadBundleFrom(Uri.parse('http://localhost:8091/paquet.zip'),
+        client: MockClient((_) async => http.Response('', 404)));
+    expect([app.isOpen, app.loading, app.error], [false, false, 'Paquet introuvable à http://localhost:8091/paquet.zip (HTTP 404)']);
+    await app.loadBundleFrom(Uri.parse('http://localhost:8091/paquet.zip'),
+        client: MockClient((_) async => http.Response.bytes(testBundle(), 200)));
+    expect([app.isOpen, app.loading, app.error], [true, false, null]);
+  });
+
   test('photo embarquée, sinon lue au serveur par son chemin dans le projet', () async {
     final app = AppProvider(MemoryRepository());
     const path = 'photos/NCY/C17480/1453709173_CHA_7348_DESSUS_1.jpg';
@@ -35,6 +58,9 @@ void main() {
     app.urlPhotoServer = 'http://poste:9000/';
     expect(_url(photoImage(app, {'FIC_CHEMIN': path})), 'http://poste:9000/$path');
     await app.repo.addFile('fichiers/F1.jpg', Uint8List.fromList([1, 2, 3]));
-    expect(photoImage(app, {'fichier': 'fichiers/F1.jpg', 'FIC_CHEMIN': path}), isA<MemoryImage>());
+    // photo embarquée : prioritaire sur le serveur, décodée elle aussi à la largeur d'affichage
+    final embedded = photoImage(app, {'fichier': 'fichiers/F1.jpg', 'FIC_CHEMIN': path});
+    expect(embedded, isA<ResizeImage>().having((i) => i.imageProvider, 'source', isA<MemoryImage>()));
+    expect((embedded as ResizeImage).width, photoWidth);
   });
 }

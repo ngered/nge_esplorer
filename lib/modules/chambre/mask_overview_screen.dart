@@ -18,15 +18,16 @@ import 'mask_screen.dart';
 
 /// Aperçu des masques de la chambre (bouton Masques de la barre basse) : une ligne par face, toucher une face ouvre
 /// sa grille ; dessous, les conduites (parcours vers les autres supports, conduites sans destination connue).
-/// Toucher un parcours le sélectionne et montre son carton « Naviguer vers » : le suivre ouvre le support d'en face
-/// à la place de celui-ci, sur le même écran, ce parcours sélectionné ([linear]) avec le carton du retour.
+/// Chaque parcours porte une pastille jaune de direction (notes rep11, plus de carton intermédiaire) : la toucher, ou
+/// toucher le parcours, ouvre d'emblée le support d'en face à la place de celui-ci, sur le même écran ; le parcours
+/// d'arrivée y est mis en évidence ([linear]).
 /// L'objet et ses linéaires sont relus dans le dépôt à l'ouverture et au retour de la grille.
 class MaskOverviewScreen extends StatefulWidget {
   const MaskOverviewScreen({super.key, required this.chamber, this.linear});
 
   final GeoObject chamber;
 
-  /// Parcours sélectionné à l'ouverture (arrivée d'un parcours suivi, chambre rouverte par le menu ⋮).
+  /// Parcours mis en évidence à l'ouverture (arrivée d'un parcours suivi, chambre rouverte par le menu ⋮).
   final String? linear;
 
   @override
@@ -37,8 +38,8 @@ class _MaskOverviewScreenState extends State<MaskOverviewScreen> {
   late GeoObject _o = widget.chamber;
   Linears _linears = (linears: const [], ends: const {});
 
-  /// Parcours sélectionné (identifiant du linéaire) : son carton s'affiche au-dessus de la barre basse.
-  late String? _selected = widget.linear;
+  /// Parcours mis en évidence (identifiant du linéaire) : celui par lequel on est arrivé.
+  late final String? _selected = widget.linear;
   Route<dynamic>? _route;
 
   @override
@@ -51,14 +52,9 @@ class _MaskOverviewScreenState extends State<MaskOverviewScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _route = ModalRoute.of(context);
-    _select(_selected);
-  }
-
-  /// Sélectionne le parcours [id] (null : aucun), noté pour rouvrir l'aperçu dans le même état (menu ⋮).
-  void _select(String? id) {
-    if (id != _selected) setState(() => _selected = id);
+    // noté pour rouvrir l'aperçu dans le même état (menu ⋮)
     final r = _route;
-    if (r != null) screenStack.note(r, tab: 'masques', selection: id);
+    if (r != null) screenStack.note(r, tab: 'masques', selection: _selected);
   }
 
   Future<void> _reload() async {
@@ -81,30 +77,32 @@ class _MaskOverviewScreenState extends State<MaskOverviewScreen> {
     await _reload();
   }
 
-  /// Suit le parcours sélectionné jusqu'au support d'en face, qui remplace la chambre, sur le même écran.
+  /// Masques de la chambre où sont placées les conduites du parcours [linear] (notes rep13) : « masque A »,
+  /// « masques A, B » ; null si aucune n'y est placée.
+  String? _masksOf(GeoObject linear) {
+    final ducts = {for (final c in MaskEditor.ductsOf(linear)) c['CD_CODE_EXT']};
+    final faces = [
+      for (final f in (_o.namespace('chb')?['faces'] as List?) ?? const [])
+        if (((f as Map)['positions'] as List?)?.any((p) => (p as Map)['DATE_ABD'] == null && ducts.contains(p['CD_KEY'])) ??
+            false)
+          '${f['FAC_CODE']}',
+    ]..sort();
+    return faces.isEmpty ? null : trn(faces.length, 'masque {1}', 'masques {1}', [faces.join(', ')]);
+  }
+
+  /// Suit le parcours jusqu'au support d'en face, qui remplace la chambre, sur le même écran.
   Future<void> _navigate(GeoObject linear, GeoObject other) => follow(context, linear, other, route: true);
 
   @override
   Widget build(BuildContext context) {
     final noDestination = MaskEditor.ductsOf(_o).length;
     final ref = context.watch<AppProvider>().referenceData;
-    final selected = _linears.linears.where((l) => l.id == _selected).firstOrNull;
     return Scaffold(
       appBar: AppBar(
         title: ScreenTitle(_o.lib ?? tr('Sans étiquette'), tr('masques')),
         actions: [SupportMenu(object: _o)],
       ),
-      bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (selected != null)
-          RouteCard(
-            linear: selected,
-            other: _linears.ends[selected.noe1 == _o.id ? selected.noe2 : selected.noe1],
-            referenceData: ref,
-            onNavigate: _navigate,
-            onClose: () => _select(null),
-          ),
-        SupportBar(object: _o, inModule: true, next: _reload),
-      ]),
+      bottomNavigationBar: SupportBar(object: _o, inModule: true, next: _reload),
       body: LayoutBuilder(builder: (context, c) {
         final conduits = LinearList(
           node: _o,
@@ -112,7 +110,8 @@ class _MaskOverviewScreenState extends State<MaskOverviewScreen> {
           referenceData: ref,
           title: tr('Conduites'),
           selected: _selected,
-          onSelect: (linear) => _select(linear.id == _selected ? null : linear.id),
+          onOpen: _navigate,
+          note: _masksOf,
           extra: [
             if (noDestination > 0)
               ListTile(
@@ -132,7 +131,7 @@ class _MaskOverviewScreenState extends State<MaskOverviewScreen> {
               child: ListView(padding: const EdgeInsets.only(bottom: 12), children: [
                 c.maxHeight >= wideLegendHeight
                     ? ChamberMaskTiles(node: _o, linears: _linears.linears, referenceData: ref, onOpen: _open)
-                    : ChamberMasks(node: _o, onOpen: _open),
+                    : ChamberMasks(node: _o, linears: _linears.linears, onOpen: _open),
               ]),
             ),
             const VerticalDivider(width: 1),
@@ -140,7 +139,7 @@ class _MaskOverviewScreenState extends State<MaskOverviewScreen> {
           ]);
         }
         return ListView(padding: const EdgeInsets.only(bottom: 12), children: [
-          ChamberMasks(node: _o, onOpen: _open),
+          ChamberMasks(node: _o, linears: _linears.linears, onOpen: _open),
           conduits,
         ]);
       }),
@@ -148,11 +147,21 @@ class _MaskOverviewScreenState extends State<MaskOverviewScreen> {
   }
 }
 
+/// Conduites sous-tubes (CD_PARENT_KEY) des porteurs [carriers] : non comptées comme des alvéoles.
+Set<Object?> subductCodes(List<GeoObject> carriers) => {
+      for (final l in carriers)
+        for (final c in MaskEditor.ductsOf(l))
+          if (c['CD_PARENT_KEY'] != null) c['CD_CODE_EXT'],
+    };
+
 /// Masques de la chambre : une ligne par face (alvéoles, dimensions de la face) ; toucher une face ouvre sa grille.
 class ChamberMasks extends StatelessWidget {
-  const ChamberMasks({super.key, required this.node, required this.onOpen});
+  const ChamberMasks({super.key, required this.node, this.linears = const [], required this.onOpen});
 
   final GeoObject node;
+
+  /// Linéaires de la chambre, porteurs des conduites (sous-tubes non comptés).
+  final List<GeoObject> linears;
   final void Function(String face) onOpen;
 
   @override
@@ -160,11 +169,14 @@ class ChamberMasks extends StatelessWidget {
     final faces = {
       for (final f in (node.namespace('chb')?['faces'] as List?) ?? const []) '${(f as Map)['FAC_CODE']}': f,
     };
+    final subducts = subductCodes([...linears, node]);
     return Section(title: tr('Masques'), children: [
       for (final code in chamberFaces)
         Builder(builder: (context) {
           final f = faces[code];
-          final n = ((f?['positions'] as List?) ?? const []).where((p) => (p as Map)['DATE_ABD'] == null).length;
+          final n = ((f?['positions'] as List?) ?? const [])
+              .where((p) => (p as Map)['DATE_ABD'] == null && !subducts.contains(p['CD_KEY']))
+              .length;
           final (width, height) = (f?['FAC_LARG'], f?['FAC_HAUT']);
           return ListTile(
             dense: true,
@@ -180,8 +192,9 @@ class ChamberMasks extends StatelessWidget {
   }
 }
 
-/// Masques de la chambre en tuiles (aperçu en paysage, notes rep10) : pour chaque face, sa lettre, ses alvéoles et ses
-/// dimensions, et la miniature de son masque ([MaskPreview]) ; toucher une tuile ouvre sa grille.
+/// Masques de la chambre en tuiles (aperçu en paysage, notes rep10) : pour chaque face, la miniature de son masque
+/// ([MaskPreview]), puis sa lettre, ses alvéoles et ses dimensions ; toucher une tuile ouvre sa grille. Tuiles sans
+/// cadre, la miniature seule se détachant de la section (notes rep12 : pas de tuiles imbriquées).
 class ChamberMaskTiles extends StatelessWidget {
   const ChamberMaskTiles({
     super.key,
@@ -212,12 +225,13 @@ class ChamberMaskTiles extends StatelessWidget {
         for (final c in MaskEditor.ductsOf(l)) c['CD_CODE_EXT']: c,
     };
     final colors = {for (final s in ductStates(referenceData)) s.id: s.color};
+    final subducts = subductCodes([...linears, node]);
     return Section(title: tr('Masques'), children: [
       LayoutBuilder(builder: (context, c) {
-        const gap = 10.0;
+        const gap = 12.0;
         final columns = math.max(1, ((c.maxWidth + gap) / (minWidth + gap)).floor());
         final width = ((c.maxWidth - gap * (columns - 1)) / columns).floorToDouble();
-        return Wrap(spacing: gap, runSpacing: gap, children: [
+        return Wrap(spacing: gap, runSpacing: 4, children: [
           for (final code in chamberFaces)
             Builder(builder: (context) {
               final f = faces[code];
@@ -226,44 +240,42 @@ class ChamberMaskTiles extends StatelessWidget {
                   if ((p as Map)['DATE_ABD'] == null && p['CD_KEY'] is String) p,
               ];
               final size = MaskEditor.faceSizeOf(node, referenceData, code);
+              // alvéoles, sous-tubes non comptés
+              final bores = positions.where((p) => !subducts.contains(p['CD_KEY'])).length;
               final (w, h) = (f?['FAC_LARG'], f?['FAC_HAUT']);
               return SizedBox(
                 width: width,
-                child: Card(
-                  margin: EdgeInsets.zero,
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () => onOpen(code),
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        Row(children: [
-                          CircleAvatar(radius: 14, child: Text(code)),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(positions.isEmpty ? tr('Face vide') : trn(positions.length, '{0} alvéole', '{0} alvéoles'),
-                                  style: t.titleSmall),
-                              if (w is num && h is num) Text(faceSizeLabel(w.toDouble(), h.toDouble()), style: t.bodySmall),
-                            ]),
-                          ),
-                          const Icon(Icons.grid_on_outlined),
-                        ]),
-                        const SizedBox(height: 10),
-                        Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 180),
-                            child: MaskPreview(
-                              width: size.width,
-                              height: size.height,
-                              positions: positions,
-                              ducts: ducts,
-                              colors: colors,
-                            ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => onOpen(code),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          child: MaskPreview(
+                            width: size.width,
+                            height: size.height,
+                            positions: positions,
+                            ducts: ducts,
+                            colors: colors,
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        CircleAvatar(radius: 12, child: Text(code, style: const TextStyle(fontSize: 12))),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(bores == 0 ? tr('Face vide') : trn(bores, '{0} alvéole', '{0} alvéoles'),
+                                style: t.titleSmall),
+                            if (w is num && h is num) Text(faceSizeLabel(w.toDouble(), h.toDouble()), style: t.bodySmall),
+                          ]),
+                        ),
                       ]),
-                    ),
+                    ]),
                   ),
                 ),
               );
@@ -274,8 +286,8 @@ class ChamberMaskTiles extends StatelessWidget {
   }
 }
 
-/// Miniature d'une face : son contour aux proportions réelles ([width] × [height], m), ses alvéoles à leur place, à
-/// l'échelle, à la couleur de l'état de leur conduite (gris si elle manque au paquet).
+/// Miniature d'une face : un aplat aux proportions réelles ([width] × [height], m), sans quadrillage (notes rep12),
+/// ses alvéoles à leur place, à l'échelle, à la couleur de l'état de leur conduite (gris si elle manque au paquet).
 class MaskPreview extends StatelessWidget {
   const MaskPreview({
     super.key,
@@ -310,28 +322,16 @@ class _PreviewPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final p = preview;
     final scale = size.width / p.width; // px par m
-    // une grosse alvéole au bord ne déborde pas sur l'en-tête de la tuile
-    canvas.clipRect(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
-    // cellules de 5 cm, comme la grille
-    final line = Paint()
-      ..color = Nge.rule
-      ..strokeWidth = 0.5;
-    final step = gridCell * scale;
-    if (step >= 4) {
-      for (var x = step; x < size.width - 0.5; x += step) {
-        canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
-      }
-      for (var y = step; y < size.height - 0.5; y += step) {
-        canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
-      }
-    }
-    canvas.drawRect(
-        Offset.zero & size,
+    // une grosse alvéole au bord ne déborde pas de la face
+    final face = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(6));
+    canvas.clipRRect(face);
+    canvas.drawRRect(face, Paint()..color = Nge.barBackground);
+    canvas.drawRRect(
+        face.deflate(0.5),
         Paint()
-          ..color = Nge.border
+          ..color = Nge.rule
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5);
+          ..strokeWidth = 1);
     for (final pos in p.positions) {
       final duct = p.ducts[pos['CD_KEY']];
       final center = Offset(((pos['POS_X'] as num?)?.toDouble() ?? 0) * scale, ((pos['POS_Y'] as num?)?.toDouble() ?? 0) * scale);

@@ -13,6 +13,34 @@
                 "pattern": { "regexp": "^__aucun__$" },
                 "background": { "activeBegins": true, "beginsPattern": "^__jamais__$", "endsPattern": "servies sur" }
             }
+        },
+        {
+            "label": "Serveur du paquet Evicom",
+            "detail": "Paquet docs/essai/paquets/EVICOM_SRO-2-02HG.zip et photos du projet docs/essai/projet_evicom pour la version web (?paquet=8091, ?photos=8091)",
+            "type": "shell",
+            "command": "python",
+            "args": ["-I", "tools/essai/serveur_photos.py", "docs/essai/projet_evicom", "8091",
+                "--paquet", "docs/essai/paquets/EVICOM_SRO-2-02HG.zip"],
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "serveur-photos",
+                "pattern": { "regexp": "^__aucun__$" },
+                "background": { "activeBegins": true, "beginsPattern": "^__jamais__$", "endsPattern": "servies sur" }
+            }
+        },
+        {
+            "label": "Serveur du paquet Evicom avec photos",
+            "detail": "Paquet docs/essai/paquets/EVICOM_SRO-2-02HG_photos.zip, photos embarquées (?paquet=8092), publié par paquet.py publier … --fichiers",
+            "type": "shell",
+            "command": "python",
+            "args": ["-I", "tools/essai/serveur_photos.py", "docs/essai/projet_evicom", "8092",
+                "--paquet", "docs/essai/paquets/EVICOM_SRO-2-02HG_photos.zip"],
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "serveur-photos",
+                "pattern": { "regexp": "^__aucun__$" },
+                "background": { "activeBegins": true, "beginsPattern": "^__jamais__$", "endsPattern": "servies sur" }
+            }
         }
     ]
 }

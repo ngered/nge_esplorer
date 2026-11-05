@@ -10,6 +10,7 @@ import 'package:nge_esplorer/data/geo_object.dart';
 import 'package:nge_esplorer/data/bundle.dart';
 import 'package:nge_esplorer/data/reference_data.dart';
 import 'package:nge_esplorer/data/visuals.dart';
+import 'package:nge_esplorer/modules/poteau/rosette_editor.dart';
 import 'package:nge_esplorer/modules/poteau/rosette_screen.dart';
 import 'package:nge_esplorer/modules/poteau/rosette_view.dart';
 import 'package:nge_esplorer/modules/completion.dart';
@@ -17,6 +18,7 @@ import 'package:nge_esplorer/providers/app_provider.dart';
 import 'package:nge_esplorer/screens/visuals_screen.dart';
 import 'package:nge_esplorer/theme.dart';
 import 'package:nge_esplorer/widgets/back_to_map.dart';
+import 'package:nge_esplorer/widgets/bottom_bar.dart';
 import 'package:nge_esplorer/widgets/fields.dart';
 import 'package:nge_esplorer/widgets/linear_list.dart';
 import 'package:nge_esplorer/widgets/photo.dart';
@@ -118,6 +120,12 @@ Future<void> menu(WidgetTester t, String label) async {
   await t.tap(find.byTooltip('Plus d\'actions'));
   await t.pumpAndSettle();
   await t.tap(find.text(label).last);
+  await t.pumpAndSettle();
+}
+
+/// Saisie du support : bouton de la barre basse (notes rep16 : retirée du menu ⋮).
+Future<void> entry(WidgetTester t) async {
+  await t.tap(find.widgetWithText(BarItem, 'Saisie'));
   await t.pumpAndSettle();
 }
 
@@ -254,6 +262,100 @@ void main() {
     });
   });
 
+  test('rosace : direction dictée par la destination connue, ajustable de ± 5 gr ; libre vers une destination à '
+      'relever ou créée', () async {
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    final editor = RosetteEditor(repo, (await repo.object('P1'))!, author: 'essai', intervention: () => 'i1');
+    await editor.load();
+    final p = editor.spans.single;
+    expect(p.direction, closeTo(100, 0.5)); // P923, plein est
+    expect([p.surveyedAngle, p.angle], [null, p.direction]);
+    editor.orient(p, p.direction! + 3);
+    expect([p.limited, p.deviation], [false, closeTo(3, 0.06)]);
+    // au-delà de la marge : arrêtée à la butée, d'un côté comme de l'autre
+    editor.orient(p, p.direction! + 40);
+    expect([p.limited, p.deviation], [true, closeTo(directionMargin, 0.06)]);
+    editor.orient(p, p.direction! - 12);
+    expect([p.limited, p.deviation], [true, closeTo(-directionMargin, 0.06)]);
+
+    // destination créée pendant la session : elle suit l'aiguille, sans contrainte
+    final created = editor.add(newType: 14, newLabel: 'P999', angle: 0);
+    expect(created.direction, isNull);
+    editor.orient(created, 250);
+    expect([created.limited, created.angle], [false, 250.0]);
+
+    // destination à relever (position provisoire) : orientation libre
+    final p2 = (await repo.object('P2'))!.copy()..props['GEOL_MOD_KEY'] = 8;
+    await repo.save(p2, author: 'essai');
+    await editor.load();
+    expect(editor.spans.single.direction, isNull);
+  });
+
+  testWidgets('rosace : butée de la direction de la destination signalée sous l\'angle', (t) async {
+    t.view.physicalSize = const Size(360, 800);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    final pole = (await repo.object('P1'))!;
+    await t.pumpWidget(ChangeNotifierProvider.value(
+      value: AppProvider(repo),
+      child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: RosetteScreen(pole: pole)),
+    ));
+    await t.pumpAndSettle();
+    expect(find.textContaining('(destination)'), findsOneWidget);
+    await t.tap(find.widgetWithText(ListTile, 'P923'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('ajustable de ± 5.0 gr à l\'aiguille'), findsOneWidget);
+    for (var i = 0; i < 3; i++) {
+      await t.tap(find.text('+1'));
+      await t.pump();
+    }
+    expect(find.textContaining('écart de l\'aiguille : +3.0 gr'), findsOneWidget);
+    expect(find.textContaining('Écart limité'), findsNothing);
+    for (var i = 0; i < 4; i++) {
+      await t.tap(find.text('+1'));
+      await t.pump();
+    }
+    expect(find.textContaining('écart de l\'aiguille : +5.0 gr'), findsOneWidget);
+    expect(find.text('Écart limité à ± 5.0 gr : si la destination est mal placée, corrigez sa position.'), findsOneWidget);
+
+    // recalée sur la carte : sur la direction de la destination, le bouton devient inactif
+    final realign = find.ancestor(
+        of: find.text('Recaler sur la carte (100.0 gr)', skipOffstage: false),
+        matching: find.bySubtype<TextButton>(skipOffstage: false));
+    await t.ensureVisible(realign);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Recaler sur la carte (100.0 gr)'));
+    await t.pump();
+    // la note, juste au-dessus du bouton, peut être sortie du panneau au défilement
+    expect(find.textContaining('ajustable de ± 5.0 gr à l\'aiguille', skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('Écart limité', skipOffstage: false), findsNothing);
+    expect(t.widget<TextButton>(realign).onPressed, isNull);
+    await t.ensureVisible(find.text('+1', skipOffstage: false));
+    await t.pumpAndSettle();
+    await t.tap(find.text('+1'));
+    await t.pump();
+    expect(t.widget<TextButton>(realign).onPressed, isNotNull);
+  });
+
+  test('rosace : recaler sur la carte, sur la géométrie vers une destination à relever, impossible vers une '
+      'destination créée', () async {
+    final repo = MemoryRepository();
+    await repo.load(bundle());
+    await repo.save((await repo.object('P2'))!.copy()..props['GEOL_MOD_KEY'] = 8, author: 'essai');
+    final editor = RosetteEditor(repo, (await repo.object('P1'))!, author: 'essai', intervention: () => 'i1');
+    await editor.load();
+    final p = editor.spans.single;
+    expect([p.direction, editor.mapDirection(p)], [null, p.mapAngle]);
+    editor.orient(p, 250);
+    editor.realign(p);
+    expect(p.surveyedAngle, closeTo(p.mapAngle!, 0.06));
+    final created = editor.add(newType: 14, newLabel: 'P999', angle: 30);
+    expect(editor.mapDirection(created), isNull);
+  });
+
   testWidgets('rosace : portée, câble en accordéon (modifier, supprimer, annuler), enregistrer', (t) async {
     t.view.physicalSize = const Size(360, 800);
     t.view.devicePixelRatio = 1;
@@ -321,6 +423,8 @@ void main() {
     final repo = MemoryRepository();
     await repo.load(bundle());
     final pole = (await repo.object('P1'))!;
+    // P923 à relever (position provisoire) : l'aiguille est libre, sans la butée de la direction de la destination
+    await repo.save((await repo.object('P2'))!.copy()..props['GEOL_MOD_KEY'] = 8, author: 'essai');
     await t.pumpWidget(ChangeNotifierProvider.value(
       value: AppProvider(repo),
       child: MaterialApp(
@@ -370,7 +474,7 @@ void main() {
     expect(find.text('portées · 0 direction'), findsOneWidget);
     await t.pageBack();
     await t.pumpAndSettle();
-    expect(find.text('Quitter sans enregistrer ?'), findsNothing);
+    expect(find.text('Enregistrer les modifications ?'), findsNothing);
     expect(find.text('carte'), findsOneWidget);
   });
 
@@ -432,7 +536,7 @@ void main() {
     ));
     await t.tap(find.text('carte'));
     await t.pumpAndSettle();
-    await menu(t, 'Saisie du support');
+    await entry(t);
     List<String?> names() => [for (final r in screenStack.stack) r.settings.name];
     expect(names(), ['/', 'support:P1', 'onglet:P1:saisie']);
     Future<void> tap(Finder f) async {
@@ -527,21 +631,23 @@ void main() {
     expect(find.textContaining('Naviguer vers'), findsNothing);
 
     // parcours souterrain sélectionné : son carton mène à la chambre, sur son aperçu des masques (même écran), le
-    // parcours sélectionné avec le carton du retour
+    // parcours mis en avant avec la pastille jaune du retour (notes rep11 : plus de carton sur l'aperçu)
     await t.scrollUntilVisible(find.textContaining('vers C12'), 100, scrollable: find.byType(Scrollable).first);
     await tap(find.textContaining('vers C12'));
     await tap(find.text('Naviguer vers C12'));
     expect(find.text('masques'), findsOneWidget);
     expect(names(), ['/', 'onglet:C1:masques']);
-    // et le carton de la chambre ramène au poteau, sur ses portées, le parcours sélectionné
-    await tap(find.text('Naviguer vers P922'));
+    // et la pastille de la chambre ramène au poteau, sur ses portées, le parcours sélectionné
+    await t.scrollUntilVisible(find.byTooltip('Naviguer vers P922'), 100, scrollable: find.byType(Scrollable).first);
+    await tap(find.byTooltip('Naviguer vers P922'));
     expect(find.text('PORTÉES'), findsOneWidget);
     expect(find.text('Naviguer vers C12'), findsOneWidget);
     // menu ⋮ : les supports quittés, du plus récent au plus ancien ; Carte : retour direct, quel que soit le chemin
     await tap(find.byTooltip('Plus d\'actions'));
-    // écrans du support (notes rep8 : la saisie générale aussi depuis les portées), puis les supports quittés
+    // visuels du support (la saisie est dans la barre basse, notes rep16), puis les supports quittés
     final items = find.byType(PopupMenuItem<VoidCallback>);
-    for (final (i, label) in ['Visuels du support', 'Saisie du support', 'Revenir à C12', 'P923', 'Repérer sur la carte'].indexed) {
+    expect(find.text('Saisie du support'), findsNothing);
+    for (final (i, label) in ['Visuels du support', 'Revenir à C12', 'P923', 'Repérer sur la carte'].indexed) {
       expect(find.descendant(of: items.at(i), matching: find.text(label)), findsOneWidget, reason: label);
     }
     await t.tapAt(const Offset(10, 790)); // ferme le menu
@@ -571,7 +677,7 @@ void main() {
     ));
     await t.tap(find.text('carte'));
     await t.pumpAndSettle();
-    await menu(t, 'Saisie du support');
+    await entry(t);
     await t.enterText(find.widgetWithText(TextFormField, 'Numéro'), 'P922 bis');
     await t.pump();
     await menu(t, 'Visuels du support');
@@ -751,11 +857,11 @@ void main() {
     ));
     await t.tap(find.text('carte'));
     await t.pumpAndSettle();
-    await menu(t, 'Saisie du support');
+    await entry(t);
     await t.enterText(find.widgetWithText(TextFormField, 'Numéro'), 'P922 bis');
     await t.pump();
     await menu(t, 'Repérer sur la carte');
-    expect(find.text('Quitter sans enregistrer ?'), findsNothing);
+    expect(find.text('Enregistrer les modifications ?'), findsNothing);
     expect(screenStack.stack, hasLength(1));
     expect((await repo.object('P1'))!.lib, 'P922 bis');
     expect(app.takeLocate(), 'P1');
@@ -805,7 +911,7 @@ void main() {
     // P922 renommé dans sa saisie, puis quitté depuis ses visuels (ouverts avant le renommage) : le menu de P923
     // propose « Revenir à P922 bis »
     await tap(find.text('ouvrir P922'));
-    await menu(t, 'Saisie du support');
+    await entry(t);
     await t.enterText(find.widgetWithText(TextFormField, 'Numéro'), 'P922 bis');
     await t.pump();
     await tap(find.text('Enregistrer'));
@@ -816,14 +922,14 @@ void main() {
     await tap(find.text('ouvrir P923'));
     expect(await menuTexts(), contains('Revenir à P922 bis'));
 
-    // numéro tapé puis abandonné (« Quitter » sans enregistrer) : l'intitulé reste celui qui est enregistré
+    // numéro tapé puis abandonné (« Abandonner les modifications ») : l'intitulé reste celui qui est enregistré
     await tap(find.text('Carte'));
     await tap(find.text('ouvrir P922'));
-    await menu(t, 'Saisie du support');
+    await entry(t);
     await t.enterText(find.widgetWithText(TextFormField, 'Numéro'), 'P922 essai');
     await t.pump();
     await tap(find.text('Carte'));
-    await tap(find.text('Quitter'));
+    await tap(find.text('Abandonner les modifications'));
     await tap(find.text('ouvrir P923'));
     final texts = await menuTexts();
     expect(texts, contains('Revenir à P922 bis'));
@@ -832,7 +938,7 @@ void main() {
     // P922 supprimé : il n'est plus proposé
     await tap(find.text('Carte'));
     await tap(find.text('ouvrir P922'));
-    await menu(t, 'Saisie du support');
+    await entry(t);
     await t.scrollUntilVisible(find.text('Supprimer le support'), 200, scrollable: find.byType(Scrollable).first);
     await tap(find.text('Supprimer le support'));
     await tap(find.widgetWithText(FilledButton, 'Supprimer'));
@@ -961,7 +1067,7 @@ void main() {
     }
 
     await tap(find.text('carte'));
-    await menu(t, 'Saisie du support');
+    await entry(t);
     List<String?> names() => [for (final r in screenStack.stack) r.settings.name];
 
     // la portée se sélectionne (pas de suivi d'une touche) et montre son carton

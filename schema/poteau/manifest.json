@@ -1,6 +1,6 @@
 {
   "code": "poteau",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "libelle": "Poteaux : caractéristiques et contrôles",
   "fichier": "poteau.sqlite",
   "spatial": false,
@@ -30,9 +30,8 @@
     {"table": "POT_CONTROLE", "lib": "Contrôle de poteau"}
   ],
   "vues": [
-    {"type": "POT", "code": "BOITIER", "lib": "Boîtier optique", "ordre": 1, "obligatoire": "NON"},
-    {"type": "POT", "code": "ENSEMBLE", "lib": "Vue d'ensemble", "ordre": 2, "obligatoire": "OUI"},
-    {"type": "POT", "code": "TETE", "lib": "Vue tête de poteau", "ordre": 3, "obligatoire": "OUI", "action": "ROSACE"}
+    {"type": "POT", "code": "ENSEMBLE", "lib": "Vue d'ensemble", "ordre": 1, "obligatoire": "OUI"},
+    {"type": "POT", "code": "TETE", "lib": "Vue tête de poteau", "ordre": 2, "obligatoire": "OUI", "action": "ROSACE"}
   ],
   "completude": "POT_NIVEAU, principe de FOA Explorer. Complet (2) : vues obligatoires photographiées, référence du catalogue (MAT_KEY), toutes les portées orientées (angle relevé au poteau), au moins un contrôle. Partiel (1) : une photo, un contrôle ou une portée orientée. Non relevé (0) sinon. Défaut (affichage) : dernier contrôle SEC_UTILISABLE = 0.",
   "grace": {

@@ -52,18 +52,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final t = Theme.of(context).textTheme;
     final c = Theme.of(context).colorScheme;
     final changed = _txtGoogleKey.text.trim() != app.googleKey;
+    Future<void> save() async {
+      app.setGoogleKey(_txtGoogleKey.text);
+      showSaved(context, app.googleKey.isEmpty ? tr('Clé Google retirée') : tr('Clé Google enregistrée'));
+    }
+
     return EntryScreen(
       changed: changed,
-      message: tr('La clé Google saisie ne sera pas enregistrée.'),
+      onSave: save,
+      message: tr('La clé Google saisie a été modifiée.'),
       child: Scaffold(
         appBar: AppBar(title: Text(tr('Paramètres')), actions: const [MapButton()]),
-        floatingActionButton: saveButton(
-          visible: changed,
-          onPressed: () {
-            app.setGoogleKey(_txtGoogleKey.text);
-            showSaved(context, app.googleKey.isEmpty ? tr('Clé Google retirée') : tr('Clé Google enregistrée'));
-          },
-        ),
+        floatingActionButton: saveButton(visible: changed, onPressed: save),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, fabMargin),
           children: [

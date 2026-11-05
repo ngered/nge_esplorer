@@ -1,13 +1,13 @@
 {
   "code": "infra",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "libelle": "Infrastructure : parcours souterrain et aérien, matériel sur support",
   "fichier": "infra.sqlite",
   "spatial": false,
   "dependances": ["noyau"],
   "espace_geojson": "inf",
   "scripts": ["schema.sql", "referentiels.sql"],
-  "tables": ["DEF_CD_ETAT", "DEF_SUPPORT_IMPLANT", "DEF_POSE", "MAT_CAB_COMAC", "MAT_CABLE", "MAT_EQUIP",
+  "tables": ["DEF_CD_ETAT", "DEF_CD_DIAM", "DEF_SUPPORT_IMPLANT", "DEF_POSE", "MAT_CAB_COMAC", "MAT_CABLE", "MAT_EQUIP",
              "INF_CONDUITE", "INF_CD_CABLE", "INF_PORTEE", "INF_PORTEE_CABLE", "INF_EQUIPEMENT"],
   "referentiels_foa": [
     {"cible": "DEF_POSE", "source": "DEF_POSEMODE"},
@@ -38,8 +38,9 @@
   ],
   "vues": [],
   "grace": {
-    "INF_CONDUITE": "t_conduite + t_cond_chem (cd_cd_code pour le sous-tubage)",
-    "INF_CD_CABLE": "cd_nbcable / cd_occup (agrégés)",
+    "INF_CONDUITE": "t_conduite + t_cond_chem (cd_cd_code pour le sous-tubage, cd_occup = CD_OCCUP)",
+    "INF_CD_CABLE": "cd_nbcable = Σ CDC_NB (agrégé) ; câbles identifiés : t_cab_cond (module optique)",
+    "DEF_CD_DIAM": "cd_dia_ext (diamètre nominal, CD_DIAM) et cd_dia_int (DIAM_INT)",
     "INF_PORTEE": "t_cheminement aérien (cm_typ_imp 0 ou 1)",
     "INF_EQUIPEMENT": "t_ebp (boîtiers) — à préciser avec le domaine optique"
   }

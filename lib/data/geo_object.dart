@@ -7,11 +7,13 @@ import 'package:uuid/uuid.dart';
 import '../lng.dart';
 import 'bundle.dart';
 
-/// Classe d'un objet du paquet : nœud (Point), linéaire (LineString) ou adresse (Point).
+/// Classe d'un objet du paquet : nœud (Point), linéaire (LineString), adresse (Point) ou câble optique (sans
+/// géométrie : son tracé est celui des linéaires de son parcours).
 enum ObjectClass {
   noe('NOE'),
   lin('LIN'),
-  adr('ADR');
+  adr('ADR'),
+  cab('CAB');
 
   const ObjectClass(this.code);
   final String code;
@@ -69,14 +71,17 @@ class GeoObject {
   // -- noyau -----------------------------------------------------------------------------------
 
   int? get typeKey => props['TYPE_KEY'] as int?;
-  String? get lib => (props['NOE_LIB'] ?? props['LIN_LIB']) as String?;
+  String? get lib => (props['NOE_LIB'] ?? props['LIN_LIB'] ?? props['CAB_LIB']) as String?;
   String? get status => props['statut'] as String?;
   bool get abandoned => props['DATE_ABD'] != null;
   bool get outOfZone => props['hors_zone'] == true;
   String? get noe1 => props['NOE1_KEY'] as String?;
   String? get noe2 => props['NOE2_KEY'] as String?;
 
-  /// Espace d'un module (`pot`, `chb`, `inf`), créé s'il est absent et [create] vaut vrai.
+  /// Adresse desservie, extrémité aval d'un câble de raccordement final (`ADR2_KEY`, paquet 0.5.0) : sans `NOE2_KEY`.
+  String? get adr2 => props['ADR2_KEY'] as String?;
+
+  /// Espace d'un module (`pot`, `chb`, `inf`, `opt`, `imb`), créé s'il est absent et [create] vaut vrai.
   Map<String, dynamic>? namespace(String key, {bool create = false}) {
     final e = props[key];
     if (e is Map<String, dynamic>) return e;
@@ -188,7 +193,8 @@ class GeoObject {
 
   /// Emprise [minLon, minLat, maxLon, maxLat], pour l'index spatial du dépôt.
   List<double>? get bounds {
-    final pts = objectClass == ObjectClass.lin ? line : [?point];
+    // linéaire, ou câble de raccordement à son tracé propre
+    final pts = geometry?['type'] == 'LineString' ? line : [?point];
     if (pts.isEmpty) return null;
     var e = [pts.first.longitude, pts.first.latitude, pts.first.longitude, pts.first.latitude];
     for (final p in pts.skip(1)) {

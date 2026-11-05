@@ -19,10 +19,13 @@ import '../widgets/messages.dart';
 /// ou « Définir comme référence »), supprimer avec « Annuler ». Chaque geste est enregistré aussitôt, appliqué au
 /// support tel qu'il est dans le dépôt : l'objet passé a pu vieillir, et d'autres écrans ont pu l'enregistrer.
 class GalleryScreen extends StatefulWidget {
-  const GalleryScreen({super.key, required this.object, required this.visual});
+  const GalleryScreen({super.key, required this.object, required this.visual, this.owner});
 
   final GeoObject object;
   final Visual visual;
+
+  /// Intitulé du porteur du visuel en sous-titre (un équipement) ; par défaut, l'étiquette du support.
+  final String? owner;
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
@@ -161,7 +164,7 @@ class _GalleryScreenState extends State<GalleryScreen> with UndoMessage<GalleryS
     final lib = await askTitle(context, title: tr('Renommer le visuel'), initial: _v.lib);
     if (lib == null || lib == _v.lib || !mounted) return;
     final old = _v;
-    setState(() => _v = Visual.free(lib, old.code));
+    setState(() => _v = old.renamed(lib));
     await _save((o) => o.renameVisual(old, lib));
   }
 
@@ -186,7 +189,8 @@ class _GalleryScreenState extends State<GalleryScreen> with UndoMessage<GalleryS
     return Scaffold(
       backgroundColor: Nge.barBackground,
       appBar: AppBar(
-        title: ScreenTitle(v.lib, '${_o.lib ?? tr('Sans étiquette')} · ${trn(photos.length, '{0} photo', '{0} photos')}'),
+        title: ScreenTitle(v.lib,
+            '${widget.owner ?? _o.lib ?? tr('Sans étiquette')} · ${trn(photos.length, '{0} photo', '{0} photos')}'),
         // menu ⋮ à la place des pictos (notes rep8) : prendre une photo, renommer un visuel libre, puis les écrans
         // du support
         actions: [

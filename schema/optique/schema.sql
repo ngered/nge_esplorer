@@ -4,6 +4,11 @@
 -- t_ropt), conventions NgeEsPlorer. Fichier attaché au noyau sous le nom « optique ». Références vers le noyau et
 -- l'infra : voir manifest.json. Le matériel reste dans l'infra (INF_EQUIPEMENT, catalogue MAT_EQUIP) et le câble porté
 -- ou passé dans une conduite aussi (INF_PORTEE_CABLE, INF_CD_CABLE) : le module optique les identifie et les relie.
+-- Base SpatiaLite depuis la version 0.3.0 (tracé propre des câbles de raccordement, Lambert 93 : EPSG:2154), sans
+-- les EPSG inutiles : la base ne déclare que le Lambert 93.
+
+SELECT InitSpatialMetadata(1, 'NONE');
+SELECT InsertEpsgSrid(2154);
 
 -- Référentiels --------------------------------------------------------------------------------
 
@@ -70,7 +75,10 @@ CREATE TABLE OPT_EQUIPEMENT (
 -- Câbles --------------------------------------------------------------------------------------
 
 -- Câble identifié, d'un nœud à l'autre (le même pour un câble de colonne dans un immeuble), raccordé à ses
--- extrémités dans un équipement. Pas de géométrie : son tracé est celui des linéaires de son parcours.
+-- extrémités dans un équipement. Pas de géométrie : son tracé est celui des linéaires de son parcours. Câble de
+-- raccordement final (fonction RA, depuis la version 0.3.0) : du PBO (NOE1_KEY, EQU1_KEY) à l'adresse desservie
+-- (ADR2_KEY, sans NOE2_KEY : la boîte aux lettres est portée par l'adresse, pas par un nœud), avec son tracé propre
+-- (GEOMETRY, ligne en Lambert 93), seule exception aux câbles sans géométrie : il ne suit pas les linéaires.
 CREATE TABLE OPT_CABLE (
     CAB_ID          INTEGER PRIMARY KEY AUTOINCREMENT,
     CAB_CODE_EXT    TEXT NOT NULL UNIQUE,
@@ -80,7 +88,8 @@ CREATE TABLE OPT_CABLE (
     CAB_CAPA        INTEGER,                    -- nombre de fibres
     CAB_MODULO      INTEGER,                    -- fibres par tube
     NOE1_KEY        INTEGER NOT NULL,           -- noyau PRJ_NOE, extrémité amont
-    NOE2_KEY        INTEGER NOT NULL,           -- noyau PRJ_NOE, extrémité aval
+    NOE2_KEY        INTEGER,                    -- noyau PRJ_NOE, extrémité aval (vide : raccordement d'une adresse)
+    ADR2_KEY        INTEGER,                    -- noyau PRJ_ADRESSE, adresse desservie par un câble de raccordement
     EQU1_KEY        INTEGER,                    -- infra INF_EQUIPEMENT raccordant l'extrémité amont
     EQU2_KEY        INTEGER,                    -- infra INF_EQUIPEMENT raccordant l'extrémité aval
     CAB_LNG         REAL,                       -- longueur réelle (m), lovages compris
@@ -91,8 +100,11 @@ CREATE TABLE OPT_CABLE (
     DATE_MODIF      TEXT,
     SRC_MODIF       TEXT,
     DATE_ABD        TEXT,
-    SRC_ABD         TEXT
+    SRC_ABD         TEXT,
+    CHECK (NOE2_KEY IS NOT NULL OR ADR2_KEY IS NOT NULL)
 );
+-- tracé propre d'un câble hors des linéaires (raccordement), vide sinon
+SELECT AddGeometryColumn('OPT_CABLE', 'GEOMETRY', 2154, 'LINESTRING', 'XY', 0);
 
 -- Passage d'un câble sur un linéaire de son parcours (câble tiré), avec la ligne de l'infra qui le porte : câble
 -- porté sur la portée (aérien) ou occupation de la conduite (souterrain, façade). Rang dans le parcours depuis NOE1.
@@ -242,6 +254,7 @@ CREATE TABLE OPT_MESURE (
 CREATE INDEX IX_EQO_PARENT ON OPT_EQUIPEMENT (EQO_PARENT_KEY);
 CREATE INDEX IX_CAB_NOE1 ON OPT_CABLE (NOE1_KEY);
 CREATE INDEX IX_CAB_NOE2 ON OPT_CABLE (NOE2_KEY);
+CREATE INDEX IX_CAB_ADR2 ON OPT_CABLE (ADR2_KEY);
 CREATE INDEX IX_CAB_EQU1 ON OPT_CABLE (EQU1_KEY);
 CREATE INDEX IX_CAB_EQU2 ON OPT_CABLE (EQU2_KEY);
 CREATE INDEX IX_PAS_LIN ON OPT_PASSAGE (LIN_KEY);

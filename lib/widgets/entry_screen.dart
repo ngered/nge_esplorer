@@ -1,44 +1,60 @@
 import 'package:flutter/material.dart';
 
 import '../lng.dart';
+import 'back_to_map.dart';
 import 'messages.dart';
 
 /// Conventions communes des écrans de saisie (fiche, rosace, paramètres) : bouton « Enregistrer » flottant en bas
 /// à droite, visible seulement s'il y a quelque chose à enregistrer ; après l'enregistrement, on reste sur l'écran ;
-/// le quitter avec une saisie non enregistrée (retour arrière ou retour à la carte) demande confirmation.
+/// le quitter avec une saisie non enregistrée (retour arrière ou retour à la carte) propose de l'enregistrer ou de
+/// l'abandonner.
 
-/// Écran de saisie : tant que [changed], le quitter demande confirmation ([message] : précision éventuelle).
+/// Écran de saisie : tant que [changed], le quitter demande s'il faut enregistrer ([onSave], puis l'écran se ferme)
+/// ou abandonner les modifications ; le dialogue fermé autrement (toucher à côté, retour arrière), on reste sur
+/// l'écran. [message] : précision éventuelle.
 class EntryScreen extends StatelessWidget {
-  const EntryScreen({super.key, required this.changed, required this.child, this.message});
+  const EntryScreen({super.key, required this.changed, required this.onSave, required this.child, this.message});
 
   final bool changed;
+  final Future<void> Function() onSave;
   final Widget child;
   final String? message;
 
   @override
   Widget build(BuildContext context) => PopScope(
         canPop: !changed,
-        onPopInvokedWithResult: (didPop, _) async {
+        onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
-          if (await confirmLeave(context, message: message) && context.mounted) Navigator.pop(context);
+          // suivi par la pile : un retour à la carte attend l'enregistrement et la fermeture de l'écran
+          screenStack.leaving(() async {
+            final choice = await confirmLeave(context, message: message);
+            if (choice == null || !context.mounted) return;
+            if (choice == LeaveChoice.save) await onSave();
+            if (context.mounted) Navigator.pop(context);
+          }());
         },
         child: child,
       );
 }
 
-Future<bool> confirmLeave(BuildContext context, {String? message}) async =>
-    await showDialog<bool>(
+/// Réponse à [confirmLeave].
+enum LeaveChoice { save, discard }
+
+/// Saisie non enregistrée : l'enregistrer ou l'abandonner ; null : rester sur l'écran.
+Future<LeaveChoice?> confirmLeave(BuildContext context, {String? message}) => showDialog<LeaveChoice>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(tr('Quitter sans enregistrer ?')),
+        title: Text(tr('Enregistrer les modifications ?')),
         content: message == null ? null : Text(message),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Rester'))),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Quitter'))),
+          TextButton(
+            onPressed: () => Navigator.pop(c, LeaveChoice.discard),
+            child: Text(tr('Abandonner les modifications')),
+          ),
+          FilledButton(onPressed: () => Navigator.pop(c, LeaveChoice.save), child: Text(tr('Enregistrer'))),
         ],
       ),
-    ) ??
-    false;
+    );
 
 /// Bouton flottant « Enregistrer » (pour `Scaffold.floatingActionButton`), absent sans saisie à enregistrer.
 Widget? saveButton({required bool visible, required VoidCallback onPressed}) => visible

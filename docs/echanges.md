@@ -186,14 +186,23 @@ republié ; contrôles indépendants conformes (bases et paquet comparés ligne 
 0.1.0 et 0.2.0, bases et paquet, dans `docs/essai/sauvegardes/`.
 2. **Optique**, puis **retour fin de travaux** : (1) schéma BE — **première version le 4 novembre 2026**, modules
    optique et immeuble 0.1.0 calqués sur GraceTHD v2.0.1, voir [schema/](../schema/README.md) ; (2) jeu d'essai DOE
-   sur données réelles — **fait le 4 novembre 2026**, ci-dessous ; (3) espaces `opt` et `imb` du paquet ; (4) écrans du
-   terminal (liens fibres d'une boîte d'épissure, route optique, retour fin de travaux).
-3. Immeubles / BAL (schéma 0.1.0 posé avec le jeu d'essai DOE), électrique : ensuite.
+   sur données réelles — **fait le 4 novembre 2026**, ci-dessous ; (3) espaces `opt` et `imb` du paquet — **faits le
+   5 novembre 2026** : format 0.3.0, câbles en objets `CAB` sans géométrie (parcours, lovages, fibres), contenu
+   optique des équipements dans l'espace `opt` du nœud (cassettes, positions, mesures), fibre désignée par son câble
+   et son rang, routes au BE seulement (voir [paquet.md](paquet.md#optique)) ; (4) écrans du terminal — **lecture
+   faite le 5 novembre 2026** : liens fibres d'un équipement (`modules/optique/splice_screen.dart`, depuis l'écran
+   des équipements : boîtier, câbles raccordés, cassettes et positions avec les couleurs du tube et de la fibre,
+   mesures, locaux desservis) ; restent la saisie (câble tiré, épissure), la route optique et le retour fin de travaux.
+3. Immeubles / BAL (schéma 0.1.0 posé avec le jeu d'essai DOE ; espace `imb` du paquet et carte « Immeuble et BAL »
+   de l'adresse, en lecture, le 5 novembre 2026), électrique : ensuite.
 
 Jeu d'essai DOE Evicom (4 novembre 2026) : DOE du SRO-2-02HG (Hussigny-Godbrange, Meurthe-et-Moselle, réseau EVICOM
 2000), matériau de `docs/essai/evicom_data/in/` chargé par `tools/essai/charger_doe.py` → `docs/essai/projet_evicom/`
 (625 Mo avec photos et documents ; projet QGIS `projet_evicom.qgs`), paquet `docs/essai/paquets/EVICOM_SRO-2-02HG.zip`
-(0,16 Mo sans les photos, conforme, lu par les tests du terminal), non versionnés. Sources : export GraceTHD v2.0.1
+(format 0.3.0 avec l'optique et les immeubles : 0,3 Mo sans les photos, conforme, lu par les tests du terminal) et
+`EVICOM_SRO-2-02HG_photos.zip` (`publier … --fichiers` : 178 Mo, 1 142 photos embarquées, lu en 0,2 s par les tests),
+non versionnés ; reconstruit le 5 novembre 2026 avec le module infra 0.2.0. Lanceurs VS Code « paquet Evicom » (photos
+au serveur local) et « paquet Evicom avec photos » : paquet ouvert au démarrage. Sources : export GraceTHD v2.0.1
 du pré-DOE (16 septembre 2026), référence du chargement ; relevé d'infrastructure FibReady (type d'appui, matière) ;
 études COMAC de l'APD (juillet 2025) ; photos, plans de boîte, mesures, conventions d'immeuble.
 
@@ -204,7 +213,7 @@ du pré-DOE (16 septembre 2026), référence du chargement ; relevé d'infrastru
 | Matériel | 99 boîtiers (95 PBO dont 19 à poser en immeuble, 4 BPE), baie et 6 tiroirs du SRO ; catalogues `MAT_EQUIP` et `MAT_CABLE` complétés de 11 et 13 références |
 | Optique | 99 câbles (7,2 km ; 95 au parcours complet, 183 passages ; 4 câbles de colonne), 195 lovages, 6 000 fibres, 286 cassettes, 8 583 positions (700 épissures, 2 717 passages, 4 434 attentes, 732 connecteurs), 884 routes, 438 réflectométries à 1 550 nm rattachées à leur route (1 hors seuils) |
 | BAL et immeubles | 339 adresses (436 logements, 15 locaux professionnels ; 322 pavillons, 15 immeubles), 464 locaux rattachés à leur PBO, 12 conventions d'immeuble |
-| Fichiers | 1 158 photos (182 Mo : images extraites des rapports PDF des boîtes et du tirage, appuis, SRO, photométrie, études COMAC, infrastructure tierce Evicom) ; 879 documents non publiés (rapports PDF, plans de boîte, synthèses et traces de mesure, DT-DICT, conventions) |
+| Fichiers | 1 142 photos (177 Mo : images extraites des rapports PDF des boîtes et du tirage, appuis, SRO, photométrie, études COMAC (120 têtes et ensembles en vues attendues, 69 en visuels libres : marquages, façades), infrastructure tierce Evicom ; des rapports, 701 photos classées par leur libellé : 179 dans une vue attendue, dont 31 têtes de poteau, 31 ensembles, 68 boîtiers, 9 dessus et 8 environnements de chambre, 8 jeux de masques A à D, et 522 en visuels libres nommés, étiquettes, boîte ouverte, cassettes, règle, accroche…) ; 879 documents non publiés (rapports PDF, plans de boîte, synthèses et traces de mesure, DT-DICT, conventions) |
 
 Constats :
 - angles des portées : `charger_essai.py` les calculait dans le quadrillage Lambert 93 ; à 5,9° E, la convergence
@@ -218,12 +227,35 @@ Constats :
   modèle au catalogue, capacité utile dans `OPT_EQUIPEMENT` ;
 - l'appareil de mesure nomme la fibre par son rang au départ du SRO et le câble par la boîte d'extrémité :
   CDI-2-02HG-1015 fibre 55 = route partant de la fibre 55 du CDI-2-02HG-1005 (288 FO) ;
-- non repris : la base FibReady (l'export GraceTHD en est tiré) et ses câbles de raccordement (non posés au DOE) ; le
+- photos des rapports (notes « materiau evicom » rep1, 5 novembre 2026) : les 142 rapports de 11_PHOTOS sont des
+  formulaires Kizeo Forms (E.Tirage poteau, façade, chambre ; E.Chambre ; E.Boite) où chaque photo suit son
+  libellé (« Tête de poteau/Traverse », « Ensemble », « Masque chambre ABCD »…) ; `charger_doe.py` les lit sans
+  dépendance (même résultat que PyMuPDF sur les 142) et range chaque photo dans la vue attendue du support, sinon
+  dans un visuel libre à son nom ; date de réponse du formulaire comme date de prise ; câble tiré (4 derniers
+  chiffres) et technicien en commentaire ; 6 remontées au journal. Restent en visuels libres faute de vue : les
+  photos de façade (le type FAC n'a pas de vues attendues : façade avant travaux, accroche, ensemble, étiquette,
+  boîtier à ajouter au schéma ?) et les masques d'entrée et de sortie des rapports de tirage en chambre (face non
+  nommée) ;
+- photos des études COMAC (`Rue …_Photos/<appui>_<n>.jpg`, juillet 2025, avant travaux) : ni légende ni description
+  dans l'étude (`.PCM`), et le rang ne dit pas la vue (tête en _2 ; marquage puis ensemble pour un appui BT,
+  ensemble puis plaque pour un appui télécom, avec des exceptions). Pour le jeu d'essai, classement à l'œil des 229
+  photos des 60 poteaux dans `tools/essai/evicom_comac_vues.csv` (tête, ensemble, marquage, autre ; remarque en cas
+  de doute) : tête et ensemble en vues attendues, après les photos Kizeo du DOE qui restent principales ; marquage en
+  visuel libre « Marquage du poteau (APD) ». Les 65 poteaux ont désormais leurs vues tête (64) et ensemble (65),
+  contre 26 avant. Un appui étudié dans deux rues a ses photos dans les deux archives, réencodées : une seule copie
+  par nom (au suffixe -IN près) ; 13 photos s'écrasaient auparavant sous un même chemin. Pour un vrai DOE, la
+  source doit nommer la vue (libellé Kizeo) ou l'application BE proposer un écran de classement ;
+- équipements et supports : la base FibReady (`DOE_SRO-2-02HG.fbt`, SpatiaLite) attache chaque équipement à son
+  support (`NOEUDS.INF_KEY`, attaches du plan) ; les 99 boîtiers chargés d'après GraceTHD (`bp_pt_code`) sont tous sur
+  le même support (contrôle de `charger_doe.py`). Ses points d'infrastructure (PDT, 88 : passage d'un câble sur un
+  support) doublent les passages de GraceTHD ;
+- non repris : les câbles de raccordement de la base FibReady (non posés au DOE) ; le
   rapport de réserves (`reserves/rapport_distribution-SRO-08LG.xls`) porte sur un autre SRO, le SRO-1-08LG
   (168 non-conformités : point technique, criticité, thème, contrôle, statut, retour NGE) : modèle pour la levée de
   réserves du retour fin de travaux ;
-- paquet : modules optique et immeuble non publiés (format 0.2.0) ; adresses de l'emprise de la zone et photos seules
-  publiées.
+- paquet : adresses de l'emprise de la zone et photos seules publiées ; depuis le 5 novembre 2026, modules optique et
+  immeuble publiés (format 0.3.0 : 99 câbles, 106 équipements optiques, 8 583 positions, 438 mesures, 464 locaux ;
+  3,9 Mo de GeoJSON, dont 1,1 Mo de câbles et de fibres).
 
 ## 8. Développer en attendant Android
 
@@ -245,9 +277,16 @@ Premier incrément du terminal (31 octobre 2026), web :
 - **paquet** : ouverture d'un paquet de zone (ZIP) et export du paquet de retour (objets modifiés, intervention),
   conformes à [paquet.md](paquet.md) et vérifiés par l'implémentation de référence ;
 - **dépôt** `DataRepository` en mémoire (une entrée par objet, index d'emprise et des linéaires par nœud) ;
-  `TileSource` : Plan IGN et photographies aériennes de la Géoplateforme ;
+  `TileSource` : Plan IGN et photographies aériennes de la Géoplateforme. Fond par défaut (retour du 5 novembre
+  2026) : **OpenStreetMap** partout, moins chargé que le Plan IGN et plus lisible sous un réseau dense, premier de
+  la liste des fonds ; les fonds IGN restent au choix. En développement, tuiles du serveur public d'OSM (usage
+  modéré, ni préchargement ni usage en masse) ; sur le terrain, fond OSM généré en interne et livré en MBTiles
+  (voir plus haut), seul compatible avec un parc de terminaux ;
 - **carte** (`flutter_map`) : objets de la vue seulement, poteaux, chambres, façades, adresses, portées et
-  parcours ; bandeau « Identification support » ;
+  parcours ; bandeau « Identification support ». Retour du 5 novembre (réseau dessiné seulement après le
+  déplacement) : chargement de la vue élargie d'une demi-vue de chaque côté, et rechargement pendant le geste
+  (glissement, lancer, pincement, vol de repérage) dès que la vue sort de l'emprise chargée, un chargement à la
+  fois, le plus récent seul affiché ;
 - **fiche** : identification, poteau (référence du catalogue, nature, structure, implantation, hauteur, effort),
   contrôles du jour (FOA Explorer), visuels attendus et photos embarquées, linéaires rattachés ; chambre en
   lecture seule ;
@@ -276,8 +315,11 @@ dialogues et feuilles modales, qui se ferment d'abord ; le retour arrière garde
 
 **Écrans de saisie** (2 novembre 2026, `widgets/entry_screen.dart`) : bouton flottant « Enregistrer » en bas à droite,
 visible seulement s'il y a quelque chose à enregistrer ; après l'enregistrement, on reste sur l'écran (message
-« Enregistré ») ; quitter avec une saisie en cours demande « Quitter sans enregistrer ? » (Rester / Quitter). Les
-interrupteurs des paramètres s'appliquent immédiatement.
+« Enregistré ») ; quitter avec une saisie en cours demande « Enregistrer les modifications ? » (depuis le
+5 novembre 2026 : Enregistrer, puis l'écran se ferme / Abandonner les modifications ; toucher à côté du dialogue ou
+le retour arrière laisse sur l'écran ; le retour à la carte attend la fin de l'enregistrement avant de fermer les
+écrans suivants ; auparavant « Quitter sans enregistrer ? », Rester / Quitter). Les interrupteurs des paramètres
+s'appliquent immédiatement.
 
 **Rapprochement de la maquette Figma et de la charte NGE** (2 novembre 2026 ; captures du prototype dans
 `docs/captures/figma/`) : parcours et organisation des écrans repris du Figma, couleurs de la charte NGE de FibReady
@@ -286,7 +328,11 @@ interrupteurs des paramètres s'appliquent immédiatement.
   bleu nuit `#022A78` réservé à l'écran de démarrage (support de marque) ; barres en bleu d'interface `#1C3C73`
   soulignées d'un filet jaune ; action principale (Enregistrer, Ouvrir) en jaune `#FAC100`, texte `#153166` ;
   rouge réservé aux suppressions et aux défauts ;
-- **carte** : bandeau haut « Identification support » (recherche d'un support par son étiquette) ; barre basse
+- **carte** : bandeau haut « Identification support » (recherche d'un support par son étiquette ; depuis le
+  5 novembre 2026, aussi par les entités associées, chaque résultat menant au support : étiquette d'un équipement
+  optique qu'il porte (`EQO_LIB`), d'un câble dont il est une extrémité (un résultat par extrémité), son adresse
+  (`ADR_KEY`), une adresse dont un local est desservi par son PBO ; résultat présenté avec le picto du support, le
+  texte trouvé et ce qui y mène ; équipements et supports abandonnés exclus) ; barre basse
   Couches · Créer · Retour (compteur) · Paramètres ; panneau Couches (Aérien, Souterrain, Administratif avec l'œil)
   et fonds de plan ; étiquettes des supports encadrées à la couleur du métier ; sélection en jaune cerclé de bleu,
   avec un aperçu (Portées, Ouvrir) avant la fiche ;
@@ -302,6 +348,27 @@ interrupteurs des paramètres s'appliquent immédiatement.
   sélection : halo jaune cerclé de bleu ; règles de complétude par module (champ `completude` des manifestes),
   calculées en direct par la carte et posées dans `POT_NIVEAU` / `CHB_NIVEAU` à l'enregistrement, comme FOA
   Explorer à l'enregistrement de la fiche ;
+- **équipement optique sur la carte** (5 novembre 2026, notes « charte carto ») : pour lire d'un coup d'œil la
+  présence d'équipements optiques, la charte de paramétrage de FibReady a d'abord été appliquée strictement
+  (paramètres Evicom, `param_arbo_noe_pictures.csv` : PBO sur poteau, BPE en chambre, PM, NRO, logements selon
+  l'usage ; règles en JSON par réseau, moteur reprenant `NodePictureRules`) ; rendu correct mais **trop chargé** :
+  abandonnée. Formule retenue : les pictos des supports et le carré du statut restent ceux d'avant ; une **marque**
+  au coin bas droit du picto signale l'équipement optique porté (`OpticalMark`, `lib/map/symbols.dart`), aux
+  formes des pictos FibReady : **losange** pour un PBO, **carré** pour un BPE, **rond** pour un autre équipement
+  optique (DTI, PTO, baie, tiroir) ; noire bordée de blanc, débordant du picto pour ne pas cacher le statut ; un
+  seul signe par support, le plus structurant (BPE, puis PBO) ; équipements de l'espace `opt` dont l'équipement
+  `inf` n'est pas abandonné ; légende dans le panneau Couches ; points des petites échelles sans marque ;
+- **immeubles, armoires de rue, adresses** (5 novembre 2026, notes « charte carto ») : pictos des paramètres Evicom,
+  `NOE_IMM` pour l'immeuble (famille `IMM`) et `NOE_ADR` pour l'armoire de rue (famille `SIT` des sites
+  techniques : SRO…), avec le carré du statut comme les autres supports. Le NRO est plutôt un shelter qu'une armoire
+  de rue, sans picto dans les paramètres : `NOE_SHELTER`, dessiné pour NgeEsPlorer dans le style FibReady (fond
+  papier, toit plat noir, porte à droite, carré du statut à gauche), pour le type `SIT-NRO`. Les adresses
+  quittent le point orange pour `NOE_LRI` et ses variantes, selon l'usage (codes `NOE_USAGE` de FibReady,
+  `AddressUsage` du module immeuble) : collectif pour un immeuble (`DEF_IMB_HABITAT` I ; sans habitat renseigné, plus
+  d'un local), puis selon les types des locaux, un local résidentiel en fait un logement (mixte compris, comme
+  FibReady), sinon un local professionnel un local pro, sinon un local technique ou opérateur un site FTTE ; sans
+  local, les nombres de logements et de locaux pro. Vérifié sur Evicom : 307 IND-HAB, 15 COL-HAB, 15 IND-FTTE,
+  identiques aux usages du DOE (`sf_comment`). Légende dans le panneau Couches ;
 - **paramètres FibReady** (2 novembre 2026) : coquille corrigée dans `fibready_parametres_default` —
   `param_arbo_noe_pictures.csv`, la ligne poteau portait les poses de chambre (`POT,CHB-EX,CHB-AC,CHB-FT`, reste
   de « CHB-FTPOH ») et donnait le picto poteau aux chambres CHB-EX, CHB-AC et CHB-FT ; ramenée à `POT` ; correction
@@ -320,32 +387,115 @@ interrupteurs des paramètres s'appliquent immédiatement.
   l'ouverture du support (retenu le 2 novembre 2026, plutôt qu'une liste à activer par « Ajouter ») ;
 - **support** : écran d'arrivée « visuels » (une carte par visuel : photo de référence, nombre de photos ou
   « Manquante », prendre une photo, fonction propre du visuel) ; le **crayon** de l'en-tête (depuis le 4 novembre
-  2026, « Saisie du support » du menu ⋮) ouvre la saisie générale de l'entité (identification, commentaire,
+  2026, « Saisie du support » du menu ⋮ ; depuis le 6 novembre, Saisie de la barre basse) ouvre la saisie générale de l'entité (identification, commentaire,
   caractéristiques, contrôles, données propres au module), pas les photos ni leur titre ; barre basse commune module (Portées pour le poteau, Masques et conduites pour la chambre) ·
   **Équipements** (icône dessinée « boîtier sur câble », `assets/icons/equipment.svg`, valable pour les télécoms et
-  l'électricité, retenue parmi sept propositions ; remplace « Connecteurs » le 4 novembre 2026 : une boîte d'épissure y propose ses liens fibres,
+  l'électricité, retenue parmi sept propositions ; remplace « Connecteurs » le 4 novembre 2026 : une boîte d'épissure y propose ses liens fibres ;
+  depuis le 5 novembre, l'écran dédié de l'équipement, au choix s'il y en a plusieurs,
   écrans `support_saisie_optique` / `support_route_optique`) · Carte (globe, remplace « Revenir à la carte ») ·
-  Ajouter (visuel libre) ;
+  Ajouter (visuel libre) ; le 5 novembre (notes rep16), **Saisie** (crayon) remplace Équipements dans la barre basse,
+  pour rendre la saisie du support accessible d'une touche depuis tous ses écrans (active sur la saisie elle-même) :
+  les équipements s'ouvrent déjà de l'aperçu de la carte et de la carte Équipements de la saisie, et l'écran d'un
+  équipement propose « Autre équipement » dans son menu ⋮ quand le support en porte plusieurs ;
 - **onglets du support** (4 novembre 2026) : écrans séparés plutôt qu'un long formulaire ; saisie (crayon des
-  visuels, puis « Saisie du support » du menu ⋮), module (portées, masques) et équipements sont des onglets : passer
+  visuels, puis « Saisie du support » du menu ⋮, puis Saisie de la barre basse), module (portées, masques) et équipements sont des onglets : passer
   de l'un à l'autre remplace l'écran au lieu de l'empiler (saisie enregistrée avant ; grille ou rosace modifiée :
   confirmation, et l'on peut rester), le retour ramène aux visuels du support s'ils sont dessous (support ouvert par
   « Ouvrir » de la carte), puis à la carte ; depuis la grille d'une face, Masques ramène à l'aperçu ;
-  chaque donnée n'a qu'un écran : les équipements ne sont plus dans la saisie (poteau et chambre), le nombre
-  d'équipements reste affiché sur le bouton de la barre basse ; un nouveau message remplace les précédents (pas de
+  chaque donnée n'a qu'un écran : les équipements ne sont plus dans la saisie (poteau et chambre ; ils y reviennent
+  le 5 novembre, voir « équipements d'un support »), le nombre d'équipements reste affiché sur le bouton de la barre
+  basse ; un nouveau message remplace les précédents (pas de
   file de confirmations) ; « Visuels du support » (d'abord un picto en haut à droite, puis une entrée du menu ⋮)
   ramène aux visuels depuis les écrans de saisie (saisie, portées, masques, grille d'une face, équipements), saisie
   enregistrée avant ; grille ou rosace modifiée : confirmation ;
+- **équipements d'un support** (5 novembre 2026, notes « equipements ») : un support peut porter plusieurs
+  équipements et plusieurs boîtiers optiques ; le visuel « Boîtier optique » du support n'est donc ni suffisant ni
+  obligatoire : il n'est plus imposé (retiré des vues de la chambre, du poteau et de l'immeuble ; reprise 0.5.0 :
+  ses photos passent en visuel libre « Boîtier optique » de l'équipement quand le support n'en porte qu'un, du
+  support sinon). Chaque équipement a ses **visuels**, distincts de ceux du support (vues des équipements,
+  `DEF_VUE.VUE_ENTITE` `INF_EQUIPEMENT` : boîtier fermé, boîtier ouvert, cassettes, mesures photométriques, aucune
+  obligatoire ; visuels libres de l'équipement), chacun avec sa galerie ; ses photos restent portées par le
+  support (`ENTITE` `INF_EQUIPEMENT`, `EQU_KEY` = `EQU_CODE_EXT` de l'équipement, paquet 0.4.0). **Écran dédié** de
+  l'équipement (module optique, onglet `equipement:<code>`) : fiche (fonction, matériel, capacité…), visuels, liens
+  fibres (`liens:<code>`) ; la route optique reste à venir. On l'atteint de la carte (une pastille par équipement
+  sur l'aperçu du support, au-delà de trois une pastille « n équipements » propose le choix), de la **carte
+  Équipements**, revenue dans la saisie du support (ajout rapide comme l'ancien onglet ; le picto des équipements
+  de chaque ligne, à la place des connecteurs, ouvre l'écran dédié ; le renseignement détaillé n'est pas exigé d'un
+  équipement préexistant), et jusqu'au 5 novembre (notes rep16 : remplacé par Saisie) du bouton **Équipements** de
+  la barre basse : le seul équipement directement, le choix s'il y en a plusieurs, la saisie du support s'il n'y en
+  a aucun ;
+- **retours sur les équipements** (5 novembre 2026, notes equipements rep1) : « Liens fibres » devient **Optique**
+  (bouton et menu ⋮ de l'écran dédié, titre de l'écran) ; couche **Tirage** de la carte (masquée au départ) : les
+  câbles optiques, sans géométrie propre, sont dessinés en bande sous les linéaires de leur parcours
+  (`passages[].LIN_KEY`), d'autant plus large que le linéaire porte de câbles. Les **locaux desservis** d'un PBO ne
+  viennent pas d'un câble : chaque local (`IMB_LOCAL`, repris des sites usagers `t_suf` du GraceTHD du DOE) est
+  rattaché au PBO de sa zone de desserte (`t_zpbo`, `EQU_KEY` du local). Les câbles de raccordement ne sont pas
+  dans le GraceTHD mais dans le projet FibReady du DOE (`DOE_SRO-2-02HG.fbt`, 363 câbles RAC du PBO à la BAL :
+  214 aériens, 127 en conduite, 22 en immeuble). Choix retenu (5 novembre 2026) : **câble vers l'adresse**, câble
+  optique de fonction « Raccordement final » du PBO (`NOE1_KEY`, `EQU1_KEY`) à l'adresse desservie (`ADR2_KEY`,
+  `NOE2_KEY` facultatif dans ce seul cas), avec son tracé propre repris du FBT (seule exception aux câbles sans
+  géométrie ; optique 0.3.0, paquet 0.5.0), plutôt qu'un nœud BAL et un linéaire de branchement par câble (363 de
+  chaque) ou qu'un trait droit ; la couche Tirage le dessine en trait fin à partir du zoom 15, l'écran Optique du
+  PBO le liste « vers » l'adresse. Chargement : 363 raccordements sur 363, 95 PBO, 337 adresses ; 26 BAL d'immeubles
+  collectifs sans correspondance GraceTHD retrouvées par voie, numéro et complément ; 315 tracés FibReady, dessinés
+  de la BAL vers le PBO, retournés ; mode de pose dans `CAB_COMMENT` ; ni fibres ni parcours. Retour du 5 novembre :
+  les raccordements sont affichés avec les adresses qu'ils desservent (couche **Administratif**, à partir du zoom 16),
+  plus avec la couche Tirage ;
+- **route optique, câbles en parallèle, parcours d'infra** (5 novembre 2026, notes equipements rep2) : dans l'écran
+  Optique, toucher une position (connecteur, épissure, passage, attente) ouvre la **route optique** de sa fibre, à
+  la manière de FibReady : une ligne par équipement traversé de l'amont à l'aval (rang, fonction, étiquette, support,
+  cassette et position, câble entrant avec sa capacité, couleurs du tube et de la fibre, lien au symbole de la légende
+  FibReady, câble sortant), retrouvée de proche en proche par les positions
+  (les routes `OPT_ROUTE` restent au BE ; un câble arrivé à une baie du SRO est suivi dans ses tiroirs,
+  `EQO_PARENT_KEY`) ; une suite hors du paquet est signalée ; sur Evicom, les 2 583 attentes donnent 732 routes
+  jusqu'au connecteur du tiroir et 1 851 fibres en attente aux deux bouts (fibres mortes, surcapacité) ;
+- **cassettes de l'écran Optique** (5 novembre 2026) : repliées par défaut, seule la première est dépliée (hors
+  passages hors cassettes, sauf s'ils sont seuls), plus celle du connecteur atteint depuis une route ;
+- **attente abonné, prise abonné** (5 novembre 2026) : la fibre réservée à un abonné, en attente au PBO, est une
+  **attente abonné** (FibReady l'écrit « prise abonné » par habitude, mais la prise terminale optique, la PTO, est
+  dans le logement) ; **prise abonné** ne s'emploie que quand la route s'achève effectivement à l'adresse de
+  destination : fibre arrivée sans suite dans un équipement PTO (`FibreLink.ofPosition`). Le DOE d'Evicom n'a aucune
+  PTO : ses 464 fibres d'abonnés sont des attentes abonné ;
+- **route dépliée** (5 novembre 2026, notes equipements rep3) : la route optique ne s'ouvre plus dans un écran à
+  part ; elle se déplie sous le connecteur touché, dans l'écran Optique (`RoutePanel`). Toucher une étape bascule
+  aussitôt sur son boîtier (choix final de l'utilisateur, plutôt qu'une sélection appliquée au repliage), sur son
+  connecteur : cassette dépliée, connecteur amené à l'écran et mis en évidence, la route toujours dépliée dessous,
+  l'étape du boîtier affiché en évidence ; dans le même écran, à la place de l'onglet (autre équipement du même
+  support) ou du support affiché (autre support). Le repliage reste une action volontaire (« Replier », ou toucher à
+  nouveau le connecteur), sans changement d'écran ;
+- **symboles des liens** (5 novembre 2026) : ceux de la légende FibReady (`connecteurs.csv` des paramètres :
+  `<A>` attente abonné, `-#` prise abonné, `-x-` fusion, `-o` attente, `-@` lové, `-R` réserve, `<@>` passage lové,
+  `<R>` passage réserve, `<P>` passage, `<x>` joint droit, `-ø` fibre morte ; plus `o-`, départ d'un connecteur de
+  tiroir, que FibReady écrit dans ses liens sans l'avoir dans sa légende), pour distinguer attentes, réserves et
+  prises (`FibreLink`). Déduits de la fonction de la position et de son affectation GraceTHD (`POS_AFFECT`) :
+  connecteur `o-`, épissure `-x-`, passage `<@>`, attente ABONNE `-#`, RESERVE `-R`, MORTE `-ø`, autre (surcapacité,
+  sans affectation) `-o` ; correspondance vérifiée sur les 2 164 liens du FBT d'Evicom (732 `o-`, 700 `-x-`, 464
+  `-#`, 202 `-R`, 66 `-o` : identiques). À l'écran, une seule mention par lien (retour du 5 novembre :
+  trop d'informations redondantes) : son libellé sur une pastille colorée (`LinkChip`), sans symbole, sans légende,
+  sans la fonction ni l'affectation redites (« Attente abonné » plutôt que « -# Attente ABONNE ») ; l'affectation ne
+  paraît que si elle ajoute (SURCAPA) ; les symboles restent dans le code, pour mémoire. Infobulles : sur un terminal
+  tactile, elles ne paraissent qu'à l'appui long (survol à la souris sur le web) ; aucune information indispensable
+  n'en dépend ; toucher une étape ouvre l'écran
+  Optique de son équipement à la place du support affiché. Option **« Câbles en parallèle »** de la couche Tirage
+  (comme FibReady) : un trait par câble, coloré selon sa capacité (12, 24, 48, 96, 144 FO, au-delà), avec sa
+  légende ; le décalage suit le sens du linéaire, un câble peut donc changer de côté d'un linéaire à l'autre. Retour
+  du 5 novembre (tracé parallèle peu lisible) : traits de 2 à 4 pixels selon le zoom, chacun cerné d'un liseré blanc
+  qui le détache de ses voisins et du fond, dessinés au-dessus des linéaires (le câble du milieu en était caché). Couche **« Parcours d'infra »** : les linéaires, déjà repris de `t_cheminement` du
+  GraceTHD (portées, façades, fourreaux), ont leur propre couche, séparée des supports aériens et souterrains ;
+  relier deux supports (bouton « Créer », à venir) reviendra à compléter ce linéaire ;
 - **parcours suivi** (4 novembre 2026) : depuis une portée, un parcours ou une conduite, le support d'en face
   s'ouvre sur le même linéaire, comme on chemine sur le terrain, sur le même écran des parcours, avec le carton du
   retour (notes rep5, `follow(route: true)`) : portées du poteau (portée commune ouverte, vue de son côté, ou
   parcours sélectionné), aperçu des masques de la chambre (parcours sélectionné), saisie des autres supports
-  (ancrage façade… : liste « Portées et parcours », linéaire sélectionné). Dans ces trois écrans, toucher un
-  parcours le sélectionne et montre son carton « Naviguer vers … » (au-dessus de la barre basse ; dans la rosace, en
-  haut du panneau, pour qu'elle garde sa taille quand il paraît) ; la saisie en cours est enregistrée avant ; l'icône
-  « ouvrir » des portées est retirée. Dans la grille, le « Vers … » du panneau de l'alvéole mène d'une touche à la
+  (ancrage façade… : liste « Portées et parcours », linéaire sélectionné). Dans la rosace et la saisie des autres
+  supports, toucher un parcours le sélectionne et montre son carton « Naviguer vers … » (au-dessus de la barre basse ;
+  dans la rosace, en haut du panneau, pour qu'elle garde sa taille quand il paraît) ; la saisie en cours est
+  enregistrée avant ; l'icône « ouvrir » des portées est retirée. Dans l'aperçu des masques (notes rep11), plus de
+  carton intermédiaire : chaque parcours porte une pastille jaune au pictogramme de direction qui, comme la ligne,
+  mène d'une touche au support d'en face (rien pour un support absent du paquet ou supprimé), le parcours d'arrivée
+  y étant mis en évidence. Dans la grille, le « Vers … » du panneau de l'alvéole mène d'une touche à la
   grille de la chambre d'en face (notes rep7 : ni carton ni infobulle), sur l'alvéole de la même conduite si elle y
-  est placée (`follow(cd:)`, base du futur miroir), sinon sur la face où le parcours arrive (ou la première), rien de
+  est placée (`follow(cd:)`), sinon sur son alvéole à placer en miroir (notes rep11), ou la face où le parcours arrive (ou la première), rien de
   choisi à sa place ; ce lien est un bouton sur sa ligne, avec le pictogramme du support d'en face (celui de la carte),
   son étiquette en gras et son type (notes rep10, `SupportLink`). Le même pictogramme précède chaque parcours de la
   liste et l'étiquette du bouton « Naviguer vers … » du carton. Le bouton « Ouvrir » de l'aperçu sur la carte mène toujours aux visuels. « Face non relevée »
@@ -369,10 +519,10 @@ interrupteurs des paramètres s'appliquent immédiatement.
 - **menu ⋮** des écrans d'un support (visuels, saisie, portées, aperçu des masques, grille, équipements, galerie),
   seul bouton de leur barre de titre (notes rep8 : il remplace les pictos), pour la navigation fine qui remplace la
   pile : actions propres à l'écran (grille : photos et dimensions de la face ; galerie : prendre une photo, renommer
-  un visuel libre), écrans du support (« Visuels du support », « Saisie du support » : la saisie générale aussi
-  depuis les masques et les portées), puis les supports quittés récemment, du plus récent au plus ancien (cinq au
+  un visuel libre), écrans du support (« Visuels du support » ; « Saisie du support » jusqu'au 6 novembre, retirée
+  du menu quand la barre basse a reçu son bouton Saisie, notes rep16), puis les supports quittés récemment, du plus récent au plus ancien (cinq au
   plus ; le premier « Revenir à … », intitulé à jour), chacun rouvert à la place du support affiché sur l'écran où on
-  l'a laissé (face, alvéole, parcours ou portée choisis, notés par l'écran), et « Repérer sur la carte » (« Rester »
+  l'a laissé (face, alvéole, parcours ou portée choisis, notés par l'écran), et « Repérer sur la carte » (rester
   sur une saisie non enregistrée retire la demande) ;
 - **repérage d'un support** (4 novembre 2026, notes rep7) : la sélection de la carte suit le support affiché (ouvert
   depuis la carte, atteint par un parcours, rouvert par le menu ⋮) ; revenue au premier plan, la carte repère la
@@ -401,8 +551,15 @@ interrupteurs des paramètres s'appliquent immédiatement.
   chaque photo entière (au format 4:3, sur fond sombre, une photo prise en hauteur n'étant pas rognée), en tuiles ;
   toucher une photo l'affiche en plein écran, agrandie au pincement ou à la molette ; un appui long la dépose sur une
   autre tuile, qui prend sa place (« Définir comme référence » demeure). Aperçu des masques en paysage (notes rep10) :
-  les faces à gauche, en tuiles avec la miniature de leur masque (contour aux proportions réelles, cellules de 5 cm,
-  alvéoles à leur place et à l'échelle, à la couleur de l'état de leur conduite), les conduites à droite ;
+  les faces à gauche, en tuiles avec la miniature de leur masque (aplat aux proportions réelles, alvéoles à leur
+  place et à l'échelle, à la couleur de l'état de leur conduite), les conduites à droite ; tuiles sans cadre ni
+  quadrillage (notes rep12 : pas de tuiles imbriquées), lettre, alvéoles et dimensions sous la miniature. Statut de
+  renseignement aligné à droite du carton de la carte (notes rep12) ; dans l'aperçu des masques, chaque parcours
+  précise entre parenthèses les masques où ses conduites sont placées, « (masques A, B) » (notes rep13), et un
+  parcours vers un support supprimé ou absent du paquet le dit ; saisie du support en paysage (720 dp et plus) sur
+  deux colonnes qui défilent chacune : à gauche ce qui identifie le support (général, équipements), à droite ce qui
+  s'y relève et s'y consigne (dimensions de la chambre ou contrôles du poteau, commentaires, portées et parcours),
+  une seule colonne dans le même ordre en portrait ;
 - **saisie de la chambre** (4 novembre 2026) : cartes dépliables Général (date, type, numéro, référence,
   implantation, adresse), Dimensions (une ligne par dimension : référence du catalogue, dimension relevée),
   Commentaires (journal daté et signé, voir « commentaires datés et signés » plus bas) ;
@@ -460,12 +617,64 @@ interrupteurs des paramètres s'appliquent immédiatement.
   « … · ANNULER » (`UndoMessage`, `widgets/messages.dart`) disparaît seul au bout de 6 s, se ferme quand on quitte
   l'écran et dès qu'une autre modification le rend caduc (4 novembre 2026 : il restait affiché d'écran en écran, et
   son « Annuler » aurait réenregistré l'objet d'avant par-dessus les modifications suivantes) ;
+- **miroir, sous-tubage et occupation des alvéoles** (4 novembre 2026, notes rep11 : fonctions de FOA Explorer, étudiées
+  dans `O:\c#\InfraExplorer` et sur les données de Nancy). Décisions de l'utilisateur : position miroir
+  proportionnelle, taux d'occupation par la formule des sections, état occupé d'office comme FOA.
+  - *Miroir* : une seule conduite pour les deux bouts du fourreau, une position par chambre (`POS_MIROIR` = 1 pour
+    celle que crée le miroir) ; rien n'est recopié, état, diamètre et câbles étant ceux de la conduite (la recopie
+    des câbles de FOA et son contrôle `RepairOccup` disparaissent). Une conduite d'un parcours de la chambre placée
+    dans la chambre d'en face et pas ici est une alvéole « à placer ». Le bouton Miroir, à droite du choix des faces
+    (pastille : nombre d'alvéoles à placer), propose ces alvéoles en pointillé, à valider (notes rep15) : depuis une
+    face de la chambre d'en face (choisie dans une liste s'il y en a plusieurs : « C598 · face B · 3 alvéoles »), sur
+    la face affichée, quelle qu'elle soit (un miroir peut s'appliquer sur n'importe quelle face ; changer de face y
+    porte le même miroir). Position retournée, X' = W'·(1 − X/W), même profondeur depuis le haut, bornée à la face ;
+    les sous-tubes gardent leur écart à l'alvéole, retourné. Une touche valide une alvéole (choisie ensuite), « Tout
+    placer » (bandeau du miroir, au-dessus de la légende, ou menu ⋮) les valide toutes ; « Changer » prend une autre
+    face d'en face ; le miroir se ferme de lui-même quand tout est placé. Le « Vers … » d'une alvéole mène à la
+    chambre d'en face, miroir ouvert sur la face proposée (celle où le même parcours arrive déjà, sinon la face d'en
+    face : A et B s'échangent, C et D restent, 84 % des paires de Nancy), l'alvéole à placer mise en évidence. Retirée avant
+    l'enregistrement, la position disparaît ; une position abandonnée de la même conduite dans la face est reprise
+    (une seule position par conduite et par face au BE). Gisement à Nancy : 1 965 conduites vues d'un seul côté,
+    chambre d'en face relevée.
+  - *Sous-tubage* : « Sous-tuber » sur une alvéole, 3 sous-tubes en triangle ou 4 en carré (gabarits de FOA), d'un
+    diamètre du sous-tubage (`DEF_CD_DIAM`, 20 à 33 mm), seuls ceux qui tiennent dans l'alvéole étant proposés ;
+    conduites du même parcours (`CD_PARENT_KEY`), numérotées N.1, N.2… (`CD_NUM` = rang dans l'alvéole), chacune avec
+    sa position dans la face, son état, son diamètre et ses câbles ; elles suivent l'alvéole quand on la déplace et
+    se retirent avec elle (confirmation) ; dessinées au-dessus d'elle, choisies d'une touche dans le panneau de
+    l'alvéole. Comme dans FOA (notes rep15), une alvéole glissée (appui long) et déposée dans une plus grande en
+    devient sous-tube, au numéro suivant, avec « Annuler » ; seulement dans la plus petite alvéole plus grande dont le
+    disque contient son centre, et du même parcours (le sous-tube hérite de la destination ; une alvéole créée dans
+    la session en change), sinon un message le dit ; « Détacher de l'alvéole » la rend alvéole. Pas de recalcul
+    géométrique de toutes les alvéoles comme dans FOA : seule l'alvéole déposée est rattachée. L'alvéole déplacée
+    n'est choisie qu'au relâcher (son panneau recentrait la grille sous le doigt).
+  - *Occupation* : câbles constatés de la conduite (`INF_CD_CABLE` : diamètre, nature Fo ou Cu, nombre ; une ligne
+    par diamètre et nature, `CDC_RANG`), ajoutés d'une touche (diamètres de l'écran « Occupation alvéole » de FOA,
+    6 à 50 mm, ou un autre), retirés un à un ; jauge du taux, Σ nb × (Ø câble / Ø intérieur)² (Ø intérieurs de
+    l'abaque de FOA, `DEF_CD_DIAM`), 100 % pour une alvéole mauvaise sans câble, écrit dans `CD_OCCUP` et affiché
+    dans le disque assez grand ; une alvéole qui porte des câbles ou des sous-tubes est occupée d'office (vide →
+    X, réservée → XR, mauvaise → XM, nouvel état « occupée et mauvaise »). Module infra 0.2.0 (`DEF_CD_DIAM`, état
+    XM, `CDC_RANG`, `CDC_NATURE`), modèle du projet 0.4.0, format du paquet inchangé : voir
+    [paquet.md](paquet.md) ; le terminal refuse un paquet du module infra antérieur à 0.2.0 (câbles sans rang, clé
+    exigée au retour), à republier après `projet.py migrer` ;
 - l'action du module n'est pas répétée sur chaque vue, sauf la **grille du masque de chambre**, propre à la vue
   catégorisée (masque A, B…) ;
 - **portées** : rosace en haut, câbles portés en accordéon dessous (un seul ouvert, saisie sur place : type,
   longueur, nappe, pose, flèche et température si relevée, « Supprimer ce câble » avec « Annuler ») ; barre commune
   du support, Portées active, « Direction » ajoute une portée ; l'enregistrement recalcule le niveau du poteau
-  (`POT_NIVEAU`), l'orientation des portées comptant dans son renseignement.
+  (`POT_NIVEAU`), l'orientation des portées comptant dans son renseignement ;
+- **direction dictée par la destination** (5 novembre 2026, notes poteaux rep2) : vers une destination de position
+  connue (ni créée dans la session, ni à relever, `GEOL_MOD_KEY` 8), l'angle part de la direction du poteau vers
+  elle ; l'aiguille et les pas de ± 0,1 / ± 1 gr ne l'ajustent que de ± 5 gr (`directionMargin`) : secteur dessiné
+  autour de la direction, écart affiché sous l'angle, butée signalée en orangé (« si la destination est mal placée,
+  corrigez sa position ») et par une vibration ; un angle venu du BE hors de la marge est signalé, gardé tel quel
+  tant qu'on ne touche pas l'aiguille. Vers une destination nouvelle ou à relever, orientation libre (la nouvelle
+  suit l'aiguille). « Recaler sur la carte » (détail de la portée) remet l'angle relevé sur la direction de la
+  destination, ou à défaut sur l'azimut de la géométrie ; inactif quand il y est déjà, absent vers une destination
+  créée dans la session ;
+- **portée créée par la carte**, désormais privilégiée : « Ajouter une destination » (icône de lien) sur l'aperçu
+  d'un poteau, consigne à la place de l'aperçu, on touche le support de destination (le poteau lui-même refusé,
+  dans la consigne) ; la rosace s'ouvre avec la portée ajoutée, choisie, à enregistrer (déjà reliés : la portée
+  existante). « Direction » de la rosace reste possible pour l'instant.
 
 Mise en œuvre (2 novembre 2026) : thème `lib/theme.dart`, démarrage, carte, visuels, galerie et saisie du
 support. Les gestes sur les photos (prise, ordre, suppression) sont enregistrés aussitôt, sans bouton Enregistrer ;
@@ -493,8 +702,7 @@ puis les quatre faces, chacune ouvrant sa grille. La date de la fiche FOA corres
 Réorganisée le 4 novembre 2026 (cartes dépliables, adresse modifiable, faces et conduites dans l'aperçu des
 masques) : voir « saisie de la chambre » et « adresse d'un support » plus haut.
 
-Suites prévues : appareil photo sur Android, miroir (report d'une alvéole dans la chambre voisine), masques
-logiques et câbles des conduites, persistance locale (Drift ; SQLCipher sur Android), boussole pour orienter la
+Suites prévues : appareil photo sur Android, masques logiques, persistance locale (Drift ; SQLCipher sur Android), boussole pour orienter la
 rosace, connexion par jeton abonné.
 
 ## 9. Environnement de développement

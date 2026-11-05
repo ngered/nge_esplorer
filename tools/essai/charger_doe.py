@@ -10,8 +10,11 @@ docs/essai/evicom_data/in/, lu dans les archives sans les extraire :
   conventions d'immeuble (09), infrastructures tierces (10), conventions diverses (12) ;
 - Livrables calculs SRO-2-02HG.zip : études COMAC de l'APD (juillet 2025), une archive par rue (appuis : hauteur,
   classe, effort, année, orientation ; photos) et le suivi des études (conclusions).
-Non repris : la base FibReady DOE_SRO-2-02HG.fbt (l'export GraceTHD en est tiré) et ses câbles de raccordement (non
-posés au DOE), les nœuds GraceTHD des sites utilisateurs (l'adresse les porte), les copies des études COMAC
+- DOE_SRO-2-02HG.fbt, base FibReady du DOE (l'export GraceTHD en est tiré) : câbles de raccordement (absents de
+  GraceTHD) et contrôle du support de chaque boîtier (INF_KEY, attaches du plan).
+Non repris : les points d'infrastructure de la base FibReady (PDT :
+passage d'un câble sur un support, les passages viennent de GraceTHD), les nœuds GraceTHD des sites utilisateurs
+(l'adresse les porte), les copies des études COMAC
 (10_INFRA-TIERS/ENEDIS, identiques aux livrables), le projet QGIS du DOE, le rapport de réserves
 (reserves/rapport_distribution-SRO-08LG.xls : il porte sur le SRO-1-08LG).
 
@@ -21,33 +24,50 @@ Règles de reprise (codes GraceTHD préfixés EVI-, dates GraceTHD sans fuseau l
   sites techniques : NRO, SRO (armoire de rue) ; immeubles (sites BAT) à leur adresse ;
 - cheminements orientés de NOE1 vers NOE2 : aérien (0, 1) et façade (2) → portée (angles calculés : azimut géodésique
   en grades, 0 = nord géographique) et un câble porté par câble passé dans sa conduite virtuelle (AER ou NC), nappe
-  inconnue ; souterrain (7) → conduites (PVC, PEHD, NC) occupées par leurs câbles, une ligne par câble ;
+  inconnue ; souterrain (7) → conduites (PVC, PEHD, NC) occupées par leurs câbles, une ligne par câble, rangée dans
+  sa conduite (CDC_RANG, ordre des étiquettes), nature FO pour un câble à fibres ; diamètre nominal (CD_DIAM) = le plus
+  grand de cd_dia_int et cd_dia_ext (diamètre extérieur du tube ; FibReady exporte les deux inversés) ; état et taux
+  d'occupation recalculés (pas de taux : les câbles n'ont pas de diamètre) ;
 - matériel : boîtiers (t_ebp, sur leur appui, chambre ou façade, ou dans le local technique de l'immeuble), baie et
   tiroirs du SRO → équipements, catalogue MAT_EQUIP complété d'après t_reference (une ligne par référence, de la
   capacité qu'elle nomme ; une par capacité posée pour un manchon, qui n'en nomme pas), et leur contenu optique
   (étiquette, fonction, capacité utile, emplacement) ; câbles, catalogue MAT_CABLE complété, avec leurs passages rangés
   depuis NOE1, lovages et fibres ; cassettes et positions ; routes optiques ;
+- câbles de raccordement de la base FibReady (CABLES.CAB_TYPE RAC, du PBO à la boîte aux lettres de l'adresse) :
+  câbles de fonction RA (Raccordement final) du support du PBO (NOE1_KEY, EQU1_KEY) à l'adresse desservie (ADR2_KEY,
+  sans nœud aval), avec leur tracé FibReady (GEOMETRY, Lambert 93, dessiné de la BAL au PBO : retourné pour partir du
+  PBO), à créer (non posés au DOE) ; adresse d'après la table de correspondance de FibReady, à défaut (BAL d'immeuble
+  collectif, une seule adresse exportée) par la voie, le numéro et le complément ; étiquette RAC- et
+  rang dans le PBO (RAC-2-02HG-2075-03), mode de pose (aérien, fourreau, immeuble) en commentaire ; sans fibres ni
+  parcours (ni dans GraceTHD, ni décrits fibre à fibre par la base FibReady) ;
 - adresses → PRJ_ADRESSE et IMB_ADRESSE (BAL) ; sites utilisateurs (t_suf) → locaux, desservis par le PBO de leur
   zone ; conventions d'immeuble jointes à leur adresse ;
 - études COMAC : support rapproché à 10 m au plus (paires les plus proches d'abord) d'un poteau, ou d'une façade pour
   un support de classe FACADE ; un nœud reçoit toutes les études d'un même support (même nom au suffixe -IN près :
   rues étudiées deux fois, appuis d'angle) ; poteau : référence MAT_POTEAU (hauteur, classe, effort), effort en daN,
   année, orientation reprise de l'étude ; conclusion au journal (alerte si l'appui est insuffisant), photos de l'étude
-  et de l'infrastructure tierce Evicom du même nom ;
+  (état avant travaux) après celles du DOE, classées d'après evicom_comac_vues.csv (classement à l'œil : tête et
+  ensemble en vues attendues, marquage en visuel libre), une copie par nom au suffixe -IN près, et photos de
+  l'infrastructure tierce Evicom du même nom ;
 - mesures réflectométriques : une par fibre, longueur d'onde et sens, rattachée à la route que l'appareil nomme
   (câble d'extrémité et rang de la fibre au départ du SRO), à sa première fibre et au boîtier d'extrémité ; trace .sor
   jointe à la mesure ;
-- photos : images JPEG extraites des rapports PDF (boîtes : vue « Boîtier optique » du support quand son type l'a,
-  sinon visuel libre ; tirage, SRO : visuel libre), photos d'appuis et de photométrie ; documents (PDF, tableurs,
-  synthèses de mesure) joints sans être publiés.
+- photos : images JPEG extraites des rapports PDF Kizeo Forms (11_PHOTOS : E.Tirage poteau, façade ou chambre,
+  E.Chambre, E.Boite), chacune classée par le libellé qui la précède : vue attendue du support quand son type l'a
+  (tête de poteau, ensemble, environnement, dessus, faces A à D des masques) ou, pour une boîte, vue de la galerie de
+  son équipement (boîtier fermé à la pose, ouvert, cassettes, mesures photométriques), sinon visuel libre au titre du
+  libellé (étiquettes, règle, accroche, protection…) ; date de réponse du formulaire comme
+  date de prise, câble tiré et technicien en commentaire, remontée au journal ; SRO : visuel libre ; photos d'appuis et
+  de photométrie ; documents (PDF, tableurs, synthèses de mesure) joints sans être publiés.
 
 Usage :
   python -I tools/essai/charger_doe.py <dossier projet> <dossier QGIS bin> [<dossier source>]
 """
-import csv, hashlib, io, math, os, re, shutil, sqlite3, sys, tempfile, uuid, zipfile
+import csv, hashlib, io, math, os, re, shutil, sqlite3, sys, tempfile, uuid, zipfile, zlib
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from datetime import datetime
+from pathlib import Path
 
 sys.stdout.reconfigure(encoding='utf-8')
 ICI = os.path.dirname(os.path.abspath(__file__))
@@ -59,6 +79,7 @@ import charger_essai  # noqa: E402
 SOURCE = os.path.join(projet.RACINE, 'docs', 'essai', 'evicom_data', 'in')
 DOE = 'PRE-DOE_SRO-2-02HG_V1.zip'
 CALCULS = 'Livrables calculs SRO-2-02HG.zip'
+FIBREADY = 'DOE_SRO-2-02HG.fbt'
 P = 'EVI'                                       # préfixe des codes repris de la source
 PROJET = ('EVICOM', 'DOE Evicom SRO-2-02HG (Hussigny-Godbrange)')
 ZONE = ('SRO-2-02HG', 'SRO-2-02HG Hussigny-Godbrange (DOE Evicom)')
@@ -72,6 +93,23 @@ NATURE = {'BETON': 'Béton', 'BOIS': 'Bois', 'METAL': 'Métal', 'PBET': 'Béton'
 SITES = {'NRO': 'SIT-NRO', 'SRO': 'SIT-SRO', 'CLIENT': 'IMM'}
 OTYP = {'BPE': 'BPE', 'PBO': 'PBO', 'PTO': 'PTO', 'DTI': 'DTI'}
 SENS = {'O-->E': 'OE', 'O<--E': 'EO', 'O<->E': 'BI'}
+# Rapports Kizeo Forms (11_PHOTOS : E.Tirage poteau, façade ou chambre, E.Chambre, E.Boite) : libellé d'une photo →
+# vue attendue du support (DEF_VUE), quand son type l'a ; sinon visuel libre au titre du libellé. « Masque chambre
+# ABCD » (E.Chambre) : quatre photos, faces A à D dans l'ordre du formulaire ; un autre nombre, visuel libre.
+VUES_KIZEO = {'Tête de poteau/Traverse': 'TETE', 'Ensemble': 'ENSEMBLE', 'Environnement': 'ENV',
+              'Chambre ouverte': 'DESSUS'}
+# E.Boite : photos du boîtier dans la galerie de son équipement (noyau 0.3.0, vues VUE_ENTITE INF_EQUIPEMENT du module
+# optique) ; titre du libellé (titre_kizeo) → vue de l'équipement, sinon visuel libre de l'équipement (étiquettes,
+# règle). « Pose boîte » : le boîtier posé sur son support, fermé.
+VUES_BOITE = {'Pose boîte': 'FERME', 'Boîte ouverte': 'OUVERT', 'Cassettes': 'CASSETTES',
+              'Mesure photométrique': 'MESURES', 'Mesures photométriques': 'MESURES'}
+VISUEL_BOITIER = 'Boîtier optique'  # images d'un rapport de boîte hors Kizeo, comme la reprise (projet.py)
+MASQUES_KIZEO = 'Masque chambre ABCD'
+# Photos des études COMAC (Rue …_Photos/<appui>_<n>.jpg) : sans légende, leur rang ne dit pas la vue (tête en _2,
+# marquage puis ensemble pour un appui BT, l'inverse pour un appui télécom, avec des exceptions) ; classement fait à
+# l'œil, pour ce jeu d'essai, dans COMAC_VUES (rue ; fichier ; vue : TETE, ENSEMBLE, MARQUAGE ou AUTRE ; remarque).
+COMAC_VUES = os.path.join(ICI, 'evicom_comac_vues.csv')
+VISUELS_COMAC = {'MARQUAGE': 'Marquage du poteau (APD)'}
 
 
 def iso(t):
@@ -165,6 +203,195 @@ def images_pdf(donnees):
     return images
 
 
+UNITE = (1, 0, 0, 1, 0, 0)
+# jetons d'un flux de contenu : tableau (TJ), chaîne hexadécimale, nom, chaîne littérale, nombre, opérateur
+JETON_PDF = re.compile(rb'\[[^\]]*\]|<[0-9A-Fa-f\s]*>|/[^\s/\[\]<>()]+|\((?:\\.|[^\\)])*\)|-?(?:\d+\.?\d*|\.\d+)'
+                       rb'|[A-Za-z\'"*]+')
+
+
+def produit(m, n):
+    """Produit de deux matrices PDF [a b c d e f] (m appliquée d'abord, puis n)."""
+    a, b, c, d, e, f = m
+    a2, b2, c2, d2, e2, f2 = n
+    return (a * a2 + b * c2, a * b2 + b * d2, c * a2 + d * c2, c * b2 + d * d2, e * a2 + f * c2 + e2,
+            e * b2 + f * d2 + f2)
+
+
+def lire_pdf(donnees):
+    """Texte et images d'un PDF simple (rapports Kizeo Forms mis en page par wkhtmltopdf : polices Identity-H avec leur
+    ToUnicode, texte en <…> Tj, images appelées par Do), page après page et de haut en bas (position calculée par les
+    matrices cm, Tm et Td : le flux ne suit pas toujours l'ordre de lecture) : [('T', taille de police, texte d'une
+    ligne) | ('I', JPEG)] ; petites images (logo) écartées. Lecture minimale, sans dépendance, vérifiée sur les
+    142 rapports du DOE Evicom (mêmes libellés et mêmes images que PyMuPDF) : un PDF d'une autre facture rend une liste
+    vide ou incomplète."""
+    objets = {int(m.group(1)): m.start() for m in re.finditer(rb'(\d+) 0 obj\b', donnees)}
+
+    def corps(n):
+        debut = objets[n]
+        return donnees[debut:donnees.find(b'endobj', debut)]
+
+    def flux(n):
+        o = corps(n)
+        d = o[:o.find(b'stream')]
+        a = o.find(b'stream') + 6
+        a += 2 if o[a:a + 2] == b'\r\n' else 1          # fin de ligne qui suit le mot-clé stream
+        lng = re.search(rb'/Length\s+(\d+)(\s+0\s+R)?', d)
+        if lng and lng.group(2):
+            lng = int(re.search(rb'obj\s+(\d+)', corps(int(lng.group(1)))).group(1))
+        else:
+            lng = int(lng.group(1)) if lng else None
+        brut = o[a:a + lng] if lng else o[a:o.rfind(b'endstream')].rstrip(b'\r\n')
+        return zlib.decompressobj().decompress(brut) if b'/FlateDecode' in d else brut
+
+    def dico(n):
+        o = corps(n)
+        return o[:o.find(b'stream')] if b'stream' in o else o
+
+    def noms(d, cle):
+        m = re.search(rb'/' + cle + rb'\s*<<(.*?)>>', d, re.S)
+        return {k.decode(): int(v) for k, v in re.findall(rb'/(\w+)\s+(\d+) 0 R', m.group(1))} if m else {}
+
+    def cmap(n):
+        texte, table = flux(n).decode('latin-1'), {}
+        for bloc in re.findall(r'beginbfchar(.*?)endbfchar', texte, re.S):
+            for src, dst in re.findall(r'<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>', bloc):
+                table[int(src, 16)] = bytes.fromhex(dst).decode('utf-16-be', 'replace')
+        for bloc in re.findall(r'beginbfrange(.*?)endbfrange', texte, re.S):
+            for a, b, dst in re.findall(r'<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(<[0-9A-Fa-f]+>|\[[^\]]*\])', bloc):
+                cibles = re.findall(r'<([0-9A-Fa-f]+)>', dst)
+                for i, code in enumerate(range(int(a, 16), int(b, 16) + 1)):
+                    if dst.startswith('['):
+                        if i < len(cibles):
+                            table[code] = bytes.fromhex(cibles[i]).decode('utf-16-be', 'replace')
+                    else:
+                        base = int(cibles[0], 16) + i
+                        table[code] = chr(base) if base < 0x110000 else ''
+        return table
+
+    def pages(n):
+        d = dico(n)
+        if b'/Kids' not in d:
+            return [n]
+        kids = re.search(rb'/Kids\s*\[(.*?)\]', d, re.S).group(1)
+        return [p for k in re.findall(rb'(\d+) 0 R', kids) for p in pages(int(k))]
+
+    racine = next((n for n in objets if re.search(rb'/Type\s*/Pages\b', dico(n))
+                   and not re.search(rb'/Parent\b', dico(n))), None)
+    if racine is None:
+        return []
+    elements, cmaps = [], {}
+    for page in pages(racine):
+        d = dico(page)
+        res = re.search(rb'/Resources\s+(\d+) 0 R', d)
+        ressources = dico(int(res.group(1))) if res else d
+        polices = noms(ressources, rb'Font')
+        images = noms(ressources, rb'XObject')
+        contenus = re.search(rb'/Contents\s+(?:(\d+) 0 R|\[(.*?)\])', d, re.S)
+        if not contenus:
+            continue
+        refs = [int(contenus.group(1))] if contenus.group(1) else [int(x) for x in re.findall(rb'(\d+) 0 R', contenus.group(2))]
+        contenu = b'\n'.join(flux(r) for r in refs)
+        # état graphique : matrice courante (cm, pile q / Q) et matrice du texte (Tm, Td), pour placer chaque bloc de
+        # texte et chaque image sur la page (le flux ne suit pas toujours l'ordre de lecture)
+        ctm, pile, tlm, operandes = UNITE, [], UNITE, []
+        police, taille, bloc, sur_page = None, 0, None, []
+        for m in JETON_PDF.finditer(contenu):
+            t = m.group()
+            if t[:1] in b'-.0123456789':
+                operandes.append(float(t))
+                continue
+            if t[:1] in b'/<[(':
+                operandes.append(t)
+                continue
+            nombres = [x for x in operandes if isinstance(x, float)]
+            if t == b'q':
+                pile.append(ctm)
+            elif t == b'Q':
+                ctm = pile.pop() if pile else UNITE
+            elif t == b'cm' and len(nombres) >= 6:
+                ctm = produit(nombres[-6:], ctm)
+            elif t == b'BT':
+                tlm, bloc = UNITE, None
+            elif t == b'Tm' and len(nombres) >= 6:
+                tlm = tuple(nombres[-6:])
+            elif t == b'Td' and len(nombres) >= 2:
+                tlm = produit((1, 0, 0, 1, nombres[-2], nombres[-1]), tlm)
+            elif t == b'Tf' and operandes and isinstance(operandes[0], bytes):
+                nom = operandes[0][1:].decode()
+                if nom in polices and nom not in cmaps:
+                    tu = re.search(rb'/ToUnicode\s+(\d+) 0 R', dico(polices[nom]))
+                    cmaps[nom] = cmap(int(tu.group(1))) if tu else {}
+                police, taille = nom, nombres[-1] if nombres else 0
+            elif t in (b'Tj', b'TJ'):
+                hexa = ''.join(x.decode() for o in operandes if isinstance(o, bytes)
+                               for x in re.findall(rb'<([0-9A-Fa-f]*)>', o))
+                table = cmaps.get(police, {})
+                texte = ''.join(table.get(int(hexa[i:i + 4], 16), '') for i in range(0, len(hexa) - 3, 4))
+                if bloc is None:
+                    bloc = [taille, '', produit(tlm, ctm)[5]]
+                bloc[1] += texte
+            elif t == b'ET' and bloc:
+                sur_page.append((bloc[2], len(sur_page), ('T', bloc[0], bloc[1])))
+                bloc = None
+            elif t == b'Do' and operandes and isinstance(operandes[-1], bytes):
+                n = images.get(operandes[-1][1:].decode())
+                di = dico(n) if n is not None else b''
+                larg, haut = re.search(rb'/Width\s+(\d+)', di), re.search(rb'/Height\s+(\d+)', di)
+                if (b'/DCTDecode' in di and larg and haut
+                        and max(int(larg.group(1)), int(haut.group(1))) >= TAILLE_IMAGE_MIN):
+                    jpeg = flux(n)
+                    if jpeg.startswith(b'\xff\xd8'):
+                        # haut de l'image : carré unité placé par la matrice courante
+                        haut_image = max(ctm[1] * x + ctm[3] * y + ctm[5] for x in (0, 1) for y in (0, 1))
+                        sur_page.append((haut_image, len(sur_page), ('I', jpeg)))
+            operandes = []
+        # de haut en bas (ordonnée PDF décroissante), l'ordre du flux départageant ; blocs d'une même ligne (libellé,
+        # « : », valeur) réunis
+        for y, _, e in sorted(sur_page, key=lambda x: (-round(x[0], 1), x[1])):
+            if e[0] == 'T' and elements and elements[-1][0] == 'T' and abs(elements[-1][3] - y) < 1:
+                elements[-1] = ('T', elements[-1][1], elements[-1][2] + ' ' + e[2], y)
+            else:
+                elements.append(e + (y,) if e[0] == 'T' else e)
+    return [e[:3] for e in elements]
+
+
+def rapport_kizeo(donnees):
+    """Rapport de formulaire Kizeo Forms → (formulaire, champs {libellé : valeur}, photos [(libellé, JPEG)]) ; None si
+    le PDF n'en a pas l'allure. Titres (grand corps) : le premier nomme le formulaire, les suivants coupent les
+    champs ; ligne « libellé : valeur », ou libellé seul terminé par « : » (photos, valeur sur plusieurs lignes) ;
+    photo : rattachée au dernier libellé ; pied de page (petit corps) ignoré."""
+    elements = lire_pdf(donnees)
+    if not any(k == 'T' and 'Kizeo' in e[1] for k, *e in elements):
+        return None
+    formulaire, champs, photos, libelle = None, {}, [], None
+    for k, *e in elements:
+        if k == 'I':
+            photos.append((libelle, e[0]))
+            continue
+        taille, texte = e[0], re.sub(r'\s+', ' ', e[1]).strip()
+        if not texte or taille < 9 or 'Kizeo' in texte:
+            continue
+        if taille >= 13:
+            formulaire = formulaire or texte
+            libelle = None
+        elif texte.endswith(':'):
+            libelle = texte[:-1].strip()
+            champs.setdefault(libelle, '')
+        elif ' : ' in texte:
+            libelle, valeur = (x.strip() for x in texte.split(' : ', 1))
+            champs[libelle] = valeur
+        elif libelle is not None:
+            champs[libelle] = f'{champs[libelle]} {texte}'.strip()
+    return formulaire, champs, photos
+
+
+def titre_kizeo(libelle):
+    """Titre d'un visuel libre d'après le libellé du formulaire, accents rétablis (« Etiquettes entrées » →
+    « Étiquettes entrées », « Boite ouverte » → « Boîte ouverte »)."""
+    t = re.sub(r'\bEtiquette', 'Étiquette', libelle or 'Photo')
+    return re.sub(r'\b([Bb])oite\b', r'\1oîte', t)
+
+
 def lire_mesure(texte):
     """Synthèse réflectométrique FiberCable (export texte) → (en-tête, mesures par (câble, fibre, lambda))."""
     lignes = texte.splitlines()
@@ -235,6 +462,14 @@ def nom_photo(fichier):
     """« BT31_2.jpg », « 10656_S.jpg » → nom du support (BT31, 10656)."""
     base = os.path.splitext(os.path.basename(fichier))[0]
     return re.sub(r'(?i)_(\d+|s)$', '', base).upper()
+
+
+def lire_comac_vues():
+    """Classement des photos COMAC : {(rue, fichier) : (vue, remarque)}."""
+    if not os.path.isfile(COMAC_VUES):
+        return {}
+    with open(COMAC_VUES, encoding='utf-8', newline='') as f:
+        return {(r['rue'], r['fichier']): (r['vue'], r['remarque'] or None) for r in csv.DictReader(f, delimiter=';')}
 
 
 def base_grace(zdoe, dossier, qgis):
@@ -352,13 +587,15 @@ class Doe:
         self.ietat = dict(q('SELECT IETAT_CODE, IETAT_ID FROM immeuble.DEF_IMB_ETAT'))
         self.ltyp = dict(q('SELECT LTYP_CODE, LTYP_ID FROM immeuble.DEF_LOC_TYPE'))
         self.racco = dict(q('SELECT RACCO_CODE, RACCO_ID FROM immeuble.DEF_LOC_RACCO'))
-        self.vues = {(t, c): i for i, t, c in q('SELECT VUE_ID, TYPE_KEY, VUE_CODE FROM DEF_VUE')}
+        self.vues = {(t, c): i for i, t, c in q('SELECT VUE_ID, TYPE_KEY, VUE_CODE FROM DEF_VUE '
+                                                 'WHERE TYPE_KEY IS NOT NULL')}
+        self.vues_equ = dict(q("SELECT VUE_CODE, VUE_ID FROM DEF_VUE WHERE VUE_ENTITE = 'INF_EQUIPEMENT'"))
         self.parent = dict(q('SELECT TYPE_ID, TYPE_PARENT_KEY FROM DEF_TYPE'))
         self.code_projet = PROJET[0]
         self.org, self.adr, self.noe, self.type_noe, self.lin = {}, {}, {}, {}, {}
         self.mat_equip, self.mat_cable, self.equ, self.eqo, self.cab, self.fib = {}, {}, {}, {}, {}, {}
         self.pcb, self.cdc, self.cas = {}, {}, {}
-        self.rangs, self.copies, self.comac = Counter(), set(), {}
+        self.rangs, self.copies, self.comac, self.photos_comac = Counter(), set(), {}, []
         self.stats = Counter()
 
     def un(self, sql, *p):
@@ -444,6 +681,58 @@ class Doe:
         """Membre d'une archive joint tel quel."""
         rel = os.path.join(dossier, os.path.basename(nom))
         return self.fichier(ent, obj, z.read(nom), rel, nom, vue, visuel, date_zip(z.getinfo(nom)), comment)
+
+    def cable_kizeo(self, chiffres):
+        """Câble nommé par les 4 derniers chiffres de son étiquette (rapports de tirage) : son étiquette s'il est le
+        seul à finir ainsi, sinon les chiffres tels quels."""
+        if not chiffres:
+            return None
+        trouves = [r[0] for r in self.con.execute("SELECT CAB_LIB FROM optique.OPT_CABLE WHERE CAB_LIB LIKE ?",
+                                                  (f'%-{chiffres.strip()}',))]
+        return trouves[0] if len(trouves) == 1 else f'…{chiffres.strip()}'
+
+    def rapport_photos(self, z, nom, ent, obj, noe, dossier, vue=None, visuel=None):
+        """Rapport Kizeo Forms (11_PHOTOS) : PDF joint comme document ; chaque photo dans la vue attendue que nomme son
+        libellé, du support noe (VUES_KIZEO, faces des masques) ou, rapport d'une boîte (ent INF_EQUIPEMENT), de
+        l'équipement obj (VUES_BOITE), sinon dans un visuel libre au titre du libellé ; date de réponse du formulaire (heure de
+        Paris) comme date de prise ; formulaire, libellé, câble tiré et technicien en commentaire ; remontée et
+        commentaire écrit au journal du support. Rapport d'une autre facture : images extraites, vue ou visuel donnés."""
+        donnees = z.read(nom)
+        r = rapport_kizeo(donnees)
+        if r is None or not r[2]:
+            self.stats['rapports PDF hors Kizeo'] += 1
+            return self.images(z, nom, ent, obj, dossier, vue, visuel)
+        formulaire, champs, photos = r
+        base = os.path.splitext(os.path.basename(nom))[0].replace('#', '')
+        date = date_fr(champs.get('Date de réponse')) or date_zip(z.getinfo(nom))
+        self.fichier(ent, obj, donnees, os.path.join(dossier, base + '.pdf'), nom, date=date,
+                     comment=f'Rapport {formulaire}')
+        cable = self.cable_kizeo(champs.get('Numéro câble (4 derniers digits)'))
+        technicien = ' '.join(x for x in (champs.get('Prénom'), champs.get('Nom')) if x)
+        faces = iter('ABCD') if sum(lib == MASQUES_KIZEO for lib, _ in photos) == 4 else None
+        n = 0
+        for i, (lib, jpeg) in enumerate(photos, 1):
+            if ent == 'INF_EQUIPEMENT':
+                vue_photo = self.vues_equ.get(VUES_BOITE.get(titre_kizeo(lib)))
+            else:
+                code = VUES_KIZEO.get(lib) or (next(faces) if faces and lib == MASQUES_KIZEO else None)
+                vue_photo = self.vue(noe, code) if code else None
+            libre = None if vue_photo else titre_kizeo(lib)
+            comment = ', '.join(x for x in (f'{formulaire} : {lib or "photo"}', f'câble {cable}' if cable else None,
+                                            technicien or None) if x) + f' (extraite de {os.path.basename(nom)})'
+            if self.fichier(ent, obj, jpeg, os.path.join(dossier, f'{base}_{i:02d}.jpg'), f'{nom}#{i}', vue_photo,
+                            libre, date, comment):
+                n += 1
+                self.stats['photos des rapports : ' + ('vue attendue' if vue_photo else 'visuel libre')] += 1
+        jour = (champs.get('Date de réponse') or '')[:10] or (date or '')[:10]
+        if (champs.get('Remontée') or '').lower() == 'oui':
+            self.commentaire('PRJ_NOE', noe, f'kizeo:{nom}:remontee',
+                             f'{formulaire} du {jour} : remontée' + (f' du câble {cable}' if cable else ''), date=date)
+            self.stats['remontées relevées'] += 1
+        if champs.get('Commentaire écrit'):
+            self.commentaire('PRJ_NOE', noe, f'kizeo:{nom}:commentaire',
+                             f'{formulaire} du {jour} ({technicien}) : {champs["Commentaire écrit"]}', date=date)
+        return n
 
     def images(self, z, nom, ent, obj, dossier, vue=None, visuel=None):
         """Rapport PDF : joint comme document, ses images JPEG comme photos."""
@@ -586,10 +875,13 @@ class Doe:
         con = self.con
         sorte = {'0': 'LIN-AER', '1': 'LIN-AER', '2': 'LIN-FAC'}
         cables = defaultdict(list)          # conduite → câbles (code, étiquette, référence)
-        for cd, cb, etiq, rf in con.execute(
-                'SELECT cc.cc_cd_code, c.cb_code, c.cb_etiquet, c.cb_rf_code FROM grc.t_cab_cond cc '
+        optiques = set()                    # câbles à fibres (cb_capafo > 0) : nature FO dans une conduite
+        for cd, cb, etiq, rf, capa in con.execute(
+                'SELECT cc.cc_cd_code, c.cb_code, c.cb_etiquet, c.cb_rf_code, c.cb_capafo FROM grc.t_cab_cond cc '
                 'JOIN grc.t_cable c ON c.cb_code = cc.cc_cb_code ORDER BY c.cb_etiquet').fetchall():
             cables[cd].append((cb, etiq, rf))
+            if (entier(capa) or 0) > 0:
+                optiques.add(cb)
         gr = lambda a: round((a * 200 / math.pi) % 400, 2) if a is not None else None
         for (cm, n1, n2, imp, lng, codeext, crea, maj, avct, qlt, gmod, dtc, gsrc, inverse) in con.execute(
                 'SELECT cm_code, cm_ndcode1, cm_ndcode2, cm_typ_imp, COALESCE(cm_lgreel, cm_long), cm_codeext, '
@@ -608,7 +900,8 @@ class Doe:
                  iso(crea), iso(maj), cm))
             lin = self.lin[cm] = self.dernier()
             self.stats[t] += 1
-            conduites = con.execute('SELECT d.cd_code, d.cd_type, d.cd_dia_int, d.cd_creadat FROM grc.t_cond_chem dm '
+            conduites = con.execute('SELECT d.cd_code, d.cd_type, d.cd_dia_int, d.cd_dia_ext, d.cd_creadat '
+                                    'FROM grc.t_cond_chem dm '
                                     'JOIN grc.t_conduite d ON d.cd_code = dm.dm_cd_code WHERE dm.dm_cm_code = ? '
                                     'ORDER BY d.cd_code', (cm,)).fetchall()
             if t != 'LIN-SOUT':
@@ -629,16 +922,21 @@ class Doe:
                         'PCB_LNG': round(lng, 2) if lng else None, 'PCB_COMMENT': etiq, 'SRC_MODIF': 'import'})
                     self.stats['câbles portés'] += 1
             else:
-                for num, (cd, cdtype, dia, crea_cd) in enumerate(conduites, 1):
+                for num, (cd, cdtype, dia, dia_ext, crea_cd) in enumerate(conduites, 1):
                     occ = cables.get(cd, [])
+                    # diamètre nominal d'un tube = diamètre extérieur ; FibReady exporte les deux diamètres inversés
+                    # (cd_dia_int 40 / cd_dia_ext 33 pour un PEHD 40, 45 / 42 et 63 / 60 pour le PVC) : le plus grand
+                    diametres = [d for d in (reel(dia), reel(dia_ext)) if d]
                     k = self.inserer('infra.INF_CONDUITE', {
-                        'CD_CODE_EXT': f'{P}-{cd}', 'LIN_KEY': lin, 'CD_NUM': num, 'CD_DIAM': reel(dia),
+                        'CD_CODE_EXT': f'{P}-{cd}', 'LIN_KEY': lin, 'CD_NUM': num,
+                        'CD_DIAM': max(diametres) if diametres else None,
                         'ETAT_KEY': self.etat['X' if occ else 'V'], 'CD_COMMENT': f'GraceTHD {cdtype}',
                         'DATE_CREA': iso(crea_cd), 'SRC_MODIF': 'import'})
                     self.stats['conduites'] += 1
-                    for cb, etiq, rf in occ:
+                    for rang, (cb, etiq, rf) in enumerate(occ, 1):      # rang dans la conduite, ordre des étiquettes
                         self.cdc.setdefault((cb, cm), self.inserer('infra.INF_CD_CABLE', {
-                            'CD_KEY': k, 'MAT_KEY': self.mat_cable.get(rf), 'CDC_NB': 1, 'CDC_COMMENT': etiq,
+                            'CD_KEY': k, 'CDC_RANG': rang, 'MAT_KEY': self.mat_cable.get(rf), 'CDC_NB': 1,
+                            'CDC_NATURE': 'FO' if cb in optiques else None, 'CDC_COMMENT': etiq,
                             'SRC_MODIF': 'import'}))
                         self.stats['occupations'] += 1
 
@@ -846,8 +1144,7 @@ class Doe:
                              a.get('date'))
             self.stats['appuis COMAC en alerte'] += alerte
             for z, m in photos.get(cle, []):
-                self.fichier('PRJ_NOE', noe, z.read(m), os.path.join('photos', P, 'comac', a['nom'], os.path.basename(m)),
-                             f'comac:{cle[0]}:{m}', visuel='Étude COMAC (APD)', date=date_zip(z.getinfo(m)))
+                self.photos_comac.append((noe, cle[0], a['nom'], z, m))
         par_nom = defaultdict(set)
         for cle, noe in self.comac.items():
             par_nom[nom_de(appuis[cle])].add(noe)
@@ -857,6 +1154,28 @@ class Doe:
                             f'{len(set(pris) & {r[0] for r in supports["POT"]})} poteaux, dont {mat} études donnant '
                             f'leur référence MAT_POTEAU), {self.stats["appuis COMAC en alerte"]} études concluant à un '
                             f'appui insuffisant')
+
+    def joindre_photos_comac(self):
+        """Photos des études COMAC, après celles du DOE (une photo Kizeo reste la principale de sa vue) : vue attendue
+        ou visuel libre selon le classement de COMAC_VUES (rue, fichier), sinon visuel libre « Étude COMAC (APD) ».
+        Un appui étudié dans deux rues a ses photos dans les deux archives, réencodées (contenus différents) : une
+        seule copie par nœud et nom de fichier, au suffixe -IN près."""
+        classement = lire_comac_vues()
+        vus = set()
+        for noe, rue, nom, z, m in self.photos_comac:
+            base = os.path.basename(m)
+            cle = (noe, re.sub(r'(?i)-IN(?=_)', '', base).lower())
+            if cle in vus:
+                continue
+            vus.add(cle)
+            code, remarque = classement.get((rue, base), (None, None))
+            vue = self.vue(noe, code) if code in ('TETE', 'ENSEMBLE') else None
+            self.stats['photos COMAC ' + ('en vue attendue' if vue else 'en visuel libre')] += 1
+            self.fichier('PRJ_NOE', noe, z.read(m), os.path.join('photos', P, 'comac', rue, base), f'comac:{rue}:{m}',
+                         vue=vue, visuel=None if vue else VISUELS_COMAC.get(code, 'Étude COMAC (APD)'),
+                         date=date_zip(z.getinfo(m)),
+                         comment=f'Étude COMAC de l\'APD ({rue}, appui {nom}), avant travaux'
+                                 + (f' ; {remarque}' if remarque else ''))
 
     # -- photos, documents, mesures --------------------------------------------------------------
 
@@ -879,9 +1198,9 @@ class Doe:
                     self.stats['rapports de boîte sans boîtier'] += 1
                     continue
                 noe = self.un('SELECT NOE_KEY FROM infra.INF_EQUIPEMENT WHERE EQU_ID = ?', e)
-                vue = self.vue(noe, 'BOITIER')
-                self.stats['images boîtes'] += self.images(z, n, 'INF_EQUIPEMENT', e, os.path.join('photos', P, lib), vue,
-                                                           None if vue else f'Boîtier {lib}')
+                # galerie propre du boîtier (vues de l'équipement) ; images d'un rapport hors Kizeo : visuel libre
+                self.stats['images boîtes'] += self.rapport_photos(z, n, 'INF_EQUIPEMENT', e, noe, os.path.join('photos', P, lib),
+                                                            visuel=VISUEL_BOITIER)
             elif n.startswith('11_PHOTOS/02_TIRAGE/'):
                 # support nommé (façade, appui, chambre), sinon PBO de la zone (SRO-2-02HG_<n° de zone>_…)
                 support = re.search(r'((?:FAC|POT|CHA)-\d-(?:\d{2}HG-)?\d{4})', base)
@@ -892,8 +1211,8 @@ class Doe:
                 if noe is None:
                     self.stats['rapports de tirage sans support'] += 1
                     continue
-                self.stats['images tirage'] += self.images(z, n, 'PRJ_NOE', noe, os.path.join('photos', P, lib),
-                                                           visuel='Tirage')
+                self.stats['images tirage'] += self.rapport_photos(z, n, 'PRJ_NOE', noe, noe, os.path.join('photos', P, lib),
+                                                            visuel='Tirage')
             elif n.startswith('11_PHOTOS/03_POTEAUX/'):
                 lib = n.split('/')[2]
                 if self.noeud_lib(lib):
@@ -948,7 +1267,7 @@ class Doe:
                 e = self.eqo.get(f'PBO-2-02HG-{m.group(1)}') if m else None
                 if e and ext in MIME:
                     self.membre(z, n, 'INF_EQUIPEMENT', e, os.path.join('photos', P, f'PBO-2-02HG-{m.group(1)}'),
-                                visuel='Mesure photométrique')
+                                vue=self.vues_equ['MESURES'])
                     self.stats['photos de photométrie'] += 1
 
     def mesures(self):
@@ -1004,8 +1323,77 @@ class Doe:
         self.rapport.append(f'mesures : {n} réflectométries, {n - sans_route} rattachées à leur route, '
                             f'{self.un("SELECT COUNT(*) FROM optique.OPT_MESURE WHERE MES_CONFORME = 0")} hors seuils')
 
+    def raccordements(self):
+        """Câbles de raccordement de la base FibReady (CAB_TYPE RAC) : amont, le PBO (NOEUDS.NOEID = NOE_AMONT_KEY, son
+        étiquette NOE_CODEXT est celle du boîtier chargé) ; aval, la boîte aux lettres (NOEUDS de type LRI dont
+        CAB_AMONT_KEY désigne le câble), dont l'adresse GraceTHD (ad_code) est donnée par la table de correspondance
+        L_FBT_GRA (GRA_TBL T_ADRESSE ; NOE_CODEXT est l'identifiant national de l'adresse), à défaut par la voie, le
+        numéro et le complément de la BAL (immeuble collectif : une seule adresse exportée). Câble ignoré, compté au
+        rapport, si son PBO ou son adresse n'est pas retrouvé."""
+        fbt = os.path.join(self.source, FIBREADY)
+        f = sqlite3.connect(Path(os.path.abspath(fbt)).as_uri() + '?mode=ro', uri=True)
+        try:
+            lignes = f.execute(
+                "SELECT c.CAB_ID, c.CAB_CAPA, c.CAB_MODULO, c.CAB_LNG, c.CAB_POSE, c.Geometry, a.NOE_CODEXT, "
+                "g.GRA_CODE, b.STREET, b.ADRNUM, b.ADRCPLT FROM CABLES c LEFT JOIN NOEUDS a ON a.NOEID = c.NOE_AMONT_KEY "
+                "LEFT JOIN NOEUDS b ON b.CAB_AMONT_KEY = c.CAB_ID AND b.NOE_TYPE = 'LRI' "
+                "LEFT JOIN L_FBT_GRA g ON g.FBT_TBL = 'NOEUDS' AND g.FBT_KEY = b.NOEID AND g.GRA_TBL = 'T_ADRESSE' "
+                "WHERE c.CAB_TYPE = 'RAC' ORDER BY a.NOE_CODEXT, c.CAB_ID").fetchall()
+        finally:
+            f.close()
+        poses = {'AER': 'aérienne', 'FOU': 'en fourreau', 'IMM': 'en immeuble'}
+        cle = lambda voie, num, rep: (str(voie or '').strip().upper(), str(num or '').strip(), str(rep or '').strip().upper())
+        par_voie = defaultdict(list)
+        for code, voie, num, rep in self.con.execute('SELECT ad_code, ad_nomvoie, ad_numero, ad_rep FROM grc.t_adresse'):
+            par_voie[cle(voie, num, rep)].append(code)
+        rangs, n, sans_pbo, sans_adr, sans_trace, par_voie_n, retournes = Counter(), Counter(), 0, 0, 0, 0, 0
+        for cid, capa, modulo, lng, pose, geom, pbo, ad, voie, num, rep in lignes:
+            e, a = self.eqo.get(pbo), self.adr.get(ad)
+            if a is None:
+                # BAL d'un immeuble collectif : l'export GraceTHD n'a gardé qu'une adresse par immeuble, que l'on
+                # retrouve par la voie, le numéro et le complément (BIS, TER)
+                m = par_voie.get(cle(voie, num, rep), [])
+                a = self.adr.get(m[0]) if len(m) == 1 else None
+                par_voie_n += a is not None
+            if e is None:
+                sans_pbo += 1
+                continue
+            if a is None:
+                sans_adr += 1
+                continue
+            rangs[pbo] += 1
+            lib = f'RAC-{pbo.split("-", 1)[1]}-{rangs[pbo]:02d}' if '-' in pbo else f'RAC-{pbo}-{rangs[pbo]:02d}'
+            c = self.inserer('optique.OPT_CABLE', {
+                'CAB_CODE_EXT': f'{P}-FBT-RAC-{cid}', 'CAB_LIB': lib, 'CFON_KEY': self.cfon['RA'],
+                'CAB_CAPA': entier(capa), 'CAB_MODULO': entier(modulo),
+                'NOE1_KEY': self.un('SELECT NOE_KEY FROM infra.INF_EQUIPEMENT WHERE EQU_ID = ?', e), 'EQU1_KEY': e,
+                'ADR2_KEY': a, 'CAB_LNG': reel(lng), 'AVCT_KEY': self.avct['C'],
+                'CAB_COMMENT': f'Raccordement FibReady, pose {poses.get(pose, pose or "inconnue")}',
+                'SRC_MODIF': 'import'})
+            # tracé FibReady, ligne en Lambert 93 ; autre forme : sans tracé (CastToLinestring rend NULL) ; FibReady le
+            # dessine de la BAL au PBO : retourné pour aller du PBO (NOE1) à l'adresse, comme le câble
+            if geom is not None:
+                self.con.execute('UPDATE optique.OPT_CABLE SET GEOMETRY = CastToLinestring(SetSRID(?, 2154)) '
+                                 'WHERE CAB_ID = ?', (geom, c))
+                retournes += self.con.execute(
+                    'UPDATE optique.OPT_CABLE SET GEOMETRY = ST_Reverse(GEOMETRY) WHERE CAB_ID = ? '
+                    'AND Distance(StartPoint(GEOMETRY), (SELECT GEOMETRY FROM PRJ_ADRESSE WHERE ADR_ID = ADR2_KEY)) < '
+                    'Distance(StartPoint(GEOMETRY), (SELECT GEOMETRY FROM PRJ_NOE WHERE NOE_ID = NOE1_KEY))',
+                    (c,)).rowcount
+            if self.un('SELECT GEOMETRY IS NULL FROM optique.OPT_CABLE WHERE CAB_ID = ?', c):
+                sans_trace += 1
+            n[pose] += 1
+        self.rapport.append(
+            f'raccordements (FibReady) : {sum(n.values())} câbles du PBO à l\'adresse '
+            f'({", ".join(f"{poses.get(k, k)} {v}" for k, v in sorted(n.items()))}), {len(rangs)} PBO, '
+            f'{sans_trace} sans tracé, {retournes} tracés retournés (du PBO à l\'adresse), {par_voie_n} adresses retrouvées par la voie et le numéro (BAL d\'immeuble '
+            f'absente de l\'export GraceTHD) ; ignorés : {sans_pbo} sans PBO chargé, {sans_adr} sans adresse chargée')
+
     def finir(self, zone):
-        """Emprise de la zone : zone du SRO GraceTHD et nœuds du projet à 50 m ; intervention d'import."""
+        """État et taux d'occupation des conduites (projet.recalculer_occupation : sans diamètre, les câbles du DOE ne
+        donnent pas de taux) ; emprise de la zone : zone du SRO GraceTHD et nœuds du projet à 50 m ; intervention
+        d'import."""
+        projet.recalculer_occupation(self.con)
         self.con.execute(
             'UPDATE PRJ_ZONE SET GEOMETRY = (SELECT CastToMultiPolygon(GUnion((SELECT geom FROM grc.t_zsro LIMIT 1), '
             'Buffer(ConvexHull(Collect(n.GEOMETRY)), 50))) FROM PRJ_NOE n WHERE n.ZONE_KEY = ?) WHERE ZONE_ID = ?',
@@ -1019,6 +1407,28 @@ class Doe:
                              f'FROM {table}', (i, self.ent[table]))
 
 
+def fibready(ch):
+    """Contrôle croisé avec la base FibReady du DOE (l'export GraceTHD en est tiré) : chaque équipement FibReady
+    (boîtier : nœud EQU hors points d'infrastructure PDT) est attaché à son support par INF_KEY (attaches du plan) ;
+    il doit être sur le même support que le boîtier chargé de même étiquette (bp_pt_code de GraceTHD)."""
+    fbt = os.path.join(ch.source, FIBREADY)
+    if not os.path.isfile(fbt):
+        return f'{FIBREADY} absente'
+    f = sqlite3.connect(Path(os.path.abspath(fbt)).as_uri() + '?mode=ro', uri=True)
+    try:
+        supports = dict(f.execute('SELECT ID, noe_codext FROM TEMP_INFRA_POINTS'))
+        attendus = {lib: supports.get(k) for lib, k in f.execute(
+            "SELECT NOE_CODEXT, INF_KEY FROM NOEUDS WHERE NOE_TYPE = 'EQU' AND TYPE IN ('PBO', 'BPE')")}
+    finally:
+        f.close()
+    charges = dict(ch.con.execute(
+        'SELECT o.EQO_LIB, n.NOE_LIB FROM optique.OPT_EQUIPEMENT o JOIN infra.INF_EQUIPEMENT e ON e.EQU_ID = o.EQU_KEY '
+        'JOIN PRJ_NOE n ON n.NOE_ID = e.NOE_KEY'))
+    ecarts = [(lib, sup, charges.get(lib)) for lib, sup in sorted(attendus.items()) if charges.get(lib) != sup]
+    return (f'{len(attendus) - len(ecarts)} sur {len(attendus)} au même support'
+            + (f', écarts (boîtier, FibReady, chargé) : {ecarts[:10]}' if ecarts else ''))
+
+
 def controles(ch):
     con = ch.con
     q = lambda s: con.execute(s).fetchall()
@@ -1028,14 +1438,24 @@ def controles(ch):
     print('  équipements par fonction :', q(
         'SELECT t.OTYP_CODE, COUNT(*), SUM(o.AVCT_KEY = 2) FROM optique.OPT_EQUIPEMENT o '
         'JOIN optique.DEF_OPT_EQUIP_TYPE t ON t.OTYP_ID = o.OTYP_KEY GROUP BY 1'))
-    print('  câbles sans passage (colonne d\'immeuble comprise) :', q(
-        'SELECT COUNT(*) FROM optique.OPT_CABLE c WHERE NOT EXISTS (SELECT 1 FROM optique.OPT_PASSAGE p '
-        'WHERE p.CAB_KEY = c.CAB_ID)')[0][0])
+    print('  boîtiers sur leur support d\'après la base FibReady :', fibready(ch))
+    print('  photos des rapports par vue :', q(
+        "SELECT COALESCE(v.VUE_CODE, 'libre : ' || f.VIS_LIB), COUNT(*) FROM PRJ_FICHIER f "
+        "LEFT JOIN DEF_VUE v ON v.VUE_ID = f.VUE_KEY WHERE f.FIC_COMMENT LIKE '%(extraite de %' "
+        "AND f.FIC_TYPE LIKE 'image/%' GROUP BY 1 ORDER BY 2 DESC"))
+    print('  câbles sans passage (colonne d\'immeuble comprise, raccordements exclus) :', q(
+        'SELECT COUNT(*) FROM optique.OPT_CABLE c WHERE c.ADR2_KEY IS NULL AND NOT EXISTS (SELECT 1 FROM '
+        'optique.OPT_PASSAGE p WHERE p.CAB_KEY = c.CAB_ID)')[0][0])
+    print('  raccordements : câbles, avec tracé, longueur réelle et tracée (km), adresses, PBO :', q(
+        'SELECT COUNT(*), COUNT(GEOMETRY), round(SUM(CAB_LNG) / 1000, 2), round(SUM(GLength(GEOMETRY)) / 1000, 2), '
+        'COUNT(DISTINCT ADR2_KEY), COUNT(DISTINCT EQU1_KEY) FROM optique.OPT_CABLE WHERE ADR2_KEY IS NOT NULL')[0])
+    print('  occupation des conduites :', projet.resume_occupation(con), '; diamètres nominaux :', q(
+        'SELECT CD_DIAM, COUNT(*) FROM infra.INF_CONDUITE GROUP BY 1 ORDER BY 1'))
     print('  passages sans ligne de l\'infra :', q(
         'SELECT COUNT(*) FROM optique.OPT_PASSAGE WHERE PCB_KEY IS NULL AND CDC_KEY IS NULL')[0][0])
-    print('  fibres par câble conformes à la capacité :', q(
+    print('  fibres par câble conformes à la capacité (raccordements exclus, sans fibres) :', q(
         'SELECT SUM(n = CAB_CAPA), COUNT(*) FROM (SELECT c.CAB_CAPA, COUNT(f.FIB_ID) n FROM optique.OPT_CABLE c '
-        'LEFT JOIN optique.OPT_FIBRE f ON f.CAB_KEY = c.CAB_ID GROUP BY c.CAB_ID)')[0])
+        'LEFT JOIN optique.OPT_FIBRE f ON f.CAB_KEY = c.CAB_ID WHERE c.ADR2_KEY IS NULL GROUP BY c.CAB_ID)')[0])
     print('  positions par fonction :', q(
         'SELECT d.PFON_CODE, COUNT(*) FROM optique.OPT_POSITION p JOIN optique.DEF_POS_FONCTION d '
         'ON d.PFON_ID = p.PFON_KEY GROUP BY 1'))
@@ -1083,6 +1503,7 @@ def main():
     grace = base_grace(zdoe, os.path.join(dossier, 'sources'), qgis)
     ch = Doe(dossier, qgis, zdoe, zcalc)
     ch.qgis = qgis
+    ch.source = source
     ch.con.execute('ATTACH DATABASE ? AS grc', (grace,))
     ch.con.execute('BEGIN')
     try:
@@ -1095,8 +1516,10 @@ def main():
         ch.cables()
         ch.cassettes()
         ch.locaux()
+        ch.raccordements()
         ch.etudes()
         ch.documents(zone)
+        ch.joindre_photos_comac()
         ch.mesures()
         ch.finir(zone)
         ch.con.execute('COMMIT')

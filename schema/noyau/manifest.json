@@ -1,6 +1,6 @@
 {
   "code": "noyau",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "libelle": "Noyau : projet, référentiels communs, nœuds, linéaires, interventions, fichiers, commentaires",
   "fichier": "noyau.sqlite",
   "spatial": true,

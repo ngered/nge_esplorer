@@ -30,7 +30,7 @@ void main() {
   test('fonds proposés : identifiants distincts, Plan IGN sans appel à Google', () async {
     final ids = availableBaseMaps('cle').map((f) => f.$1).toList();
     expect(ids.toSet().length, ids.length);
-    expect(availableBaseMaps('').map((f) => f.$2), ['Plan IGN', 'Photographies aériennes IGN', 'OpenStreetMap']);
+    expect(availableBaseMaps('').map((f) => f.$2), ['OpenStreetMap', 'Plan IGN', 'Photographies aériennes IGN']);
     expect(await openBaseMap('plan', 'cle'), isA<IgnPlan>());
     expect(await openBaseMap('osm', ''), isA<Osm>());
   });
@@ -54,10 +54,10 @@ void main() {
     expect(m.lastModified, DateTime.utc(2019, 5, 6, 7, 8, 9));
   });
 
-  test('fond par défaut : IGN en France, OSM ailleurs', () {
-    expect(defaultBaseMap([6.18, 48.65, 6.21, 48.67]), isA<IgnPlan>()); // Heillecourt
+  test('fond par défaut : OpenStreetMap, en France comme ailleurs', () {
+    expect(defaultBaseMap([6.18, 48.65, 6.21, 48.67]), isA<Osm>()); // Heillecourt
     expect(defaultBaseMap([-7.65, 33.55, -7.55, 33.62]), isA<Osm>()); // Casablanca
-    expect(defaultBaseMap(null), isA<IgnPlan>());
+    expect(defaultBaseMap(null), isA<Osm>());
   });
 
   test('serveur saturé ou réseau coupé un instant : nouvelles tentatives avant l\'échec', () async {
@@ -83,6 +83,13 @@ void main() {
     );
     expect((await refused.get(Uri.parse('https://tuiles.test/0/0/0.png'))).statusCode, 404);
     expect(n, 1, reason: 'une tuile absente du serveur n\'est pas redemandée');
+  });
+
+  testWidgets('tuile en échec signalée à la couche (rechargée ensuite), pas remplacée par une tuile transparente',
+      (_) async {
+    for (final fallback in [true, false]) {
+      expect((tileProvider(fallback: fallback) as NetworkTileProvider).silenceExceptions, isFalse);
+    }
   });
 
   test('sans connexion ni cache : erreur (tuile transparente)', () async {
