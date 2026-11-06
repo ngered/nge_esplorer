@@ -335,7 +335,8 @@ s'appliquent immédiatement.
   texte trouvé et ce qui y mène ; équipements et supports abandonnés exclus) ; barre basse
   Couches · Créer · Retour (compteur) · Paramètres ; panneau Couches (Aérien, Souterrain, Administratif avec l'œil)
   et fonds de plan ; étiquettes des supports encadrées à la couleur du métier ; sélection en jaune cerclé de bleu,
-  avec un aperçu (Portées, Ouvrir) avant la fiche ;
+  avec un aperçu (Portées, Ouvrir) avant la fiche (Portées retiré ensuite du carton : la rosace est dans la barre
+  basse du poteau ouvert ; reste « Ajouter une destination » devant Ouvrir) ;
 - **démarrage** : bleu nuit, grand logo NGE sur cartouche blanc, compte, bouton jaune d'ouverture de la zone ;
 - **couleurs de la carte** : celles de l'application (GraceTHD), appui énergie en bleu, façade en orange pointillé ;
 - **symboles des supports** : pictos de FibReady, jeu par défaut des paramètres

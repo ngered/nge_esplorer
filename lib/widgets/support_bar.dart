@@ -25,7 +25,8 @@ import 'back_to_map.dart';
 /// propres (grille d'une face, galerie). Passer d'un onglet à l'autre remplace l'onglet au lieu de l'empiler : le
 /// retour ramène aux visuels s'ils sont dessous, puis à la carte. Un seul support est ouvert à la fois : suivre un
 /// parcours ([follow]) ou rouvrir un support quitté (menu ⋮, [SupportMenu]) remplace le support affiché ([openAt])
-/// par son écran d'arrivée, directement au-dessus de la carte (comme « Portées » de l'aperçu de la carte).
+/// par son écran d'arrivée, directement au-dessus de la carte (comme les pastilles d'équipement de l'aperçu de la
+/// carte).
 String supportRoute(GeoObject o) => 'support:${o.id}';
 
 String tabRoute(GeoObject o, String tab) => 'onglet:${o.id}:$tab';

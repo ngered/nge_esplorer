@@ -187,11 +187,12 @@ void main() {
       expect(map.contains(credit.topLeft) && map.contains(credit.bottomRight - const Offset(1, 1)), isTrue);
     }
 
-    // poteau : Portées puis Ouvrir, côte à côte à droite du carton, sans déborder
+    // poteau : Ajouter une destination puis Ouvrir, côte à côte à droite du carton ; pas de bouton Portées
     await showSelected(t, const Size(1280, 800), 'P922');
-    final c = card(t), spans = button(t, 'Portées'), open = button(t, 'Ouvrir');
-    expect(spans.right, lessThan(open.left));
-    expect(spans.left, greaterThanOrEqualTo(c.left));
+    final c = card(t), destination = t.getRect(find.byTooltip('Ajouter une destination')), open = button(t, 'Ouvrir');
+    expect(find.text('Portées'), findsNothing);
+    expect(destination.right, lessThan(open.left));
+    expect(destination.left, greaterThanOrEqualTo(c.left));
     expect(open.right, greaterThan(c.right - 24));
   });
 
@@ -248,12 +249,12 @@ void main() {
 
     await showSelected(t, const Size(360, 800), 'P922');
     c = card(t);
-    final spans = button(t, 'Portées'), open = button(t, 'Ouvrir');
+    final open = button(t, 'Ouvrir');
     final destination = t.getRect(find.byTooltip('Ajouter une destination'));
-    expect(open.width, spans.width, reason: 'largeur du carton partagée');
-    // « Ajouter une destination » à sa taille d'icône, devant
-    expect(destination.right, lessThan(spans.left));
-    expect(destination.width + spans.width + open.width, greaterThan(c.width * 0.8));
+    expect(find.text('Portées'), findsNothing, reason: 'rosace par la barre basse du poteau ouvert');
+    // « Ajouter une destination » à sa taille d'icône, devant ; Ouvrir prend le reste de la largeur
+    expect(destination.right, lessThan(open.left));
+    expect(destination.width + open.width, greaterThan(c.width * 0.8));
   });
 
   /// Carte de téléphone (360 × 800) sur [repo], pile des écrans suivie.

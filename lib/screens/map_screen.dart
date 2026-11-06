@@ -1442,7 +1442,8 @@ class _DestinationPrompt extends StatelessWidget {
 
 /// Aperçu du support sélectionné, avant d'ouvrir sa fiche : étiquette, statut de renseignement, type ; ses
 /// équipements, chacun ouvrant directement son écran dédié (module optique : visuels, liens fibres ; au-delà de
-/// [maxEquipmentChips], une seule pastille propose le choix) ; Portées d'un poteau, Ouvrir (les visuels). [compact] (carte large, où la carte borne le carton à
+/// [maxEquipmentChips], une seule pastille propose le choix) ; Ajouter une destination d'un poteau, Ouvrir (les
+/// visuels) ; pas de Portées (barre basse du poteau ouvert). [compact] (carte large, où la carte borne le carton à
 /// [compactWidth]) : boutons à leur taille naturelle, à droite ; sinon, boutons sur toute la largeur.
 class _Preview extends StatelessWidget {
   const _Preview({
@@ -1546,23 +1547,13 @@ class _Preview extends StatelessWidget {
           if (_equipmentChips(context) case final chips?) ...[const SizedBox(height: 8), chips],
           const SizedBox(height: 10),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-            if (family == 'POT' && object.point != null) ...[
-              // création d'une portée par la carte, privilégiée sur la rosace (notes poteaux rep2)
-              if (onAddDestination != null && !object.outOfZone) ...[
-                IconButton.outlined(
-                  tooltip: tr('Ajouter une destination'),
-                  onPressed: onAddDestination,
-                  icon: const Icon(Icons.add_link),
-                ),
-                const SizedBox(width: 10),
-              ],
-              _fit(
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.push(context,
-                      MaterialPageRoute(settings: tabSettings(object, 'portees'), builder: (_) => RosetteScreen(pole: object))),
-                  icon: const Icon(Icons.explore_outlined),
-                  label: Text(tr('Portées')),
-                ),
+            // création d'une portée par la carte, privilégiée sur la rosace (notes poteaux rep2) ; pas de bouton
+            // Portées : la rosace est dans la barre basse du poteau ouvert
+            if (family == 'POT' && object.point != null && onAddDestination != null && !object.outOfZone) ...[
+              IconButton.outlined(
+                tooltip: tr('Ajouter une destination'),
+                onPressed: onAddDestination,
+                icon: const Icon(Icons.add_link),
               ),
               const SizedBox(width: 10),
             ],
