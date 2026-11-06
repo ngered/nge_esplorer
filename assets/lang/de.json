@@ -388,6 +388,7 @@
   "Valider": "OK",
   "Vers {0}": "Nach {0}",
   "Version web de développement : données de test uniquement, conservées en mémoire jusqu'au rechargement de la page. Exportez le paquet de retour avant de fermer.": "Web-Entwicklungsversion: nur Testdaten, im Speicher gehalten, bis die Seite neu geladen wird. Rückmeldepaket vor dem Schließen exportieren.",
+  "Version {0} · build {1}": "Version {0} · Build {1}",
   "Visuel ajouté : {0}": "Ansicht hinzugefügt: {0}",
   "Visuel libre": "Freie Ansicht",
   "Visuels du support": "Ansichten des Trägers",

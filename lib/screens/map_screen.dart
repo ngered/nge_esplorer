@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../lng.dart';
@@ -120,8 +121,17 @@ class _Home extends StatelessWidget {
                           child: SvgPicture.asset('assets/nge/nge_es_logo.svg', semanticsLabel: 'NGE Energies Solutions'),
                         ),
                         const SizedBox(height: 32),
-                        const Text('NgeEsPlorer',
-                            style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Row(children: [
+                          ClipOval(child: Image.asset('assets/icon/app_icon.png', width: 56, height: 56)),
+                          const SizedBox(width: 14),
+                          const Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('NgeEsPlorer',
+                                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white)),
+                            ),
+                          ),
+                        ]),
                         const SizedBox(height: 6),
                         Text(tr('Saisie terrain · télécoms et électricité'),
                             style: const TextStyle(fontSize: 16, color: Nge.textOnDark)),
@@ -156,6 +166,15 @@ class _Home extends StatelessWidget {
                              'jusqu\'au rechargement de la page. Exportez le paquet de retour avant de fermer.'),
                           style: const TextStyle(fontSize: 13, color: Nge.textOnDark),
                           textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        FutureBuilder<PackageInfo>(
+                          future: PackageInfo.fromPlatform(),
+                          builder: (context, info) => Text(
+                            info.hasData ? tr('Version {0} · build {1}', [info.data!.version, info.data!.buildNumber]) : '',
+                            style: const TextStyle(fontSize: 12, color: Nge.textOnDark),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                       ]),
                     ),

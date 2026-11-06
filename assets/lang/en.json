@@ -388,6 +388,7 @@
   "Valider": "OK",
   "Vers {0}": "To {0}",
   "Version web de développement : données de test uniquement, conservées en mémoire jusqu'au rechargement de la page. Exportez le paquet de retour avant de fermer.": "Web development version: test data only, kept in memory until the page is reloaded. Export the return package before closing.",
+  "Version {0} · build {1}": "Version {0} · build {1}",
   "Visuel ajouté : {0}": "View added: {0}",
   "Visuel libre": "Free view",
   "Visuels du support": "Support visuals",
