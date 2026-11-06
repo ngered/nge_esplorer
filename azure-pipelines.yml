@@ -1,0 +1,117 @@
+# Publication Android vers les testeurs Firebase App Distribution, sur un ordinateur prêté par Microsoft.
+# Lancée à la main : Azure DevOps > Pipelines > ce pipeline > Run pipeline. Mise en place : docs/publication.md.
+#
+# Ressources de la Library (Pipelines > Library) :
+#   - fichiers sécurisés : nge_esplorer.jks (clé de signature), firebase-distribution.json (compte de service) ;
+#   - groupe de variables publication-android : FIREBASE_APP_ID, FIREBASE_GROUPS, KEY_ALIAS,
+#     KEYSTORE_PASSWORD (secret), KEY_PASSWORD (secret).
+
+trigger: none
+pr: none
+
+parameters:
+  - name: notes
+    displayName: Notes de version (laisser vide pour le titre du dernier commit)
+    type: string
+    default: ' '
+  - name: distribuer
+    displayName: Envoyer aux testeurs Firebase
+    type: boolean
+    default: true
+
+variables:
+  - group: publication-android
+  - name: FLUTTER_VERSION
+    value: 3.41.7
+  # numéro de build de chaque publication : 100, 101… (au-dessus des numéros publiés depuis le poste Linux)
+  - name: BUILD_NUMBER
+    value: $[counter('android-build', 100)]
+
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    fetchDepth: 1
+
+  - task: Cache@2
+    displayName: Flutter (cache)
+    inputs:
+      key: 'flutter | "$(Agent.OS)" | "$(FLUTTER_VERSION)"'
+      path: $(Pipeline.Workspace)/flutter
+      cacheHitVar: FLUTTER_CACHE
+
+  - script: git clone --depth 1 --branch $(FLUTTER_VERSION) https://github.com/flutter/flutter.git $(Pipeline.Workspace)/flutter
+    displayName: Flutter (installation)
+    condition: ne(variables.FLUTTER_CACHE, 'true')
+
+  - script: |
+      echo "##vso[task.prependpath]$(Pipeline.Workspace)/flutter/bin"
+      echo "##vso[task.setvariable variable=JAVA_HOME]$(JAVA_HOME_17_X64)"
+    displayName: Chemins de Flutter et Java 17
+
+  - script: |
+      flutter --version
+      flutter pub get
+    displayName: Dépendances
+
+  - script: flutter test
+    displayName: Tests
+
+  - task: DownloadSecureFile@1
+    name: keystore
+    displayName: Clé de signature
+    inputs:
+      secureFile: nge_esplorer.jks
+
+  # android/key.properties, lu par android/app/build.gradle.kts ; jamais versionné (android/.gitignore)
+  - script: |
+      {
+        echo "storeFile=$STORE_FILE"
+        echo "storePassword=$STORE_PASSWORD"
+        echo "keyAlias=$KEY_ALIAS"
+        echo "keyPassword=$KEY_PASSWORD"
+      } > android/key.properties
+    displayName: Signature
+    env:
+      STORE_FILE: $(keystore.secureFilePath)
+      STORE_PASSWORD: $(KEYSTORE_PASSWORD)
+      KEY_ALIAS: $(KEY_ALIAS)
+      KEY_PASSWORD: $(KEY_PASSWORD)
+
+  - script: flutter build apk --release --build-number=$(BUILD_NUMBER)
+    displayName: Construction de l'APK (build $(BUILD_NUMBER))
+
+  - script: rm -f android/key.properties
+    displayName: Nettoyage de la signature
+    condition: always()
+
+  # APK téléchargeable depuis la page de l'exécution (Artifacts), même sans envoi aux testeurs
+  - publish: build/app/outputs/flutter-apk/app-release.apk
+    artifact: apk
+    displayName: APK de l'exécution
+
+  - ${{ if eq(parameters.distribuer, true) }}:
+      - task: DownloadSecureFile@1
+        name: firebase
+        displayName: Accès Firebase
+        inputs:
+          secureFile: firebase-distribution.json
+
+      - script: |
+          NOTES="$(printf '%s' "$NOTES" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          [ -z "$NOTES" ] && NOTES="$(printf '%s' "$COMMIT_MESSAGE" | head -n 1)"
+          echo "Notes : $NOTES"
+          npx --yes firebase-tools@latest appdistribution:distribute build/app/outputs/flutter-apk/app-release.apk \
+            --app "$FIREBASE_APP_ID" \
+            --groups "${FIREBASE_GROUPS:-testeurs_ngeesplorer}" \
+            --release-notes "$NOTES"
+        displayName: Envoi aux testeurs Firebase
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: $(firebase.secureFilePath)
+          FIREBASE_APP_ID: $(FIREBASE_APP_ID)
+          FIREBASE_GROUPS: $(FIREBASE_GROUPS)
+          NOTES: ${{ parameters.notes }}
+          COMMIT_MESSAGE: $(Build.SourceVersionMessage)

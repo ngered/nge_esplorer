@@ -121,6 +121,10 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   `--dart-define=PAQUET=8091` (lanceurs « paquet Evicom », smartphone et tablette, serveur sur le port 8091 ; « paquet
   Evicom avec photos », en profile, port 8092 : `EVICOM_SRO-2-02HG_photos.zip`, 178 Mo, publié par `paquet.py publier …
   --fichiers`)
+- Publication Android aux testeurs Firebase App Distribution : pipeline Azure DevOps `azure-pipelines.yml` sur
+  agent hébergé Microsoft, lancé à la main (mise en place et usage : [docs/publication.md](docs/publication.md) ;
+  signature par `android/key.properties` écrit par le pipeline, build 100+ tenu par Azure) ; ancien chemin :
+  `build_apk_adb.sh` (`DISTRIBUTE=1`) sur le poste Linux 192.168.1.30, joignable seulement depuis la maison
 - Windows desktop : bloqué (Mode développeur désactivé) ; Android : pas de SDK, JDK 11 seulement
 - Proxy Zscaler (inspection SSL) : pour Gradle, `systemProp.javax.net.ssl.trustStoreType=Windows-ROOT`
 - VM Azure SRV0270 : demande d'évolution en cours (voir docs/echanges.md §9)
