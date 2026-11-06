@@ -111,6 +111,7 @@
             "request": "launch",
             "type": "dart",
             "program": "lib/main.dart",
+            "deviceId": "SM S911",
             "preLaunchTask": "ADB : démarrer le serveur et lister les devices"
         },
         {
@@ -118,6 +119,7 @@
             "request": "launch",
             "type": "dart",
             "program": "lib/main.dart",
+            "deviceId": "SM S911",
             "flutterMode": "profile",
             "preLaunchTask": "ADB : démarrer le serveur et lister les devices"
         },
@@ -126,6 +128,7 @@
             "request": "launch",
             "type": "dart",
             "program": "lib/main.dart",
+            "deviceId": "SM S911",
             "flutterMode": "release",
             "preLaunchTask": "ADB : démarrer le serveur et lister les devices"
         }

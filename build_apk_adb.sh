@@ -6,6 +6,8 @@
 #   NO_LAUNCH=1 ./build_apk_adb.sh     # pas de am start
 #   NO_INSTALL=1 ./build_apk_adb.sh    # build seul
 #   DEVICE=<serial> ./build_apk_adb.sh # cible un device adb precis
+#   DISTRIBUTE=1 ./build_apk_adb.sh    # envoi aux testeurs Firebase App Distribution, sans install adb
+#     FIREBASE_APP_ID (env ou .env), FIREBASE_GROUPS (defaut : testeurs_ngeesplorer), NOTES (defaut : dernier commit)
 
 set -euo pipefail
 
@@ -34,6 +36,14 @@ case "$BUILD" in
   *) echo "BUILD inconnu: $BUILD (debug|profile|release)" >&2; exit 1 ;;
 esac
 
+if [[ "${DISTRIBUTE:-0}" == "1" ]]; then
+  # Firebase remplace une version de meme versionCode : chaque publication prend le numero suivant.
+  VERSION="$(sed -n 's/^version: *//p' pubspec.yaml)"
+  NEXT="${VERSION%+*}+$(( ${VERSION##*+} + 1 ))"
+  sed -i "s/^version: .*/version: $NEXT/" pubspec.yaml
+  echo "==> Version $VERSION -> $NEXT (pubspec.yaml)"
+fi
+
 echo "==> flutter pub get"
 "$FLUTTER" pub get
 
@@ -45,6 +55,20 @@ if [[ ! -f "$APK" ]]; then
   exit 1
 fi
 echo "==> APK: $APK ($(du -h "$APK" | cut -f1))"
+
+if [[ "${DISTRIBUTE:-0}" == "1" ]]; then
+  if [[ -z "${FIREBASE_APP_ID:-}" ]]; then
+    echo "FIREBASE_APP_ID manquant (env ou .env)." >&2
+    exit 1
+  fi
+  NOTES="${NOTES:-$(git log -1 --pretty=%s)}"
+  echo "==> Firebase App Distribution, groupes ${FIREBASE_GROUPS:-testeurs_ngeesplorer}"
+  firebase appdistribution:distribute "$APK" \
+    --app "$FIREBASE_APP_ID" \
+    --groups "${FIREBASE_GROUPS:-testeurs_ngeesplorer}" \
+    --release-notes "$NOTES"
+  exit 0
+fi
 
 if [[ "${NO_INSTALL:-0}" == "1" ]]; then
   echo "==> NO_INSTALL=1, fin."

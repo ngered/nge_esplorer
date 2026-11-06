@@ -48,3 +48,6 @@ app.*.map.json
 docs/**
 !docs/**/
 !docs/**/*.md
+
+# Variables locales (cles, identifiants)
+.env
