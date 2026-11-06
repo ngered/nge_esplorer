@@ -29,6 +29,15 @@
             }
         },
         {
+            "label": "ADB : démarrer le serveur et lister les devices",
+            "detail": "Garantit que le serveur ADB tourne et affiche les devices visibles avant de lancer sur Android physique",
+            "type": "shell",
+            "command": "adb",
+            "args": ["devices"],
+            "presentation": { "reveal": "silent", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
             "label": "Serveur du paquet Evicom avec photos",
             "detail": "Paquet docs/essai/paquets/EVICOM_SRO-2-02HG_photos.zip, photos embarquées (?paquet=8092), publié par paquet.py publier … --fichiers",
             "type": "shell",

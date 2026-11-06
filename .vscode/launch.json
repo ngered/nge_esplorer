@@ -82,6 +82,52 @@
             "program": "lib/main.dart",
             "deviceId": "chrome",
             "flutterMode": "profile"
+        },
+        {
+            "name": "NgeEsPlorer (Linux desktop)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "linux"
+        },
+        {
+            "name": "NgeEsPlorer (Linux desktop, profile)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "linux",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "NgeEsPlorer (Linux desktop, release)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "linux",
+            "flutterMode": "release"
+        },
+        {
+            "name": "NgeEsPlorer (Android physique via ADB)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "preLaunchTask": "ADB : démarrer le serveur et lister les devices"
+        },
+        {
+            "name": "NgeEsPlorer (Android physique via ADB, profile)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "flutterMode": "profile",
+            "preLaunchTask": "ADB : démarrer le serveur et lister les devices"
+        },
+        {
+            "name": "NgeEsPlorer (Android physique via ADB, release)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "flutterMode": "release",
+            "preLaunchTask": "ADB : démarrer le serveur et lister les devices"
         }
     ]
 }
