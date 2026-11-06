@@ -18,6 +18,10 @@ parameters:
     displayName: Envoyer aux testeurs Firebase
     type: boolean
     default: true
+  - name: tester
+    displayName: Lancer les tests avant la construction
+    type: boolean
+    default: true
 
 variables:
   - group: publication-android
@@ -26,11 +30,17 @@ variables:
   # numéro de build de chaque publication : 100, 101… (au-dessus des numéros publiés depuis le poste Linux)
   - name: BUILD_NUMBER
     value: $[counter('android-build', 100)]
+  # dépendances Dart et Gradle gardées en cache d'une exécution à l'autre
+  - name: PUB_CACHE
+    value: $(Pipeline.Workspace)/.pub-cache
+  - name: GRADLE_USER_HOME
+    value: $(Pipeline.Workspace)/.gradle
 
 name: $(Date:yyyyMMdd)$(Rev:.r)
 
 pool:
-  vmImage: ubuntu-latest
+  # version fixée (et non ubuntu-latest) : pas de changement de système à l'improviste
+  vmImage: ubuntu-24.04
 
 steps:
   - checkout: self
@@ -52,13 +62,28 @@ steps:
       echo "##vso[task.setvariable variable=JAVA_HOME]$(JAVA_HOME_17_X64)"
     displayName: Chemins de Flutter et Java 17
 
+  - task: Cache@2
+    displayName: Dépendances Dart (cache)
+    inputs:
+      key: 'pub | "$(Agent.OS)" | pubspec.lock'
+      restoreKeys: 'pub | "$(Agent.OS)"'
+      path: $(PUB_CACHE)
+
+  - task: Cache@2
+    displayName: Gradle (cache)
+    inputs:
+      key: 'gradle | "$(Agent.OS)" | android/gradle/wrapper/gradle-wrapper.properties | android/settings.gradle.kts | android/app/build.gradle.kts | pubspec.lock'
+      restoreKeys: 'gradle | "$(Agent.OS)"'
+      path: $(GRADLE_USER_HOME)
+
   - script: |
       flutter --version
       flutter pub get
     displayName: Dépendances
 
-  - script: flutter test
-    displayName: Tests
+  - ${{ if eq(parameters.tester, true) }}:
+      - script: flutter test
+        displayName: Tests
 
   - task: DownloadSecureFile@1
     name: keystore
@@ -84,7 +109,10 @@ steps:
   - script: flutter build apk --release --build-number=$(BUILD_NUMBER)
     displayName: Construction de l'APK (build $(BUILD_NUMBER))
 
-  - script: rm -f android/key.properties
+  # Gradle arrêté avant la mise en cache de ses fichiers (fin de l'exécution)
+  - script: |
+      rm -f android/key.properties
+      (cd android && ./gradlew --stop) || true
     displayName: Nettoyage de la signature
     condition: always()
 

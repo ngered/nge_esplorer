@@ -77,12 +77,15 @@ lancer). Le renommer au besoin (menu ⋮ > *Rename/move*) : « Publication Andro
 
 - **Notes de version** : texte vu par les testeurs ; vide, c'est le titre du dernier commit poussé sur Azure ;
 - **Envoyer aux testeurs Firebase** : décoché, l'APK est seulement construit (pour essai) ;
+- **Lancer les tests avant la construction** : décocher pour gagner quelques minutes, quand les tests viennent
+  d'être passés sur le poste ;
 - **Run**.
 
 À la première exécution, Azure demande d'autoriser l'accès aux fichiers et au groupe de variables
 (*This pipeline needs permission…* > **View > Permit**) : à faire une seule fois.
 
-Compter une quinzaine de minutes la première fois, un peu moins ensuite. Le déroulé s'affiche étape par étape ;
+Compter une quinzaine de minutes la première fois ; ensuite, Flutter, les dépendances Dart et Gradle sont repris
+du cache de l'exécution précédente. Le déroulé s'affiche étape par étape ;
 une coche verte partout : la version est chez les testeurs. L'APK reste aussi téléchargeable depuis la page de
 l'exécution (**Related > published**).
 
