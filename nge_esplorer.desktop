@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=NgeEsPlorer
+GenericName=Application terrain NGE-ES
+Comment=Application terrain multi-metiers NGE-ES
+Exec=/mnt/data/dev/flutter/nge_esplorer/sources/run_linux.sh
+Path=/mnt/data/dev/flutter/nge_esplorer/sources
+Icon=/mnt/data/dev/flutter/nge_esplorer/sources/assets/nge/nge_es_logo.svg
+Terminal=false
+Categories=Utility;Development;
+StartupWMClass=nge_esplorer
