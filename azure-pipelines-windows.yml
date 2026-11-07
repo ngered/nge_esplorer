@@ -1,0 +1,91 @@
+# Construction de la version Windows, sur un ordinateur prêté par Microsoft (sous Windows).
+# Lancée à la main : Azure DevOps > Pipelines > Publication Windows > Run pipeline. Usage : docs/publication.md.
+# Résultat : un zip à télécharger depuis la page de l'exécution (programme, bibliothèques et données) ; aucun
+# secret nécessaire (programme non signé).
+
+trigger: none
+pr: none
+
+parameters:
+  - name: tester
+    displayName: Lancer les tests avant la construction
+    type: boolean
+    default: true
+
+variables:
+  - name: FLUTTER_VERSION
+    value: 3.41.7
+  # numéro de build de chaque construction : 100, 101… (quatrième nombre de la version du programme : 1.0.0.100)
+  - name: BUILD_NUMBER
+    value: $[counter('windows-build', 100)]
+  # dépendances Dart gardées en cache d'une exécution à l'autre
+  - name: PUB_CACHE
+    value: $(Pipeline.Workspace)\.pub-cache
+
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+pool:
+  # version fixée ; Visual Studio 2022 et ses outils C++ déjà installés
+  vmImage: windows-2022
+
+steps:
+  - checkout: self
+    fetchDepth: 1
+
+  - task: Cache@2
+    displayName: Flutter (cache)
+    inputs:
+      key: 'flutter | "$(Agent.OS)" | "$(FLUTTER_VERSION)"'
+      path: $(Pipeline.Workspace)\flutter
+      cacheHitVar: FLUTTER_CACHE
+
+  - pwsh: git clone --depth 1 --branch $(FLUTTER_VERSION) https://github.com/flutter/flutter.git "$(Pipeline.Workspace)\flutter"
+    displayName: Flutter (installation)
+    condition: ne(variables.FLUTTER_CACHE, 'true')
+
+  # Java 17 pour l'extension jni (en-têtes JNI cherchés à la construction)
+  - pwsh: |
+      Write-Host "##vso[task.prependpath]$(Pipeline.Workspace)\flutter\bin"
+      Write-Host "##vso[task.setvariable variable=JAVA_HOME]$(JAVA_HOME_17_X64)"
+    displayName: Chemins de Flutter et Java 17
+
+  - task: Cache@2
+    displayName: Dépendances Dart (cache)
+    inputs:
+      key: 'pub | "$(Agent.OS)" | pubspec.lock'
+      restoreKeys: 'pub | "$(Agent.OS)"'
+      path: $(PUB_CACHE)
+
+  # $PSNativeCommandUseErrorActionPreference : une commande flutter en échec arrête l'étape
+  - pwsh: |
+      $PSNativeCommandUseErrorActionPreference = $true
+      flutter --version
+      flutter pub get
+    displayName: Dépendances
+
+  - ${{ if eq(parameters.tester, true) }}:
+      - pwsh: flutter test
+        displayName: Tests
+
+  - pwsh: flutter build windows --release --build-number=$(BUILD_NUMBER)
+    displayName: Construction du programme (build $(BUILD_NUMBER))
+
+  # Bibliothèques d'exécution Visual C++ jointes au programme : il démarre aussi sur un PC qui ne les a pas.
+  # Zip nommé d'après la version de pubspec.yaml et le numéro de build ; un dossier NgeEsPlorer à l'intérieur.
+  - pwsh: |
+      $release = "build\windows\x64\runner\Release"
+      foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+        Copy-Item "$env:SystemRoot\System32\$dll" $release
+      }
+      $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([^+\s]+)').Matches[0].Groups[1].Value
+      $folder = "$(Agent.TempDirectory)\NgeEsPlorer"
+      Copy-Item $release $folder -Recurse
+      $zip = "$(Build.ArtifactStagingDirectory)\NgeEsPlorer-$version+$(BUILD_NUMBER)-windows.zip"
+      Compress-Archive -Path $folder -DestinationPath $zip
+      Write-Host "Zip : $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) Mo)"
+    displayName: Zip du programme
+
+  # zip téléchargeable depuis la page de l'exécution (Related > published)
+  - publish: $(Build.ArtifactStagingDirectory)
+    artifact: windows
+    displayName: Zip de l'exécution

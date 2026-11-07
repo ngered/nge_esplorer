@@ -123,7 +123,8 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   --fichiers`)
 - Publication Android aux testeurs Firebase App Distribution : pipeline Azure DevOps `azure-pipelines.yml` sur
   agent hébergé Microsoft, lancé à la main (mise en place et usage : [docs/publication.md](docs/publication.md) ;
-  signature par `android/key.properties` écrit par le pipeline, build 100+ tenu par Azure) ; ancien chemin :
+  signature par `android/key.properties` écrit par le pipeline, build 100+ tenu par Azure) ; version Windows par
+  `azure-pipelines-windows.yml` (agent `windows-2022`, zip non signé avec les DLL Visual C++) ; ancien chemin :
   `build_apk_adb.sh` (`DISTRIBUTE=1`) sur le poste Linux 192.168.1.30, joignable seulement depuis la maison
 - Windows desktop : bloqué (Mode développeur désactivé) ; Android : pas de SDK, JDK 11 seulement
 - Proxy Zscaler (inspection SSL) : pour Gradle, `systemProp.javax.net.ssl.trustStoreType=Windows-ROOT`

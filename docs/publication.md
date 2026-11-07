@@ -110,3 +110,25 @@ Ouvrir l'étape en rouge pour lire le message. Les causes les plus courantes :
   l'étape 6 à donner ;
 - *Keystore was tampered with, or password was incorrect* : `KEYSTORE_PASSWORD` ou `KEY_PASSWORD` ;
 - échec de l'envoi Firebase (*permission denied*) : rôle du compte de service (étape 3) ou `FIREBASE_APP_ID`.
+
+## Version Windows
+
+Une seconde recette, `azure-pipelines-windows.yml`, construit le programme Windows sur un ordinateur prêté sous
+Windows. Elle n'a besoin d'aucun fichier ni réglage de la Library.
+
+**Créer le pipeline** (une fois) : comme à l'étape 5, avec le chemin `/azure-pipelines-windows.yml`, puis le
+renommer « Publication Windows ».
+
+**Construire** : **Pipelines > Publication Windows > Run pipeline**, case des tests comme pour Android, **Run**.
+La première exécution télécharge Flutter pour Windows ; les suivantes le reprennent du cache.
+
+**Récupérer le programme** : page de l'exécution > **Related > published** > dossier `windows` > fichier
+`NgeEsPlorer-1.0.0+<build>-windows.zip`. Le décompresser où l'on veut, puis lancer `NgeEsPlorer\nge_esplorer.exe`.
+Le dossier forme un tout : le programme ne fonctionne pas seul, sans ses fichiers voisins.
+
+Le programme n'est pas signé : au premier lancement, Windows peut afficher « Windows a protégé votre ordinateur » ;
+**Informations complémentaires > Exécuter quand même**. Sur un poste NGE, la politique de sécurité peut aussi
+bloquer un programme non signé : voir alors avec la DSI.
+
+Les deux recettes se partagent les 1 800 minutes mensuelles et ne tournent pas en même temps : la seconde lancée
+attend la fin de la première.
