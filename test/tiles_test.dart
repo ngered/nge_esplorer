@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_map/flutter_map.dart';
@@ -90,6 +91,12 @@ void main() {
     for (final fallback in [true, false]) {
       expect((tileProvider(fallback: fallback) as NetworkTileProvider).silenceExceptions, isFalse);
     }
+  });
+
+  test('Android : permission INTERNET dans le manifeste principal (debug et profile seuls l\'accordent sinon ; une '
+      'version release n\'aurait plus de fond de plan)', () {
+    expect(File('android/app/src/main/AndroidManifest.xml').readAsStringSync(),
+        contains('<uses-permission android:name="android.permission.INTERNET"/>'));
   });
 
   test('sans connexion ni cache : erreur (tuile transparente)', () async {

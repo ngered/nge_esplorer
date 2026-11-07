@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Réseau : fonds de plan, géocodage inversé, Google Map Tiles. Les manifestes debug et profile l'accordent
+         seuls ; sans cette ligne, une version release (App Distribution) n'a aucun accès réseau. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="nge_esplorer"
         android:name="${applicationName}"
