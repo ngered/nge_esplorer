@@ -20,7 +20,7 @@ const destinationTypes = {14: 'Poteau télécom', 15: 'Poteau BT', 30: 'Ancrage 
 /// Écart permis (grades) entre l'angle relevé d'une portée et la direction de sa destination, quand la position de
 /// celle-ci est connue : l'aiguille ajuste la direction, elle ne la contredit pas (destination mal placée : corriger
 /// sa position).
-const directionMargin = 5.0;
+const directionMargin = 30.0;
 
 /// Une portée vue depuis le poteau : le linéaire (copie en cours d'édition) et le côté du poteau.
 class PoleSpan {

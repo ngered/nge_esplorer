@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../lng.dart';
@@ -9,7 +10,7 @@ import '../widgets/back_to_map.dart';
 import '../widgets/entry_screen.dart';
 
 /// Paramètres de l'application : langue, fonds de plan (clé Google, annulation des tuiles obsolètes), repérage d'un
-/// support sur la carte (animation, rayon) ; sur le web, photos au serveur local.
+/// support sur la carte (animation, rayon) ; sur le web, photos au serveur local ; à propos (version et build).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -19,6 +20,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final _txtGoogleKey = TextEditingController(text: context.read<AppProvider>().googleKey);
+  final _info = PackageInfo.fromPlatform();
   bool _visible = false;
   bool _test = false;
   String? _result;
@@ -187,6 +189,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: app.urlPhotoServer != null ? null : app.setUseLocalPhotoServer,
               ),
             ],
+            const Divider(height: 32),
+            Text(tr('À propos'), style: t.titleMedium),
+            const SizedBox(height: 8),
+            FutureBuilder<PackageInfo>(
+              future: _info,
+              builder: (context, info) => Text(
+                info.hasData ? tr('Version {0} · build {1}', [info.data!.version, info.data!.buildNumber]) : '',
+                style: t.bodyMedium,
+              ),
+            ),
           ],
         ),
       ),

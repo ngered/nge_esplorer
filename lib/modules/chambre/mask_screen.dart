@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -40,8 +41,10 @@ Color? colorFromHex(String? hex) {
 
 /// Masques d'une chambre (maquette Figma `support_sout_saisie_grid`) : une face en plein écran à ses dimensions
 /// réelles, grille de cellules carrées de 5 cm parcourue par déplacement et zoom quand elle dépasse l'écran ; une
-/// alvéole par conduite, en vraie grandeur, colorée selon son état. Toucher la grille place une alvéole, toucher une
-/// alvéole la sélectionne, l'appui long la déplace. Le choix de la face au-dessus de la grille ; en portrait, le
+/// alvéole par conduite, en vraie grandeur, colorée selon son état. Toucher la grille place une alvéole, le double
+/// toucher d'une alvéole ouvre son panneau (7 novembre 2026 : ouvert d'un simple toucher, il gênait le déplacement) ;
+/// le toucher simple la désigne, et un glissement la déplace alors ; l'appui long déplace toute alvéole. Le choix de
+/// la face au-dessus de la grille ; en portrait, le
 /// panneau de l'alvéole (ou la légende) dessous ; en paysage (tablette, Windows), la grille à gauche, le panneau ou la
 /// légende dans une colonne à droite ([maskSideWidth]), où se déplie aussi la création d'une alvéole.
 class MaskScreen extends StatefulWidget {
@@ -546,7 +549,8 @@ const maxCellPixels = 56.0;
 const _minTouch = 28.0;
 
 /// Grille d'une face aux dimensions réelles : cellules carrées de 5 cm, alvéoles en vraie grandeur ; déplacement et
-/// zoom de la vue, ajout au toucher, déplacement d'une alvéole par appui long. Positions en m.
+/// zoom de la vue, ajout au toucher, alvéole désignée d'un toucher et déplacée d'un glissement, panneau d'une alvéole
+/// au double toucher, déplacement de toute alvéole par appui long. Positions en m.
 class MaskGrid extends StatefulWidget {
   const MaskGrid({
     super.key,
@@ -582,6 +586,40 @@ class _MaskGridState extends State<MaskGrid> {
 
   /// Alvéole sur laquelle la vue a été centrée (arrivée d'un « Vers … », chambre rouverte) : une seule fois.
   String? _centered;
+
+  /// Alvéole désignée d'un toucher simple (7 novembre 2026) : cerclée comme l'alvéole choisie, sans son panneau,
+  /// et prête à être déplacée d'un simple glissement (sans appui long).
+  String? _marked;
+
+  void _mark(String? cd) => setState(() => _marked = cd);
+
+  /// Toucher hors d'une alvéole ou sur une alvéole à placer en miroir : referme le panneau et retire la désignation ;
+  /// vrai s'il y avait l'un ou l'autre (le toucher ne fait rien d'autre).
+  bool _release() {
+    final e = widget.editor;
+    if (e.selection == null && _marked == null) return false;
+    e.select(null);
+    _mark(null);
+    return true;
+  }
+
+  /// Début du déplacement de [held] : écart du doigt à son centre, gardé pendant le déplacement. L'alvéole n'est pas
+  /// choisie : son panneau, en s'ouvrant, recentrerait la grille sous le doigt et cacherait la face.
+  void _startMove(MaskBore held, Offset global, double scale) {
+    final p = _toFace(global, scale);
+    _grab = p == null ? Offset.zero : p - Offset(held.x, held.y);
+  }
+
+  void _updateMove(MaskBore held, Offset global, double scale) {
+    final p = _toFace(global, scale);
+    if (p != null) widget.editor.move(held, p.dx - _grab.dx, p.dy - _grab.dy);
+  }
+
+  /// Fin du déplacement : l'alvéole déposée (sous-tubage par glisser-déposer).
+  void _endMove(MaskBore held) {
+    final moved = widget.editor.bores().where((b) => b.cd == held.cd).firstOrNull;
+    if (moved != null) widget.onDrop?.call(moved);
+  }
 
   @override
   void dispose() {
@@ -641,11 +679,7 @@ class _MaskGridState extends State<MaskGrid> {
       final face = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (d) {
-          if (e.selection != null) {
-            e.select(null);
-          } else {
-            widget.onPlace(d.localPosition.dx / scale, d.localPosition.dy / scale);
-          }
+          if (!_release()) widget.onPlace(d.localPosition.dx / scale, d.localPosition.dy / scale);
         },
         child: SizedBox(
           key: _gridKey,
@@ -659,8 +693,9 @@ class _MaskGridState extends State<MaskGrid> {
                 // un sous-tube à sa taille : le bord de son alvéole reste à toucher (les sous-tubes se choisissent
                 // aussi dans le panneau de l'alvéole)
                 final touch = a.subduct ? d : math.max(d, _minTouch);
-                final chosen = a.cd == e.selection;
-                // l'appui long d'un sous-tube déplace son alvéole, avec tous ses sous-tubes
+                final opened = a.cd == e.selection;
+                final marked = a.cd == _marked;
+                // le déplacement d'un sous-tube déplace son alvéole, avec tous ses sous-tubes
                 final held = a.subduct ? e.bores().where((b) => b.cd == a.parent).firstOrNull ?? a : a;
                 return Positioned(
                   left: a.x * scale - touch / 2,
@@ -669,29 +704,36 @@ class _MaskGridState extends State<MaskGrid> {
                   height: touch,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => e.select(chosen ? null : a.cd),
-                    onLongPressStart: (s) {
-                      // écart du doigt au centre, gardé pendant le déplacement ; l'alvéole n'est choisie qu'au
-                      // relâcher : son panneau, en s'ouvrant, recentrerait la grille sous le doigt
-                      final p = _toFace(s.globalPosition, scale);
-                      _grab = p == null ? Offset.zero : p - Offset(held.x, held.y);
+                    // 7 novembre 2026 : le toucher simple désigne l'alvéole (un panneau ouvert se referme), un second
+                    // la libère ; le double toucher ouvre ou ferme son panneau ; ouvert d'un toucher, il gênait le
+                    // déplacement
+                    onTap: () {
+                      final wasOpened = e.selection != null;
+                      if (wasOpened) e.select(null);
+                      _mark(marked && !wasOpened ? null : a.cd);
                     },
-                    onLongPressMoveUpdate: (m) {
-                      final p = _toFace(m.globalPosition, scale);
-                      if (p != null) e.move(held, p.dx - _grab.dx, p.dy - _grab.dy);
+                    // (panneau fermé, plus rien n'est désigné : le toucher suivant sur la grille place une alvéole)
+                    onDoubleTap: () {
+                      e.select(opened ? null : a.cd);
+                      _mark(null);
                     },
-                    onLongPressEnd: (_) {
-                      e.select(held.cd);
-                      final moved = e.bores().where((b) => b.cd == held.cd).firstOrNull;
-                      if (moved != null) widget.onDrop?.call(moved);
-                    },
+                    // alvéole désignée ou ouverte : un simple glissement la déplace (la vue ne défile pas sous elle),
+                    // depuis le point touché (sans le seuil du glissement, l'alvéole resterait en retard sur le doigt)
+                    dragStartBehavior: DragStartBehavior.down,
+                    onPanStart: marked || opened ? (s) => _startMove(held, s.globalPosition, scale) : null,
+                    onPanUpdate: marked || opened ? (m) => _updateMove(held, m.globalPosition, scale) : null,
+                    onPanEnd: marked || opened ? (_) => _endMove(held) : null,
+                    // toute alvéole : l'appui long la déplace
+                    onLongPressStart: (s) => _startMove(held, s.globalPosition, scale),
+                    onLongPressMoveUpdate: (m) => _updateMove(held, m.globalPosition, scale),
+                    onLongPressEnd: (_) => _endMove(held),
                     child: Center(
                       child: SizedBox.square(
                         dimension: d,
                         child: BoreTile(
                           color: a.duct == null ? Nge.hoverPressed : colors[a.state] ?? Colors.white,
                           label: a.label,
-                          chosen: chosen,
+                          chosen: opened || marked,
                           diameter: d,
                           occupancy: occupancyOf(a.duct, e.referenceData),
                         ),
@@ -718,7 +760,9 @@ class _MaskGridState extends State<MaskGrid> {
                       label: tr('Placer l\'alvéole {0} en miroir', [m.label]),
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: () => e.selection != null ? e.select(null) : e.placeMirror(m),
+                        onTap: () {
+                          if (!_release()) e.placeMirror(m);
+                        },
                         child: Center(
                           child: SizedBox.square(
                             dimension: d,
@@ -904,7 +948,8 @@ class _Legend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final hint = Text(tr('Toucher la grille pour placer une alvéole · appui long pour la déplacer'),
+    final hint = Text(
+        tr('Toucher la grille : placer une alvéole · toucher puis glisser : déplacer · double toucher : ouvrir'),
         style: wide ? t.bodyMedium : t.bodySmall);
     if (wide) {
       return Padding(

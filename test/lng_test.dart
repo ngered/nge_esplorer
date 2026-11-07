@@ -8,12 +8,16 @@ import 'package:nge_esplorer/lng.dart';
 import 'package:nge_esplorer/main.dart';
 import 'package:nge_esplorer/providers/app_provider.dart';
 import 'package:nge_esplorer/screens/settings_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../tools/lang/lng_extract.dart' as lng;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // version et build de la section « À propos » des Paramètres (pas de plateforme dans les tests)
+  PackageInfo.setMockInitialValues(appName: 'NgeEsPlorer', packageName: 'fr.nge.esplorer', version: '1.0.0',
+      buildNumber: '100', buildSignature: '');
   tearDown(() => Lng.load(Lng.sourceLanguage));
 
   test('catalogues : chaque texte des sources est traduit, avec les mêmes {n}', () {

@@ -665,7 +665,7 @@ s'appliquent immédiatement.
   (`POT_NIVEAU`), l'orientation des portées comptant dans son renseignement ;
 - **direction dictée par la destination** (5 novembre 2026, notes poteaux rep2) : vers une destination de position
   connue (ni créée dans la session, ni à relever, `GEOL_MOD_KEY` 8), l'angle part de la direction du poteau vers
-  elle ; l'aiguille et les pas de ± 0,1 / ± 1 gr ne l'ajustent que de ± 5 gr (`directionMargin`) : secteur dessiné
+  elle ; l'aiguille et les pas de ± 0,1 / ± 1 gr ne l'ajustent que de ± 30 gr (`directionMargin` ; 5 gr au départ, élargie le 7 novembre 2026) : secteur dessiné
   autour de la direction, écart affiché sous l'angle, butée signalée en orangé (« si la destination est mal placée,
   corrigez sa position ») et par une vibration ; un angle venu du BE hors de la marge est signalé, gardé tel quel
   tant qu'on ne touche pas l'aiguille. Vers une destination nouvelle ou à relever, orientation libre (la nouvelle
@@ -689,7 +689,11 @@ bouton grille des visuels A à D ; une face en plein écran (A à D), grille (re
 (9 × 12 par défaut, réglable pour les grandes faces) parcourue par déplacement et zoom ; une alvéole par position,
 disque à la couleur de l'état (`DEF_CD_ETAT`), taille selon le diamètre, numéro de la conduite. Toucher la grille
 place une alvéole (parcours souterrain de la chambre, diamètre normalisé, état ; derniers choix repris pour la
-saisie en série) ; toucher une alvéole la sélectionne (état, diamètre, retrait) ; l'appui long la déplace. La
+saisie en série) ; toucher une alvéole la sélectionne (état, diamètre, retrait) ; l'appui long la déplace (depuis
+le 7 novembre 2026, le panneau de l'alvéole s'ouvre au double toucher : ouvert d'un simple toucher ou à la fin d'un
+déplacement, il réduisait la grille et gênait le déplacement ; le toucher simple désigne l'alvéole, cerclée, en
+préparation au déplacement : un simple glissement la déplace alors, sans appui long, la vue ne défilant plus sous
+elle ; un second toucher, ou un toucher sur la grille, la libère). La
 position est écrite dans la chambre (`chb.faces[].positions`), l'état et le diamètre dans la conduite du linéaire
 (`inf.conduites`) ; retirer une position venue du BE l'abandonne (`DATE_ABD`), une alvéole créée dans la session
 disparaît. Le niveau de renseignement est recalculé à l'enregistrement (positions abandonnées ignorées).

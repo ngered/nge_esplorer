@@ -262,7 +262,7 @@ void main() {
     });
   });
 
-  test('rosace : direction dictée par la destination connue, ajustable de ± 5 gr ; libre vers une destination à '
+  test('rosace : direction dictée par la destination connue, ajustable de ± 30 gr ; libre vers une destination à '
       'relever ou créée', () async {
     final repo = MemoryRepository();
     await repo.load(bundle());
@@ -271,12 +271,12 @@ void main() {
     final p = editor.spans.single;
     expect(p.direction, closeTo(100, 0.5)); // P923, plein est
     expect([p.surveyedAngle, p.angle], [null, p.direction]);
-    editor.orient(p, p.direction! + 3);
-    expect([p.limited, p.deviation], [false, closeTo(3, 0.06)]);
+    editor.orient(p, p.direction! - 25);
+    expect([p.limited, p.deviation], [false, closeTo(-25, 0.06)]);
     // au-delà de la marge : arrêtée à la butée, d'un côté comme de l'autre
     editor.orient(p, p.direction! + 40);
     expect([p.limited, p.deviation], [true, closeTo(directionMargin, 0.06)]);
-    editor.orient(p, p.direction! - 12);
+    editor.orient(p, p.direction! - 45);
     expect([p.limited, p.deviation], [true, closeTo(-directionMargin, 0.06)]);
 
     // destination créée pendant la session : elle suit l'aiguille, sans contrainte
@@ -307,19 +307,19 @@ void main() {
     expect(find.textContaining('(destination)'), findsOneWidget);
     await t.tap(find.widgetWithText(ListTile, 'P923'));
     await t.pumpAndSettle();
-    expect(find.textContaining('ajustable de ± 5.0 gr à l\'aiguille'), findsOneWidget);
-    for (var i = 0; i < 3; i++) {
+    expect(find.textContaining('ajustable de ± 30.0 gr à l\'aiguille'), findsOneWidget);
+    for (var i = 0; i < 29; i++) {
       await t.tap(find.text('+1'));
       await t.pump();
     }
-    expect(find.textContaining('écart de l\'aiguille : +3.0 gr'), findsOneWidget);
+    expect(find.textContaining('écart de l\'aiguille : +29.0 gr'), findsOneWidget);
     expect(find.textContaining('Écart limité'), findsNothing);
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < 2; i++) {
       await t.tap(find.text('+1'));
       await t.pump();
     }
-    expect(find.textContaining('écart de l\'aiguille : +5.0 gr'), findsOneWidget);
-    expect(find.text('Écart limité à ± 5.0 gr : si la destination est mal placée, corrigez sa position.'), findsOneWidget);
+    expect(find.textContaining('écart de l\'aiguille : +30.0 gr'), findsOneWidget);
+    expect(find.text('Écart limité à ± 30.0 gr : si la destination est mal placée, corrigez sa position.'), findsOneWidget);
 
     // recalée sur la carte : sur la direction de la destination, le bouton devient inactif
     final realign = find.ancestor(
@@ -330,7 +330,7 @@ void main() {
     await t.tap(find.text('Recaler sur la carte (100.0 gr)'));
     await t.pump();
     // la note, juste au-dessus du bouton, peut être sortie du panneau au défilement
-    expect(find.textContaining('ajustable de ± 5.0 gr à l\'aiguille', skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('ajustable de ± 30.0 gr à l\'aiguille', skipOffstage: false), findsOneWidget);
     expect(find.textContaining('Écart limité', skipOffstage: false), findsNothing);
     expect(t.widget<TextButton>(realign).onPressed, isNull);
     await t.ensureVisible(find.text('+1', skipOffstage: false));

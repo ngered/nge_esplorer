@@ -131,6 +131,14 @@ Future<void> menu(WidgetTester t, String label) async {
   await t.pumpAndSettle();
 }
 
+/// Panneau d'une alvéole de la grille : double toucher (un toucher simple ne l'ouvre plus, 7 novembre 2026).
+Future<void> openBore(WidgetTester t, Finder bore) async {
+  await t.tap(bore);
+  await t.pump(const Duration(milliseconds: 100));
+  await t.tap(bore);
+  await t.pumpAndSettle();
+}
+
 /// Saisie du support : bouton de la barre basse (notes rep16 : retirée du menu ⋮).
 Future<void> entry(WidgetTester t) async {
   await t.tap(find.widgetWithText(BarItem, 'Saisie'));
@@ -365,7 +373,7 @@ void main() {
     expect(t.getCenter(grid).dy, closeTo(t.getCenter(find.byType(MaskGrid)).dy, 0.5));
     expect(t.getSize(find.byType(BoreTile)).width, closeTo(face.width * 0.045 / 0.567, 0.01));
 
-    await t.tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     await t.pumpAndSettle();
     // « Vers C598 » : lien bien visible vers la chambre d'en face, sur sa ligne, avec son type et son pictogramme
     // (notes rep10)
@@ -512,7 +520,7 @@ void main() {
     // d'une touche à la grille de l'autre chambre, sans carton (sa conduite n'y est pas placée : rien de choisi, son
     // alvéole à placer en miroir mise en évidence sur la face d'en face, B) ; la grille de départ, premier écran de
     // l'essai, reste dessous
-    await tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     expect(t.getRect(find.text('Alvéole 1')).left, greaterThanOrEqualTo(grid.right));
     // état et diamètre en grandes cases, libellés entiers : les sept diamètres sur deux rangées de quatre, chaque case
     // facile à toucher
@@ -716,7 +724,7 @@ void main() {
     // seul support ouvert, la grille et l'aperçu de C597 sont fermés (la saisie, premier écran de l'essai, reste
     // dessous)
     List<String?> names() => [for (final r in screenStack.stack) r.settings.name];
-    await t.tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     await t.pumpAndSettle();
     await t.tap(vers('C598'));
     await t.pumpAndSettle();
@@ -794,7 +802,7 @@ void main() {
     expect(names().length, 4);
 
     // grille modifiée : quitter demande s'il faut enregistrer ; toucher à côté garde la grille
-    await tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     await tap(find.widgetWithText(ChoiceChip, 'M'));
     await tap(find.byTooltip('Fermer'));
     await tap(find.widgetWithText(BarItem, 'Saisie'));
@@ -842,7 +850,7 @@ void main() {
     }
 
     // alvéole : la destination supprimée n'est plus un lien, et le panneau le dit
-    await tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     expect(find.textContaining('Vers C598b'), findsOneWidget);
     expect(find.textContaining('support supprimé'), findsOneWidget);
     expect(vers('C598b'), findsNothing);
@@ -874,7 +882,7 @@ void main() {
         child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: MaskScreen(chamber: (await repo.object('C1'))!)),
       ));
       await t.pumpAndSettle();
-      await t.tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+      await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
       await t.pumpAndSettle();
       expect(find.byType(ChoiceChip), findsWidgets, reason: '$size : présentation compacte');
       final chip = find.widgetWithText(ChoiceChip, state);
@@ -1000,7 +1008,7 @@ void main() {
       child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: MaskScreen(chamber: c1)),
     ));
     await t.pumpAndSettle();
-    await t.tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     // grille réduite mais présente (elle tombait à zéro), panneau borné à 45 % du corps
@@ -1252,7 +1260,7 @@ void main() {
       await t.pumpAndSettle();
     }
 
-    await tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     expect(find.text('0 câble'), findsOneWidget);
     expect(find.text('Occupation 0 %'), findsOneWidget);
     await tap(find.text('+10'));
@@ -1320,7 +1328,7 @@ void main() {
     expect(find.textContaining('Miroir de'), findsNothing);
 
     // retirée : le bouton Miroir le signale ; il ouvre le miroir sur la face affichée, même une autre (notes rep15)
-    await t.tap(find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
+    await openBore(t, find.descendant(of: find.byType(BoreTile), matching: find.text('1')));
     await t.pumpAndSettle();
     await t.tap(find.text('Retirer du masque'));
     await t.pumpAndSettle();
@@ -1440,6 +1448,8 @@ void main() {
     Finder tile(String label) => find.ancestor(of: find.text(label), matching: find.byType(BoreTile));
     final center = t.getCenter(tile('1'));
     final radius = t.getSize(tile('1')).width / 2;
+    await t.tapAt(center + Offset(0, radius - 2));
+    await t.pump(const Duration(milliseconds: 100));
     await t.tapAt(center + Offset(0, radius - 2));
     await t.pumpAndSettle();
     expect(find.text('Alvéole 1'), findsOneWidget);
@@ -1605,10 +1615,50 @@ void main() {
     ));
     await t.pumpAndSettle();
     Finder tile(String label) => find.ancestor(of: find.text(label), matching: find.byType(BoreTile));
+    bool chosen(String label) => t.widget<BoreTile>(tile(label)).chosen;
+    // (le toucher simple n'est reconnu qu'après le délai du double toucher)
+    Future<void> touch(String label) async {
+      await t.tap(tile(label));
+      await t.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+      await t.pumpAndSettle();
+    }
+
+    // 7 novembre 2026 : le toucher simple désigne l'alvéole (cerclée) sans ouvrir son panneau, un second la libère
+    await touch('2');
+    expect([chosen('2'), find.text('Alvéole 2').evaluate().length], [isTrue, 0]);
+    await touch('2');
+    expect(chosen('2'), isFalse);
+    // le double toucher ouvre son panneau ; toucher une autre alvéole le referme et la désigne
+    await openBore(t, tile('2'));
+    expect(find.text('Alvéole 2'), findsOneWidget);
+    await touch('1');
+    expect(find.text('Alvéole 2'), findsNothing);
+    expect([chosen('1'), chosen('2')], [isTrue, isFalse]);
+    expect(find.text('masque A · 2 alvéoles'), findsOneWidget); // aucune alvéole ajoutée
+
+    // alvéole désignée : un simple glissement la déplace, ici dans la grande, sans appui long
+    await touch('2');
+    final start = t.getCenter(tile('2'));
+    await t.dragFrom(start, t.getCenter(tile('1')) - start + const Offset(6, 0));
+    await t.pumpAndSettle();
+    expect(find.text('Alvéole 2 devenue sous-tube 1.1'), findsOneWidget);
+    expect(find.textContaining('Alvéole 1.1'), findsNothing);
+    await t.tap(find.text('ANNULER'));
+    await t.pumpAndSettle();
+    expect(find.text('masque A · 2 alvéoles'), findsOneWidget);
+    // non désignée, le glissement déplace la vue, pas l'alvéole
+    await touch('2');
+    expect(chosen('2'), isFalse);
+    final before = t.getCenter(tile('2')) - t.getCenter(tile('1'));
+    await t.dragFrom(t.getCenter(tile('2')), const Offset(30, 0));
+    await t.pumpAndSettle();
+    expect(t.getCenter(tile('2')) - t.getCenter(tile('1')), offsetMoreOrLessEquals(before, epsilon: 0.5));
+
+    // l'appui long déplace toute alvéole, désignée ou non
+
     final g = await t.startGesture(t.getCenter(tile('2')));
     await t.pump(const Duration(milliseconds: 600));
     await t.pumpAndSettle();
-    // l'alvéole choisie, son panneau ouvert : la grille s'est recentrée, la cible se mesure maintenant
     final from = t.getCenter(tile('2')), to = t.getCenter(tile('1'));
     await g.moveBy((to - from) / 2);
     await t.pump();
@@ -1618,6 +1668,8 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Alvéole 2 devenue sous-tube 1.1'), findsOneWidget);
     expect(tile('1.1'), findsOneWidget);
+    // déplacée sans ouvrir son panneau : la face reste dégagée
+    expect(find.textContaining('Alvéole 1.1'), findsNothing);
     expect(find.text('masque A · 1 alvéole'), findsOneWidget);
     await t.tap(find.text('ANNULER'));
     await t.pumpAndSettle();
