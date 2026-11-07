@@ -7,6 +7,9 @@ import '../../lng.dart';
 import '../../map/colors.dart';
 import '../../theme.dart';
 import '../infra/equipment.dart';
+import '../../map/symbols.dart';
+import '../immeuble/building.dart';
+import 'fibready_chart.dart';
 import 'optical.dart';
 
 /// Étape d'une route optique : la position [position] de l'équipement [equipment] du nœud [node], avec la fibre qui y
@@ -20,6 +23,7 @@ typedef RouteHop = ({
   GeoObject? cableIn,
   FibreRef? fibreOut,
   GeoObject? cableOut,
+  GeoObject? address,
 });
 
 /// Route optique d'une fibre (comme celle de FibReady) : suite des positions qu'elle traverse, du connecteur de
@@ -34,6 +38,20 @@ abstract final class OpticalRoute {
   /// Identité d'une position de l'équipement [equipment] (les cartes lues sont des vues, pas toujours les mêmes).
   static String key(String? equipment, Map<String, dynamic> p) =>
       '$equipment|${p['POS_NUM']}|${Optical.fibre(p, '1')}|${Optical.fibre(p, '2')}';
+
+  /// Liens des étapes de [route] (null : suite hors du paquet), d'après la position et la fonction de l'équipement.
+  static List<FibreLink?> links(List<RouteHop> route, ReferenceData ref) => [
+    for (final h in route)
+      h.position == null
+          ? null
+          : FibreLink.ofPosition(
+              h.position!,
+              ref,
+              equipmentType: ref.equipmentTypeCode(
+                (h.node == null ? null : Optical.of(h.node!, h.equipment))?['OTYP_KEY'] as int?,
+              ),
+            ),
+  ];
 
   /// Cassette de la position [p] dans le contenu optique [content].
   static Map<String, dynamic>? cassetteOf(Map<String, dynamic>? content, Map<String, dynamic> p) {
@@ -72,6 +90,11 @@ abstract final class OpticalRoute {
         cableIn: fin == null ? null : await cable(fin.cable),
         fibreOut: fout,
         cableOut: fout == null ? null : await cable(fout.cable),
+        // adresse du support, affichée à la place de son étiquette (maquette Figma, notes equipements rep5)
+        address: switch (n?.props['ADR_KEY']) {
+          final String id => await repo.object(id),
+          _ => null,
+        },
       );
     }
 
@@ -136,6 +159,8 @@ class RoutePanel extends StatelessWidget {
     required this.ref,
     required this.onSelect,
     required this.onFold,
+    this.fibReady = true,
+    this.badges = false,
   });
 
   final List<RouteHop>? route;
@@ -146,10 +171,17 @@ class RoutePanel extends StatelessWidget {
   final ValueChanged<int> onSelect;
   final VoidCallback onFold;
 
+  /// Liens à la charte FibReady ([FibreRow]) plutôt qu'en affichage simplifié.
+  final bool fibReady;
+
+  /// Variante en pastilles de la charte FibReady.
+  final bool badges;
+
   @override
   Widget build(BuildContext context) {
     final r = route;
     final links = r == null ? 0 : r.where((h) => h.position != null).length;
+    final kinds = r == null ? const <FibreLink?>[] : OpticalRoute.links(r, ref);
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 8),
       decoration: BoxDecoration(
@@ -188,6 +220,10 @@ class RoutePanel extends StatelessWidget {
                 hop: h,
                 ref: ref,
                 current: i == current,
+                fibReady: fibReady,
+                badges: badges,
+                link: kinds[i],
+                fate: FibReadyChart.fateOf(kinds, i),
                 onTap: h.position == null || i == current ? null : () => onSelect(i),
               ),
         ],
@@ -197,16 +233,30 @@ class RoutePanel extends StatelessWidget {
 }
 
 /// Étiquette de l'équipement d'une étape : celle du contenu optique, sinon l'intitulé de l'équipement, sinon le
-/// support.
+/// support ; préfixée de la fonction de l'équipement (PBO, BPE, TIROIR…) si elle ne commence pas par elle.
 String hopLabel(RouteHop h, ReferenceData ref) {
   final content = h.node == null || h.equipment == null ? null : Optical.of(h.node!, h.equipment);
   final infra = h.node == null || h.equipment == null ? null : SupportEquipment.find(h.node!, h.equipment!);
-  return content?['EQO_LIB'] as String? ??
+  final label =
+      content?['EQO_LIB'] as String? ??
       (infra != null ? SupportEquipment.title(h.node!, infra, ref) : h.node?.lib ?? tr('Hors du paquet'));
+  // préfixée de la fonction de l'équipement (PBO, BPE…) si elle ne la porte pas déjà (notes equipements rep5)
+  final code = ref.equipmentTypeCode(content?['OTYP_KEY'] as int?);
+  return code == null || label.toUpperCase().startsWith(code.toUpperCase()) ? label : '$code $label';
 }
 
 class _HopTile extends StatelessWidget {
-  const _HopTile({required this.rank, required this.hop, required this.ref, required this.current, this.onTap});
+  const _HopTile({
+    required this.rank,
+    required this.hop,
+    required this.ref,
+    required this.current,
+    required this.fibReady,
+    required this.badges,
+    required this.link,
+    required this.fate,
+    this.onTap,
+  });
 
   final int rank;
   final RouteHop hop;
@@ -214,6 +264,14 @@ class _HopTile extends StatelessWidget {
 
   /// Étape du boîtier affiché : fond jaune et filet à gauche.
   final bool current;
+
+  /// Charte FibReady ([FibreRow]) : lien [link] sur fond de son devenir [fate].
+  final bool fibReady;
+
+  /// Variante en pastilles de la charte FibReady.
+  final bool badges;
+  final FibreLink? link;
+  final FibreFate fate;
   final VoidCallback? onTap;
 
   @override
@@ -223,8 +281,10 @@ class _HopTile extends StatelessWidget {
     final code = ref.equipmentTypeCode(content?['OTYP_KEY'] as int?);
     final label = hopLabel(h, ref);
     final p = h.position;
+    final node = h.node;
     final where = [
-      ?h.node?.lib,
+      // adresse du support (maquette), à défaut son étiquette
+      ?(h.address == null ? node?.lib : fullAddressLabel(h.address!)),
       if (p != null)
         ?switch (OpticalRoute.cassetteOf(content, p)?['CAS_NUM']) {
           final Object n => tr('K{0}', [n]),
@@ -249,18 +309,14 @@ class _HopTile extends StatelessWidget {
                 width: 22,
                 child: Text('$rank', style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
-              Container(
-                width: 40,
-                margin: const EdgeInsets.only(right: 8, top: 1),
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Nge.slateDark),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: Text(
-                  code ?? '?',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+              // picto du support (celui de la carte, avec la marque de l'équipement optique) à la place du type
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: SupportSymbol(
+                  family: SupportSymbol.familyOf(node?.typeKey, ref),
+                  energy: node?.typeKey == 15,
+                  mark: node == null ? null : OpticalMark.of(node, ref),
+                  size: 22,
                 ),
               ),
               Expanded(
@@ -274,20 +330,32 @@ class _HopTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(where, style: const TextStyle(fontSize: 12, color: Nge.secondaryText)),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        if (h.fibreIn != null) _Fibre(fibre: h.fibreIn!, cable: h.cableIn, ref: ref, incoming: true),
-                        if (p != null)
-                          LinkChip(position: p, ref: ref, equipmentType: code)
-                        else
-                          const Text('…', style: TextStyle(fontWeight: FontWeight.w700)),
-                        if (h.fibreOut != null)
-                          _Fibre(fibre: h.fibreOut!, cable: h.cableOut, ref: ref, incoming: false),
-                      ],
-                    ),
+                    if (fibReady)
+                      FibreRow(
+                        fibreIn: h.fibreIn,
+                        badges: badges,
+                        cableIn: h.cableIn,
+                        fibreOut: h.fibreOut,
+                        cableOut: h.cableOut,
+                        link: link,
+                        fate: fate,
+                        ref: ref,
+                      )
+                    else
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          if (h.fibreIn != null) _Fibre(fibre: h.fibreIn!, cable: h.cableIn, ref: ref, incoming: true),
+                          if (p != null)
+                            LinkChip(position: p, ref: ref, equipmentType: code)
+                          else
+                            const Text('…', style: TextStyle(fontWeight: FontWeight.w700)),
+                          if (h.fibreOut != null)
+                            _Fibre(fibre: h.fibreOut!, cable: h.cableOut, ref: ref, incoming: false),
+                        ],
+                      ),
                   ],
                 ),
               ),

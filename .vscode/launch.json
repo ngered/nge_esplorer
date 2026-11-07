@@ -65,6 +65,26 @@
                 "--dart-define=PAQUET=8091", "--dart-define=SERVEUR_PHOTOS=8091"]
         },
         {
+            "name": "NgeEsPlorer (web, terminal smartphone, paquet 71)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "chrome",
+            "preLaunchTask": "Serveur du paquet 71",
+            "args": ["--web-port", "8080", "--web-launch-url", "http://localhost:8080/?terminal=smartphone",
+                "--dart-define=PAQUET=8093", "--dart-define=SERVEUR_PHOTOS=8093"]
+        },
+        {
+            "name": "NgeEsPlorer (web, terminal tablette, paquet 71)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "chrome",
+            "preLaunchTask": "Serveur du paquet 71",
+            "args": ["--web-port", "8080", "--web-launch-url", "http://localhost:8080/?terminal=tablette",
+                "--dart-define=PAQUET=8093", "--dart-define=SERVEUR_PHOTOS=8093"]
+        },
+        {
             "name": "NgeEsPlorer (web, terminal smartphone, paquet Evicom avec photos, profile)",
             "request": "launch",
             "type": "dart",

@@ -391,6 +391,8 @@ void main() {
     await t.tap(find.text('Paramètres'));
     await t.pumpAndSettle();
     await t.scrollUntilVisible(find.text('Repérage animé'), 200, scrollable: find.byType(Scrollable).first);
+    await t.ensureVisible(find.text('Repérage animé'));
+    await t.pumpAndSettle();
     await t.tap(find.text('Repérage animé'));
     await t.pumpAndSettle();
     expect(app.animateLocate, isFalse);

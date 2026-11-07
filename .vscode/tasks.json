@@ -29,6 +29,20 @@
             }
         },
         {
+            "label": "Serveur du paquet 71",
+            "detail": "Paquet docs/essai/paquets/71_NRO71263LOI_25.zip et photos du projet docs/essai/projet_71 (DOE NGE de Louhans) pour la version web (?paquet=8093, ?photos=8093)",
+            "type": "shell",
+            "command": "python",
+            "args": ["-I", "tools/essai/serveur_photos.py", "docs/essai/projet_71", "8093",
+                "--paquet", "docs/essai/paquets/71_NRO71263LOI_25.zip"],
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "serveur-photos",
+                "pattern": { "regexp": "^__aucun__$" },
+                "background": { "activeBegins": true, "beginsPattern": "^__jamais__$", "endsPattern": "servies sur" }
+            }
+        },
+        {
             "label": "ADB : démarrer le serveur et lister les devices",
             "detail": "Garantit que le serveur ADB tourne et affiche les devices visibles avant de lancer sur Android physique",
             "type": "shell",

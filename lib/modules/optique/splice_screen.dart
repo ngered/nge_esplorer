@@ -12,6 +12,7 @@ import '../../widgets/support_bar.dart';
 import '../immeuble/building.dart';
 import '../infra/equipment.dart';
 import 'equipment_screen.dart' show EquipmentScreen;
+import 'fibready_chart.dart';
 import 'optical.dart';
 import 'route_panel.dart';
 
@@ -81,6 +82,25 @@ class _SpliceScreenState extends State<SpliceScreen> {
 
   Map<String, dynamic>? get _content => Optical.of(widget.node, widget.equipment);
 
+  /// Devenir de la fibre de chaque position ([OpticalRoute.key]), fond de son connecteur à la charte FibReady ;
+  /// calculé par la route de chaque fibre après le chargement.
+  final Map<String, FibreFate> _fates = {};
+
+  Future<void> _loadFates() async {
+    final repo = context.read<AppProvider>().repo;
+    final ref = context.read<AppProvider>().referenceData;
+    for (final c in Optical.cassettes(_content)) {
+      for (final p in Optical.positions(c)) {
+        if (Optical.fibre(p, '1') == null && Optical.fibre(p, '2') == null) continue;
+        final r = await OpticalRoute.trace(repo, widget.node, widget.equipment, p);
+        if (!mounted) return;
+        final i = _indexIn(r, _key(p));
+        _fates[_key(p)] = FibReadyChart.fateOf(OpticalRoute.links(r, ref), i);
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +135,7 @@ class _SpliceScreenState extends State<SpliceScreen> {
       _served = served..sort((a, b) => addressLabel(a).compareTo(addressLabel(b)));
       _loaded = true;
     });
+    await _loadFates();
   }
 
   Map<String, dynamic>? get _infra => SupportEquipment.find(widget.node, widget.equipment);
@@ -178,7 +199,8 @@ class _SpliceScreenState extends State<SpliceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ref = context.watch<AppProvider>().referenceData;
+    final app = context.watch<AppProvider>();
+    final ref = app.referenceData;
     final e = _content;
     final mat = ref.row('infra', 'MAT_EQUIP', 'MAT_ID', _infra?['MAT_KEY']);
     final label = e?['EQO_LIB'] as String? ?? (mat == null ? tr('Équipement') : SupportEquipment.label(mat));
@@ -203,7 +225,20 @@ class _SpliceScreenState extends State<SpliceScreen> {
     return Scaffold(
       appBar: AppBar(
         title: ScreenTitle(label, tr('optique')),
-        actions: [SupportMenu(object: widget.node)],
+        // affichage des liens au choix, là où on les lit (aussi dans les Paramètres)
+        actions: [
+          SupportMenu(
+            object: widget.node,
+            actions: [
+              for (final d in LinkDisplay.values)
+                (
+                  icon: d == app.linkDisplay ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  label: tr('Liens : {0}', [tr(d.lib)]),
+                  onSelected: () => app.setLinkDisplay(d),
+                ),
+            ],
+          ),
+        ],
       ),
       bottomNavigationBar: SupportBar(object: widget.node),
       // colonne entière (pas de liste paresseuse) : la position à montrer existe dès la première image
@@ -276,13 +311,24 @@ class _SpliceScreenState extends State<SpliceScreen> {
                           ref: ref,
                           focused: _key(p) == _focus,
                           equipmentType: ref.equipmentTypeCode(e?['OTYP_KEY'] as int?),
+                          fibReady: app.fibReadyChart,
+                          badges: app.linkDisplay == LinkDisplay.badges,
+                          fate: _fates[_key(p)] ?? FibreFate.other,
                           // route optique de la fibre qui traverse la position, dépliée dessous (notes equipements rep3)
                           onRoute: Optical.fibre(p, '1') == null && Optical.fibre(p, '2') == null
                               ? null
                               : () => _toggleRoute(p),
                         ),
                         if (_routeKey == _key(p))
-                          RoutePanel(route: _route, current: _current, ref: ref, onSelect: _goTo, onFold: _fold),
+                          RoutePanel(
+                            route: _route,
+                            current: _current,
+                            ref: ref,
+                            onSelect: _goTo,
+                            onFold: _fold,
+                            fibReady: app.fibReadyChart,
+                            badges: app.linkDisplay == LinkDisplay.badges,
+                          ),
                       ],
                     ],
                   );
@@ -396,6 +442,9 @@ class _PositionRow extends StatelessWidget {
     required this.ref,
     this.focused = false,
     this.equipmentType,
+    this.fibReady = false,
+    this.badges = false,
+    this.fate = FibreFate.other,
     this.onRoute,
   });
 
@@ -412,10 +461,18 @@ class _PositionRow extends StatelessWidget {
   /// Route optique de la fibre de la position (null : position sans fibre).
   final VoidCallback? onRoute;
 
+  /// Charte FibReady ([FibreRow]) : connecteur sur fond du devenir [fate] de la fibre.
+  final bool fibReady;
+
+  /// Variante en pastilles de la charte FibReady.
+  final bool badges;
+  final FibreFate fate;
+
   @override
   Widget build(BuildContext context) {
     final f1 = Optical.fibre(position, '1'), f2 = Optical.fibre(position, '2');
     Widget fibre(FibreRef f) => FibreText(fibre: f, cable: cables[f.cable], referenceData: ref);
+    if (fibReady) return _fibReady(f1, f2);
     return Material(
       color: focused ? Nge.yellow.withValues(alpha: 0.35) : Colors.transparent,
       child: InkWell(
@@ -474,6 +531,51 @@ class _PositionRow extends StatelessWidget {
       ),
     );
   }
+
+  /// Ligne à la charte FibReady (maquette « schéma optique ») : `24Fo | T1 | F1 | -x- | F1 | T1 | 24Fo`, puis le
+  /// rang de la position et l'accès à la route optique.
+  Widget _fibReady(FibreRef? f1, FibreRef? f2) => Material(
+    color: focused ? Nge.yellow.withValues(alpha: 0.35) : Colors.transparent,
+    child: InkWell(
+      onTap: onRoute,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Expanded(
+              child: FibreRow(
+                fibreIn: f1,
+                badges: badges,
+                cableIn: f1 == null ? null : cables[f1.cable],
+                fibreOut: f2,
+                cableOut: f2 == null ? null : cables[f2.cable],
+                link: FibreLink.ofPosition(position, ref, equipmentType: equipmentType),
+                fate: fate,
+                ref: ref,
+              ),
+            ),
+            SizedBox(
+              width: 28,
+              child: Text(
+                '${position['POS_NUM'] ?? ''}',
+                textAlign: TextAlign.end,
+                style: const TextStyle(fontSize: 11, color: Nge.secondaryText),
+              ),
+            ),
+            SizedBox(
+              width: 32,
+              child: onRoute == null
+                  ? null
+                  : Tooltip(
+                      message: tr('Route optique'),
+                      child: const Icon(Icons.route_outlined, size: 20, color: Nge.slate),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// Mesure prise à l'équipement : fibre telle que nommée par l'appareil, longueur d'onde et sens, longueur, perte,

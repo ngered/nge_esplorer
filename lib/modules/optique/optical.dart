@@ -81,7 +81,8 @@ class Optical {
 /// prise abonné, réserve, attente simple, fibre morte.
 enum FibreLink {
   start('o-', 'Départ'), // tr
-  subscriberWait('<A>', 'Attente abonné'), // tr
+  // attente abonné : symbole -# de la prise abonné, comme dans FibReady et la maquette (le libellé seul les distingue)
+  subscriberWait('-#', 'Attente abonné'), // tr
   subscriber('-#', 'Prise abonné'), // tr
   splice('-x-', 'Fusion'), // tr
   wait('-o', 'Attente'), // tr

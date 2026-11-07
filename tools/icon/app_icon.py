@@ -16,8 +16,9 @@ YAW = math.radians(22)  # rotation du casque : l'avant tourné vers la gauche
 ROLL = 8  # inclinaison du casque (degrés)
 
 # Point du casque ramené au centre de l'icône : le casque est décalé en haut à gauche pour laisser la place à la
-# boussole. Icône adaptative Android : le lanceur peut rogner jusqu'au cercle de 66 % du côté ; l'ensemble est
-# réduit pour y tenir.
+# boussole. Icône adaptative Android : le lanceur peut rogner jusqu'au cercle sûr de 66 dp sur 108 (rayon 0,306 du
+# côté) ; l'ensemble est réduit pour y tenir (rayon 0,298), sans retrait supplémentaire du lanceur
+# (adaptive_icon_foreground_inset: 0 dans pubspec.yaml).
 CENTER = (552, 590)
 ADAPTIVE_SCALE = 0.68
 

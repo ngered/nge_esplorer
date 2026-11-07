@@ -702,16 +702,18 @@ class MaskEditor extends ChangeNotifier {
 
   // -- imbrication (sous-tubage par glisser-déposer) -------------------------------------------
 
-  /// Alvéole où l'alvéole [a], déposée, devient sous-tube (glisser-déposer de FOA Explorer, notes rep15) : la plus
-  /// petite alvéole plus grande dont le disque contient son centre ; null s'il n'y en a pas, ou si [a] ne peut pas
-  /// être un sous-tube (déjà sous-tube, sous-tubée, conduite absente, diamètre inconnu).
+  /// Alvéole où l'alvéole [a], déposée, est sous-tube (glisser-déposer d'InfraExplorer, `ClsChbMask.MajTubage`,
+  /// notes rep15 et rep17) : la plus petite alvéole strictement plus grande dont le carré englobant contient son
+  /// centre ; pour un sous-tube, son alvéole s'il y est resté. Null s'il n'y en a pas (un sous-tube déposé hors de son
+  /// alvéole en est détaché), ou si [a] ne peut pas être un sous-tube (sous-tubée elle-même, conduite absente,
+  /// diamètre inconnu).
   MaskBore? nestTarget(MaskBore a) {
     final d = a.diameter;
-    if (a.duct == null || a.subduct || d == null || subductsOf(a).isNotEmpty) return null;
+    if (a.duct == null || d == null || subductsOf(a).isNotEmpty) return null;
     final hosts = [
       for (final b in bores())
         if (b.cd != a.cd && !b.subduct && b.duct != null && (b.diameter ?? 0) > d)
-          if (math.sqrt(math.pow(b.x - a.x, 2) + math.pow(b.y - a.y, 2)) < boreDiameter(b.diameter) / 2) b,
+          if ((b.x - a.x).abs() < boreDiameter(b.diameter) / 2 && (b.y - a.y).abs() < boreDiameter(b.diameter) / 2) b,
     ]..sort((x, y) => x.diameter!.compareTo(y.diameter!));
     return hosts.firstOrNull;
   }
@@ -721,10 +723,11 @@ class MaskEditor extends ChangeNotifier {
   bool canNest(MaskBore a, MaskBore parent) => a.linear?.id == parent.linear?.id || _newDucts.contains(a.cd);
 
   /// L'alvéole [a] devient sous-tube de [parent] ([canNest]) : CD_PARENT_KEY, numéro suivant dans l'alvéole, porteur
-  /// de l'alvéole pour une conduite créée pendant la session ; l'alvéole devient occupée. Rend l'annulation.
+  /// de l'alvéole pour une conduite créée pendant la session ; l'alvéole devient occupée. Un sous-tube change ainsi
+  /// d'alvéole (son ancienne alvéole garde son état, comme dans InfraExplorer). Rend l'annulation.
   VoidCallback nest(MaskBore a, MaskBore parent) {
     final duct = a.duct!;
-    final (number, parentState, from) = (duct['CD_NUM'], parent.state, a.linear);
+    final (number, previous, parentState, from) = (duct['CD_NUM'], duct['CD_PARENT_KEY'], parent.state, a.linear);
     final to = parent.linear;
     if (from?.id != to?.id) _moveDuct(duct, from, to);
     duct['CD_PARENT_KEY'] = parent.cd;
@@ -735,7 +738,7 @@ class MaskEditor extends ChangeNotifier {
     _ductChanged(parent);
     notifyListeners();
     return () {
-      duct.remove('CD_PARENT_KEY');
+      previous == null ? duct.remove('CD_PARENT_KEY') : duct['CD_PARENT_KEY'] = previous;
       duct['CD_NUM'] = number;
       if (from?.id != to?.id) _moveDuct(duct, to, from);
       _ductChanged(MaskBore(a.position, linear: from, duct: duct));
@@ -747,18 +750,27 @@ class MaskEditor extends ChangeNotifier {
   }
 
   /// Le sous-tube [a] redevient une alvéole, au numéro suivant parmi les alvéoles de son porteur ; son ancienne
-  /// alvéole garde son état.
-  void unnest(MaskBore a) {
-    if (!a.subduct) return;
+  /// alvéole garde son état (comme dans InfraExplorer). Rend l'annulation.
+  VoidCallback unnest(MaskBore a) {
+    if (!a.subduct) return () {};
+    final duct = a.duct!;
+    final (parent, number) = (duct['CD_PARENT_KEY'], duct['CD_NUM']);
     final carrier = a.linear ?? chamber;
-    a.duct!
+    duct
       ..remove('CD_PARENT_KEY')
       ..['CD_NUM'] = ductsOf(carrier)
-              .where((c) => c['CD_PARENT_KEY'] == null && !identical(c, a.duct))
+              .where((c) => c['CD_PARENT_KEY'] == null && !identical(c, duct))
               .fold<int>(0, (m, c) => math.max(m, c['CD_NUM'] as int? ?? 0)) +
           1;
     _ductChanged(a);
     notifyListeners();
+    return () {
+      duct
+        ..['CD_PARENT_KEY'] = parent
+        ..['CD_NUM'] = number;
+      _ductChanged(a);
+      notifyListeners();
+    };
   }
 
   /// Change la conduite [duct] de porteur (linéaire, ou chambre si null).

@@ -12,6 +12,7 @@ class Settings {
   static const language = 'langue';
   static const animateLocate = 'reperage_anime';
   static const locateRadius = 'rayon_reperage';
+  static const linkChart = 'charte_liens_fibres';
 
   Future<String?> read(String name) async {
     try {

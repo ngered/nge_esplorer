@@ -6,10 +6,13 @@ import 'package:nge_esplorer/data/geo_object.dart';
 import 'package:nge_esplorer/data/memory_repository.dart';
 import 'package:nge_esplorer/data/reference_data.dart';
 import 'package:nge_esplorer/data/visuals.dart';
+import 'package:nge_esplorer/map/symbols.dart';
 import 'package:nge_esplorer/modules/optique/equipment_screen.dart';
+import 'package:nge_esplorer/modules/optique/fibready_chart.dart';
 import 'package:nge_esplorer/modules/optique/splice_screen.dart';
 import 'package:nge_esplorer/modules/optique/optical.dart';
 import 'package:nge_esplorer/modules/optique/route_panel.dart';
+import 'package:nge_esplorer/modules/immeuble/building.dart';
 import 'package:nge_esplorer/providers/app_provider.dart';
 import 'package:nge_esplorer/screens/address_screen.dart';
 import 'package:nge_esplorer/theme.dart';
@@ -367,7 +370,7 @@ void main() {
       for (final (f, a) in const [('CO', 'DEPART'), ('EP', null), ('PA', 'PASSAGE'), ('PA', 'SURCAPA'), ('AT', 'ABONNE'),
         ('AT', 'RESERVE'), ('AT', 'MORTE'), ('AT', 'SURCAPA'), ('AT', null), ('XX', null)])
         FibreLink.of(f, a)?.symbol,
-    ], ['o-', '-x-', '<@>', '<@>', '<A>', '-R', '-ø', '-o', '-o', null]);
+    ], ['o-', '-x-', '<@>', '<@>', '-#', '-R', '-ø', '-o', '-o', null]);
     // prise abonné : seulement quand la fibre s'achève à la PTO du logement ; au PBO, attente abonné
     final abonne = {'CAB1_KEY': 'C2', 'FIB1_NUM': 3, 'PFON_KEY': 3, 'POS_AFFECT': 'ABONNE'};
     expect([
@@ -436,7 +439,8 @@ void main() {
     ]);
     final repo = MemoryRepository();
     await repo.load(bundle);
-    final app = AppProvider(repo);
+    // affichage simplifié (version précédente, conservée) ; la charte FibReady a son propre essai
+    final app = AppProvider(repo)..setFibReadyChart(false);
     // ouvert comme depuis l'écran dédié de l'équipement (onglet liens:E1)
     await pump(
       t,
@@ -466,7 +470,13 @@ void main() {
     expect(find.byType(RoutePanel), findsOneWidget);
     expect(find.text('Route optique · 2 liens'), findsOneWidget);
     expect(inRoute(find.text('CHA-2-0010 · suite hors du paquet')), findsOneWidget);
-    expect(inRoute(find.text('CHA-2-0011 · K1 · P2')), findsOneWidget);
+    // adresse du support à la place de son étiquette (maquette), son picto à la place du type ; étiquette préfixée
+    // du type si elle ne le porte pas
+    expect(inRoute(find.text('1 RUE VOLTAIRE HUSSIGNY-GODBRANGE · K1 · P2')), findsOneWidget);
+    expect(inRoute(find.text('CHA-2-0011 · K1 · P2')), findsNothing);
+    expect(inRoute(find.byType(SupportSymbol)), findsNWidgets(3));
+    expect(inRoute(find.text('PBO-2-02HG-1015')), findsOneWidget);
+    expect(inRoute(find.text('PBO')), findsNothing);
     // une seule mention par lien, ni symbole ni légende : fusion au PBO, attente simple au PBO aval
     expect(inRoute(find.text('Fusion')), findsOneWidget);
     expect(inRoute(find.text('Attente')), findsOneWidget);
@@ -514,6 +524,100 @@ void main() {
     expect(SpliceScreen.firstCassette([{'CAS_NUM': 3}, {'CAS_NUM': 4}]), 3);
     expect(SpliceScreen.firstCassette([{'CAS_NUM': 0}]), 0);
     expect(SpliceScreen.firstCassette([]), isNull);
+  });
+
+  test('route optique : étiquette préfixée de la fonction de l\'équipement si elle ne la porte pas ; adresse complète',
+      () async {
+    final (repo, app) = await load();
+    final n = (await repo.object('N1'))!.copy();
+    (n.namespace('opt')!['equipements'] as List).first['EQO_LIB'] = '01B19X';
+    RouteHop hop(GeoObject node) => (node: node, equipment: 'E1', position: null, fibreIn: null, cableIn: null,
+        fibreOut: null, cableOut: null, address: null);
+    expect(hopLabel(hop(n), app.referenceData), 'PBO 01B19X');
+    expect(hopLabel(hop((await repo.object('N1'))!), app.referenceData), 'PBO-2-02HG-1015');
+    final a = (await repo.object('A1'))!.copy()..props.addAll({'ADR_CP': '54860'});
+    expect(fullAddressLabel(a), '1 RUE VOLTAIRE 54860 HUSSIGNY-GODBRANGE');
+  });
+
+  test('charte FibReady : devenir de la fibre (fond du connecteur), couleurs des fibres', () {
+    const a = FibreLink.subscriberWait, x = FibreLink.splice, r = FibreLink.reserve, o = FibreLink.start;
+    // vers une attente abonné : vert, le lien de l'attente compris
+    expect([for (var i = 0; i < 3; i++) FibReadyChart.fateOf([o, x, a], i)], List.filled(3, FibreFate.outlet));
+    // vers une réserve : violet ; au-delà d'une prise abonné : orange
+    expect(FibReadyChart.fateOf([o, x, r], 1), FibreFate.reserve);
+    expect(FibReadyChart.fateOf([o, a, x, FibreLink.wait], 2), FibreFate.beyondOutlet);
+    // suite hors du paquet, attente simple : jaune pâle
+    expect(FibReadyChart.fateOf([null, x, FibreLink.wait], 1), FibreFate.other);
+    expect(FibReadyChart.fateOf([o, x, null], 1), FibreFate.other);
+    // couleurs FibReady (param_fiber_colours.csv) : rouge, bleu, vert ; au-delà de 12, de nouveau
+    expect([FibReadyChart.colorOfRank(1).$1, FibReadyChart.colorOfRank(3).$1, FibReadyChart.colorOfRank(13).$1],
+        [const Color(0xFFFF0000), const Color(0xFFADFF2F), const Color(0xFFFF0000)]);
+    expect(FibreFate.outlet.color, const Color(0xFF90EE90));
+    // symbole retourné quand la fibre n'est que du côté sortant (règle de FibReady) : départ o-, fibre morte ø-
+    String sym(FibreLink? l, bool i, bool o) => FibReadyChart.symbolOf(l, hasIn: i, hasOut: o);
+    expect([
+      sym(FibreLink.start, false, true),
+      sym(FibreLink.wait, true, false),
+      sym(FibreLink.wait, false, true),
+      sym(FibreLink.dead, false, true),
+      sym(FibreLink.dead, true, false),
+      sym(FibreLink.reserve, false, true),
+      sym(FibreLink.splice, true, true),
+      sym(null, true, false),
+    ], ['o-', '-o', 'o-', 'ø-', '-ø', 'R-', '-x-', '…']);
+    // texte noir ou blanc selon la luminosité du fond (FibReady) : blanc sur violet
+    expect([FibreRow.contrastOn(FibreFate.reserve.color), FibreRow.contrastOn(FibreFate.outlet.color)],
+        [Colors.white, Colors.black]);
+    expect(FibreFate.reserve.color, const Color(0xFF9370DB));
+  });
+
+  testWidgets('écran Optique à la charte FibReady (par défaut) : capacité, tube et fibre colorés, connecteur dessiné '
+      'sur le fond de la destination de la fibre ; route optique de même', (t) async {
+    final (repo, app) = await load();
+    expect(app.fibReadyChart, isTrue);
+    await pump(t, app, SpliceScreen(node: (await repo.object('N1'))!, equipment: 'E1'));
+    // épissure P2 de la cassette 1 : 24Fo T2 F3 -x- F1 T14 288Fo ; attente simple au bout, fond jaune pâle
+    expect(find.byType(FibreRow), findsWidgets);
+    final splice = find.ancestor(of: find.text('288Fo'), matching: find.byType(FibreRow));
+    expect(find.descendant(of: splice, matching: find.text('24Fo')), findsOneWidget);
+    expect(find.descendant(of: splice, matching: find.text('T2')), findsOneWidget);
+    expect(find.descendant(of: splice, matching: find.text('F3')), findsOneWidget);
+    expect(find.descendant(of: splice, matching: find.text('T14')), findsOneWidget);
+    expect(t.widget<FibreRow>(splice).link, FibreLink.splice);
+    // connecteur par son symbole textuel de FibReady
+    expect(find.descendant(of: splice, matching: find.text('-x-')), findsOneWidget);
+    expect(t.widget<FibreRow>(splice).fate, FibreFate.other);
+    // l'attente abonné : vers une prise ou attente abonné, fond vert
+    final wait = find.byWidgetPredicate((w) => w is FibreRow && w.link == FibreLink.subscriberWait);
+    expect(wait, findsOneWidget);
+    expect(t.widget<FibreRow>(wait).fate, FibreFate.outlet);
+    expect(find.text('Attente abonné'), findsNothing);
+    expect(find.descendant(of: wait, matching: find.text('-#')), findsOneWidget);
+    // route optique : mêmes lignes
+    await t.ensureVisible(find.text('288Fo'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('288Fo'));
+    await t.pumpAndSettle();
+    expect(find.descendant(of: find.byType(RoutePanel), matching: find.byType(FibreRow)), findsNWidgets(3));
+
+    // variante en pastilles (notes equipements rep7) : badge du câble, ronds du tube et de la fibre, badge du connecteur
+    // choisie depuis le menu ⋮ de l'écran Optique
+    await t.tap(find.byTooltip('Plus d\'actions'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Liens : Pastilles'));
+    await t.pumpAndSettle();
+    expect(app.linkDisplay, LinkDisplay.badges);
+    final badgeRow = find.ancestor(of: find.text('288Fo'), matching: find.byType(FibreRow)).first;
+    expect(t.widget<FibreRow>(badgeRow).badges, isTrue);
+    expect(find.descendant(of: badgeRow, matching: find.text('14')), findsOneWidget);
+    expect(find.descendant(of: badgeRow, matching: find.text('-x-')), findsOneWidget);
+    expect(find.descendant(of: badgeRow, matching: find.text('T14')), findsNothing);
+
+    // Paramètres : affichage simplifié (version précédente)
+    app.setFibReadyChart(false);
+    await t.pumpAndSettle();
+    expect(find.byType(FibreRow), findsNothing);
+    expect(find.text('Attente abonné'), findsOneWidget);
   });
 
   test('contenu optique : équipement, cassettes, fibres citées', () async {
@@ -588,6 +692,7 @@ void main() {
   testWidgets('liens fibres d\'un PBO : boîtier, câbles raccordés, cassettes et positions avec leurs couleurs, mesures, '
       'locaux desservis', (t) async {
     final (repo, app) = await load();
+    app.setFibReadyChart(false);
     await pump(t, app, EquipmentScreen(node: (await repo.object('N1'))!, equipment: 'E1'));
 
     // écran dédié de l'équipement : Optique (liens fibres)

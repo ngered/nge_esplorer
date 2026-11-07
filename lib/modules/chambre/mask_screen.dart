@@ -225,21 +225,44 @@ class _MaskScreenState extends State<MaskScreen> with UndoMessage {
 
   /// Alvéole déposée (fin d'un appui long) dans une plus grande : elle en devient un sous-tube, comme dans FOA
   /// Explorer (notes rep15), avec « Annuler » ; une alvéole d'un autre parcours ne le peut pas, et le message le dit.
-  void _drop(MaskBore a) {
+  void _drop(MaskBore a, Offset from) {
     final parent = _editor.nestTarget(a);
-    if (parent == null) return;
+    // sous-tube resté dans son alvéole, ou alvéole déposée hors de toute autre : simple déplacement
+    if (a.subduct ? parent?.cd == a.parent : parent == null) return;
+    // « Annuler » ramène aussi l'alvéole où elle était avant le glissement
+    void back() {
+      final b = _editor.bores().where((b) => b.cd == a.cd).firstOrNull;
+      if (b != null) _editor.move(b, from.dx, from.dy);
+    }
+
+    final label = a.label;
+    String now() => _editor.bores().where((b) => b.cd == a.cd).firstOrNull?.label ?? '?';
+    if (parent == null) {
+      // sous-tube glissé hors de son alvéole : il en est détaché (InfraExplorer, notes rep17)
+      _nesting = true;
+      final undo = _editor.unnest(a);
+      _nesting = false;
+      showUndo(tr('Sous-tube {0} détaché : alvéole {1}', [label, now()]), () {
+        undo();
+        back();
+      });
+      return;
+    }
     if (!_editor.canNest(a, parent)) {
+      // un sous-tube refusé retourne dans son alvéole
+      if (a.subduct) back();
       ScaffoldMessenger.of(context).replaceSnackBar(SnackBar(
           content: Text(tr('Alvéole {0} d\'un autre parcours : elle ne peut pas être sous-tube de l\'alvéole {1}.',
               [a.label, parent.label]))));
       return;
     }
-    final label = a.label;
     _nesting = true;
     final undo = _editor.nest(a, parent);
     _nesting = false;
-    final child = _editor.bores().where((b) => b.cd == a.cd).firstOrNull;
-    showUndo(tr('Alvéole {0} devenue sous-tube {1}', [label, child?.label ?? '?']), undo);
+    showUndo(tr('Alvéole {0} devenue sous-tube {1}', [label, now()]), () {
+      undo();
+      back();
+    });
   }
 
   /// Imbrication en cours : sa notification ne ferme pas son propre « Annuler ».
@@ -562,7 +585,7 @@ class MaskGrid extends StatefulWidget {
   });
 
   /// Fin du déplacement d'une alvéole (appui long relâché) : sous-tubage par glisser-déposer.
-  final void Function(MaskBore bore)? onDrop;
+  final void Function(MaskBore bore, Offset from)? onDrop;
 
   final MaskEditor editor;
   final List<DuctState> states;
@@ -583,6 +606,9 @@ class _MaskGridState extends State<MaskGrid> {
 
   /// Écart du doigt au centre de l'alvéole déplacée (m).
   Offset _grab = Offset.zero;
+
+  /// Position de l'alvéole déplacée au début du glissement (m) : « Annuler » d'une imbrication l'y ramène.
+  Offset _from = Offset.zero;
 
   /// Alvéole sur laquelle la vue a été centrée (arrivée d'un « Vers … », chambre rouverte) : une seule fois.
   String? _centered;
@@ -607,7 +633,8 @@ class _MaskGridState extends State<MaskGrid> {
   /// choisie : son panneau, en s'ouvrant, recentrerait la grille sous le doigt et cacherait la face.
   void _startMove(MaskBore held, Offset global, double scale) {
     final p = _toFace(global, scale);
-    _grab = p == null ? Offset.zero : p - Offset(held.x, held.y);
+    _from = Offset(held.x, held.y);
+    _grab = p == null ? Offset.zero : p - _from;
   }
 
   void _updateMove(MaskBore held, Offset global, double scale) {
@@ -618,7 +645,7 @@ class _MaskGridState extends State<MaskGrid> {
   /// Fin du déplacement : l'alvéole déposée (sous-tubage par glisser-déposer).
   void _endMove(MaskBore held) {
     final moved = widget.editor.bores().where((b) => b.cd == held.cd).firstOrNull;
-    if (moved != null) widget.onDrop?.call(moved);
+    if (moved != null) widget.onDrop?.call(moved, _from);
   }
 
   @override
@@ -695,7 +722,9 @@ class _MaskGridState extends State<MaskGrid> {
                 final touch = a.subduct ? d : math.max(d, _minTouch);
                 final opened = a.cd == e.selection;
                 final marked = a.cd == _marked;
-                // le déplacement d'un sous-tube déplace son alvéole, avec tous ses sous-tubes
+                // l'appui long d'un sous-tube déplace son alvéole, avec tous ses sous-tubes ; désigné, son glissement
+                // le déplace seul : hors de son alvéole il en est détaché, dans une autre il en devient sous-tube
+                // (InfraExplorer, notes rep17)
                 final held = a.subduct ? e.bores().where((b) => b.cd == a.parent).firstOrNull ?? a : a;
                 return Positioned(
                   left: a.x * scale - touch / 2,
@@ -720,9 +749,9 @@ class _MaskGridState extends State<MaskGrid> {
                     // alvéole désignée ou ouverte : un simple glissement la déplace (la vue ne défile pas sous elle),
                     // depuis le point touché (sans le seuil du glissement, l'alvéole resterait en retard sur le doigt)
                     dragStartBehavior: DragStartBehavior.down,
-                    onPanStart: marked || opened ? (s) => _startMove(held, s.globalPosition, scale) : null,
-                    onPanUpdate: marked || opened ? (m) => _updateMove(held, m.globalPosition, scale) : null,
-                    onPanEnd: marked || opened ? (_) => _endMove(held) : null,
+                    onPanStart: marked || opened ? (s) => _startMove(a, s.globalPosition, scale) : null,
+                    onPanUpdate: marked || opened ? (m) => _updateMove(a, m.globalPosition, scale) : null,
+                    onPanEnd: marked || opened ? (_) => _endMove(a) : null,
                     // toute alvéole : l'appui long la déplace
                     onLongPressStart: (s) => _startMove(held, s.globalPosition, scale),
                     onLongPressMoveUpdate: (m) => _updateMove(held, m.globalPosition, scale),

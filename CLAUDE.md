@@ -36,7 +36,9 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   réelles par `tools/essai/charger_essai.py` (Heillecourt, Essonne, GraceTHD de test ; `--foa` pour un projet
   d'une seule base FOA, ex. Nancy) ; jeu d'essai DOE complet (poteaux, chambres, BAL, immeubles, matériel, câbles,
   optique, mesures) par `tools/essai/charger_doe.py` (Evicom SRO-2-02HG, `docs/essai/evicom_data/in/` ; modules
-  `optique` et `immeuble` 0.1.0) ; projet QGIS de
+  `optique` et `immeuble` 0.1.0) ; DOE NGE « 71 » (Louhans, SRO LOI_25, rangé par type de document selon son index
+  REC-ETU) par `tools/essai/charger_71.py` (`docs/essai/71_data/in/`, réseau repris par la classe `Doe` de
+  `charger_doe.py`, paquet `71_NRO71263LOI_25.zip`) ; projet QGIS de
   consultation par `tools/essai/projet_qgis.py` (Python de QGIS : `python-qgis.bat`).
 - **Paquet de zone** : [docs/paquet.md](docs/paquet.md) (ZIP : `paquet.json`, `objets.geojson`,
   `referentiels.json`, photos ; format 0.3.0 : câbles optiques en objets `CAB` sans géométrie, espaces `opt` des
@@ -65,7 +67,9 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   par les pastilles de l'aperçu de la carte et la carte Équipements de la saisie, `openEquipment` ; « Autre équipement »
   du menu ⋮ ; la barre basse porte Saisie à sa place, notes rep16) et son écran
   Optique, liens fibres en lecture (`splice_screen.dart`, `liens:<code>` ; toucher une position : route optique
-  de la fibre dépliée dessous à la manière de FibReady, liens nommés d'après la légende FibReady, une seule mention (`FibreLink`, `LinkChip`), `route_panel.dart` ;
+  de la fibre dépliée dessous à la manière de FibReady, liens à la charte FibReady par défaut (`FibreRow` de `fibready_chart.dart` : cellules capacité, tube, fibre, connecteur par son
+  symbole textuel `DLINK_SYMBOL`, fond selon la destination de la fibre `FibreFate`), variante en pastilles ou affichage simplifié
+  au choix (Paramètres, `AppProvider.linkDisplay`, `LinkDisplay` ; `FibreLink`, `LinkChip`), `route_panel.dart` ;
   une étape touchée bascule aussitôt sur son boîtier, sur son connecteur, route dépliée (`SpliceScreen.focus`, `route`) ;
   replier est volontaire, retrouvée de proche en proche par les positions), immeuble avec la carte « Immeuble et BAL » de
   l'adresse) ; saisie, module et chaque équipement sont des onglets du support
@@ -120,7 +124,7 @@ modules métiers combinables, travail hors ligne en zone blanche. Synthèse comp
   paquet ouvert au démarrage, servi par le même serveur (`--paquet <zip>`, à `/paquet.zip`), par `&paquet=8091` ou
   `--dart-define=PAQUET=8091` (lanceurs « paquet Evicom », smartphone et tablette, serveur sur le port 8091 ; « paquet
   Evicom avec photos », en profile, port 8092 : `EVICOM_SRO-2-02HG_photos.zip`, 178 Mo, publié par `paquet.py publier …
-  --fichiers`)
+  --fichiers` ; « paquet 71 », smartphone et tablette, port 8093 : `71_NRO71263LOI_25.zip`, photos au serveur)
 - Publication Android aux testeurs Firebase App Distribution : pipeline Azure DevOps `azure-pipelines.yml` sur
   agent hébergé Microsoft, lancé à la main (mise en place et usage : [docs/publication.md](docs/publication.md) ;
   signature par `android/key.properties` écrit par le pipeline, build 100+ tenu par Azure) ; version Windows par

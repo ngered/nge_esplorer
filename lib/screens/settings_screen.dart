@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../lng.dart';
 import '../map/tile_source.dart';
+import '../modules/optique/fibready_chart.dart';
 import '../providers/app_provider.dart';
 import '../widgets/back_to_map.dart';
 import '../widgets/entry_screen.dart';
@@ -74,16 +75,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             DropdownButtonFormField<String>(
               initialValue: app.language,
               decoration: InputDecoration(labelText: tr('Langue de l\'interface'), border: const OutlineInputBorder()),
-              items: [
-                for (final e in Lng.languages.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
-              ],
+              items: [for (final e in Lng.languages.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
               onChanged: (code) {
                 if (code != null) app.setLanguage(code);
               },
             ),
             const SizedBox(height: 8),
-            Text(tr('Les données du paquet (libellés des référentiels, commentaires) restent dans leur langue.'),
-                style: t.bodySmall),
+            Text(
+              tr('Les données du paquet (libellés des référentiels, commentaires) restent dans leur langue.'),
+              style: t.bodySmall,
+            ),
             const Divider(height: 32),
             Text(tr('Fonds de plan'), style: t.titleMedium),
             const SizedBox(height: 12),
@@ -105,10 +106,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              tr('Clé d\'API Google Maps Platform avec l\'API Map Tiles activée (console Google Cloud). Renseignée, les '
-                 'fonds Google Plan, Satellite et Hybride apparaissent dans le sélecteur. La clé, son usage et sa '
-                 'facturation au-delà de la franchise gratuite sont sous la responsabilité de l\'utilisateur. Les tuiles '
-                 'Google ne s\'affichent qu\'avec une connexion (pas d\'usage hors connexion selon les règles de Google).'),
+              tr(
+                'Clé d\'API Google Maps Platform avec l\'API Map Tiles activée (console Google Cloud). Renseignée, les '
+                'fonds Google Plan, Satellite et Hybride apparaissent dans le sélecteur. La clé, son usage et sa '
+                'facturation au-delà de la franchise gratuite sont sous la responsabilité de l\'utilisateur. Les tuiles '
+                'Google ne s\'affichent qu\'avec une connexion (pas d\'usage hors connexion selon les règles de Google).',
+              ),
               style: t.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -132,25 +135,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               title: Text(tr('Annuler les téléchargements de tuiles inutiles')),
               subtitle: Text(
-                tr('Abandonne les tuiles qui ne seront plus affichées après un déplacement rapide '
-                   '(économie de données) ; désactivé par défaut.'),
+                tr(
+                  'Abandonne les tuiles qui ne seront plus affichées après un déplacement rapide '
+                  '(économie de données) ; désactivé par défaut.',
+                ),
               ),
               value: app.cancelStaleTiles,
               onChanged: app.setCancelStaleTiles,
             ),
             const Divider(height: 32),
+            Text(tr('Liens fibres'), style: t.titleMedium),
+            Text(tr('Écran Optique et route optique : affichage des liens fibres.'), style: t.bodySmall),
+            RadioGroup<LinkDisplay>(
+              groupValue: app.linkDisplay,
+              onChanged: (v) => app.setLinkDisplay(v!),
+              child: Column(
+                children: [
+                  for (final d in LinkDisplay.values)
+                    RadioListTile<LinkDisplay>(
+                      contentPadding: EdgeInsets.zero,
+                      value: d,
+                      title: Text(tr(d.lib)),
+                      subtitle: Text(tr(d.detail)),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 32),
             Text(tr('Repérage d\'un support'), style: t.titleMedium),
             const SizedBox(height: 4),
             Text(
-              tr('Support trouvé par la recherche, support quitté pour la carte après avoir suivi un parcours, '
-                 '« Repérer sur la carte » du menu ⋮ : la carte va jusqu\'au support, qui pulse à l\'arrivée.'),
+              tr(
+                'Support trouvé par la recherche, support quitté pour la carte après avoir suivi un parcours, '
+                '« Repérer sur la carte » du menu ⋮ : la carte va jusqu\'au support, qui pulse à l\'arrivée.',
+              ),
               style: t.bodySmall,
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(tr('Repérage animé')),
-              subtitle: Text(tr('La vue s\'élève, survole et redescend sur le support ; désactivé, elle s\'y place '
-                  'directement.')),
+              subtitle: Text(
+                tr(
+                  'La vue s\'élève, survole et redescend sur le support ; désactivé, elle s\'y place '
+                  'directement.',
+                ),
+              ),
               value: app.animateLocate,
               onChanged: app.setAnimateLocate,
             ),
@@ -168,8 +197,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              tr('La vue d\'arrivée montre au plus ce rayon autour du support (de plus loin, la carte zoome '
-                 'jusque-là ; de plus près, elle garde le zoom).'),
+              tr(
+                'La vue d\'arrivée montre au plus ce rayon autour du support (de plus loin, la carte zoome '
+                'jusque-là ; de plus près, elle garde le zoom).',
+              ),
               style: t.bodySmall,
             ),
             if (kIsWeb) ...[
@@ -179,8 +210,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: Text(tr('Photos au serveur local')),
                 subtitle: Text(
-                  tr('Affiche les photos non embarquées dans le paquet en les lisant au serveur {0} '
-                     '(tools/essai/serveur_photos.py <projet>).', [AppProvider.localPhotoServer]) +
+                  tr(
+                        'Affiche les photos non embarquées dans le paquet en les lisant au serveur {0} '
+                        '(tools/essai/serveur_photos.py <projet>).',
+                        [AppProvider.localPhotoServer],
+                      ) +
                       (app.urlPhotoServer == null
                           ? ''
                           : ' ${tr('Serveur imposé par l\'adresse de la page : {0}.', [app.urlPhotoServer])}'),

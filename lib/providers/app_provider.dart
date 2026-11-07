@@ -7,6 +7,7 @@ import '../data/geo_object.dart';
 import '../data/bundle.dart';
 import '../data/reference_data.dart';
 import '../data/settings.dart';
+import '../modules/optique/fibready_chart.dart';
 import '../data/visuals.dart';
 import '../lng.dart';
 import '../modules/completion.dart';
@@ -59,6 +60,13 @@ class AppProvider extends ChangeNotifier {
   /// zoom).
   bool animateLocate = true;
   double locateRadius = defaultLocateRadius;
+
+  /// Liens fibres (écran Optique, route optique) à la charte FibReady (`FibreRow`), sinon affichage simplifié
+  /// (`LinkChip`, notes equipements rep4 : version précédente conservée).
+  LinkDisplay linkDisplay = LinkDisplay.fibReady;
+
+  /// Liens en ligne de cellules ou de pastilles (charte FibReady et sa variante), plutôt qu'en affichage simplifié.
+  bool get fibReadyChart => linkDisplay != LinkDisplay.simple;
   static const defaultLocateRadius = 50.0;
 
   /// Rayons de repérage proposés dans les paramètres (m).
@@ -193,6 +201,7 @@ class AppProvider extends ChangeNotifier {
     cancelStaleTiles = await r.read(Settings.cancelStaleTiles) == 'oui';
     useLocalPhotoServer = await r.read(Settings.useLocalPhotoServer) == 'oui';
     animateLocate = await r.read(Settings.animateLocate) != 'non';
+    linkDisplay = LinkDisplay.of(await r.read(Settings.linkChart));
     final radius = double.tryParse(await r.read(Settings.locateRadius) ?? '');
     locateRadius = radius != null && radius > 0 ? radius : defaultLocateRadius;
     final language = await r.read(Settings.language);
@@ -216,6 +225,14 @@ class AppProvider extends ChangeNotifier {
   void setUseLocalPhotoServer(bool enabled) {
     useLocalPhotoServer = enabled;
     settings?.write(Settings.useLocalPhotoServer, enabled ? 'oui' : null);
+    notifyListeners();
+  }
+
+  void setFibReadyChart(bool fibReady) => setLinkDisplay(fibReady ? LinkDisplay.fibReady : LinkDisplay.simple);
+
+  void setLinkDisplay(LinkDisplay display) {
+    linkDisplay = display;
+    settings?.write(Settings.linkChart, display.stored);
     notifyListeners();
   }
 
@@ -332,7 +349,8 @@ class AppProvider extends ChangeNotifier {
         if (references.contains(f.key)) f.key: f.value,
     };
     final zip = Bundle.writeReturn(base: e, intervention: intervention, objects: objects, files: files);
-    final name = '${(e['projet'] as Map?)?['code']}_${(e['zone'] as Map?)?['code']}_RETOUR_'
+    final name =
+        '${(e['projet'] as Map?)?['code']}_${(e['zone'] as Map?)?['code']}_RETOUR_'
         '${date.replaceAll(RegExp(r'[-:]'), '').substring(0, 13)}.zip';
     return (name, zip);
   }

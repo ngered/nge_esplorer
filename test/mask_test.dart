@@ -1579,7 +1579,25 @@ void main() {
     undo();
     expect([bore(cd).label, bore(cd).subduct, bore('CD1').state], ['2', false, 0]);
 
+    // règle d'InfraExplorer (notes rep17) : le centre dans le carré englobant de l'alvéole, coins compris
+    e.move(bore(cd), a.x + 0.035, a.y + 0.035);
+    expect(e.nestTarget(bore(cd))?.cd, 'CD1');
     e.nest(bore(cd), bore('CD1'));
+    // sous-tube resté dans son alvéole : elle reste sa cible ; détaché puis rattaché par l'annulation
+    expect(e.nestTarget(bore(cd))?.cd, 'CD1');
+    final reattach = e.unnest(bore(cd));
+    expect([bore(cd).label, bore(cd).subduct], ['2', false]);
+    reattach();
+    expect([bore(cd).label, bore(cd).parent], ['1.1', 'CD1']);
+    // un sous-tube change d'alvéole : sous-tube de la nouvelle, l'annulation le rend à l'ancienne
+    final big = e.add(linear: e.linears.single, x: 0.1, y: 0.1, diameter: 60, state: 0);
+    e.move(bore(cd), 0.1, 0.1);
+    expect(e.nestTarget(bore(cd))?.cd, big);
+    final back = e.nest(bore(cd), bore(big));
+    expect([bore(cd).label, bore(cd).parent, bore(big).state], ['2.1', big, 2]);
+    back();
+    expect([bore(cd).label, bore(cd).parent], ['1.1', 'CD1']);
+    e.remove(bore(big));
     e.unnest(bore(cd));
     expect([bore(cd).label, bore(cd).subduct], ['2', false]);
 
@@ -1675,6 +1693,53 @@ void main() {
     await t.pumpAndSettle();
     expect(tile('2'), findsOneWidget);
     expect(find.text('masque A · 2 alvéoles'), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('sous-tube glissé seul (notes rep17, comme InfraExplorer) : hors de son alvéole il en est détaché, '
+      '« Annuler » le ramène ; dans une autre alvéole il en devient sous-tube', (t) async {
+    t.view.physicalSize = const Size(360, 800);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final e = MaskEditor(repo, (await repo.object('C1'))!, author: 'essai');
+    await e.load();
+    e.setDiameter(e.bores().single, 80);
+    e.subduct(e.bores().single, 3, 28);
+    e.add(linear: e.linears.single, x: 0.1, y: 0.1, diameter: 60, state: 0);
+    await e.validate();
+    await t.pumpWidget(ChangeNotifierProvider.value(
+      value: AppProvider(repo),
+      child: MaterialApp(theme: ngeTheme(), navigatorObservers: [screenStack], home: MaskScreen(chamber: (await repo.object('C1'))!)),
+    ));
+    await t.pumpAndSettle();
+    Finder tile(String label) => find.ancestor(of: find.text(label), matching: find.byType(BoreTile));
+    Future<void> touch(String label) async {
+      await t.tap(tile(label));
+      await t.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+      await t.pumpAndSettle();
+    }
+
+    // désigné, le sous-tube se glisse seul (son alvéole ne bouge pas) ; hors de son alvéole : détaché
+    final parent = t.getCenter(tile('1'));
+    await touch('1.1');
+    final from = t.getCenter(tile('1.1'));
+    await t.dragFrom(from, Offset(0, t.getSize(tile('1')).height * 1.5));
+    await t.pumpAndSettle();
+    expect(t.getCenter(tile('1')), offsetMoreOrLessEquals(parent, epsilon: 0.5));
+    expect(find.text('Sous-tube 1.1 détaché : alvéole 3'), findsOneWidget);
+    expect([tile('3'), tile('1.2'), tile('1.3')], everyElement(findsOneWidget));
+    expect(find.text('masque A · 3 alvéoles'), findsOneWidget);
+    await t.tap(find.text('ANNULER'));
+    await t.pumpAndSettle();
+    expect(t.getCenter(tile('1.1')), offsetMoreOrLessEquals(from, epsilon: 1));
+    expect(find.text('masque A · 2 alvéoles'), findsOneWidget);
+
+    // toujours désigné, glissé dans une autre alvéole plus grande : il en devient sous-tube
+    expect(t.widget<BoreTile>(tile('1.1')).chosen, isTrue);
+    await t.dragFrom(t.getCenter(tile('1.1')), t.getCenter(tile('2')) - t.getCenter(tile('1.1')));
+    await t.pumpAndSettle();
+    expect(find.text('Alvéole 1.1 devenue sous-tube 2.1'), findsOneWidget);
+    expect([tile('2.1'), tile('1.2'), tile('1.3')], everyElement(findsOneWidget));
     expect(t.takeException(), isNull);
   });
 

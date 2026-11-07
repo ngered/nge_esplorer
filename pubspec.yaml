@@ -123,6 +123,8 @@ flutter_launcher_icons:
   android: true
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: assets/icon/app_icon_foreground.png
+  # premier plan déjà réduit au cercle sûr par app_icon.py (ADAPTIVE_SCALE) : pas de retrait supplémentaire
+  adaptive_icon_foreground_inset: 0
   min_sdk_android: 21
   ios: false
   web:

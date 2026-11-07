@@ -257,6 +257,47 @@ Constats :
   immeuble publiés (format 0.3.0 : 99 câbles, 106 équipements optiques, 8 583 positions, 438 mesures, 464 locaux ;
   3,9 Mo de GeoJSON, dont 1,1 Mo de câbles et de fibres).
 
+Jeu d'essai DOE « 71 » (7 novembre 2026) : DOE NGE du SRO LOI_25 (NRO 71263 LOI, Louhans, Saône-et-Loire, 2022),
+matériau de `docs/essai/71_data/in/NRO71263LOI_25_D_DOE_P1_V1/` chargé par `tools/essai/charger_71.py` →
+`docs/essai/projet_71/` (1,3 Go avec photos et documents ; projet QGIS `projet_71.qgs`), paquet
+`docs/essai/paquets/71_NRO71263LOI_25.zip` (format 0.5.0 : 0,3 Mo sans les photos, conforme, lu par les tests du
+terminal), non versionnés. Lanceurs VS Code « paquet 71 », smartphone et tablette (serveur du paquet et des photos sur
+le port 8093). Le DOE est rangé par type de document, un dossier `REC-<type>-…` par type ; l'index du DOE
+(`REC-ETU-…xlsx`) nomme les types (CIM conventions d'immeuble, CPV permissions de voirie, DCI, DIT, DLG livrables SIG,
+DPO appuis aériens, FOT photos, KEQ documentation des équipements, PCB plan de câblage, PGC génie civil, PMQ fiches de
+chambre, RFR recette, RVR réception de voirie, SBP plans de boîte, SOP synoptique) ; le chargeur le lit et commente
+chaque document du libellé de son type. Réseau repris de l'export GraceTHD v2 de FibReady (DLG) par les règles de
+`charger_doe.py` (classe `Doe` réutilisée, `base_grace_fichiers`).
+
+| Domaine | Contenu chargé |
+| --- | --- |
+| Supports | 198 appuis (122 Orange, 45 BT Enedis, 31 créés pour le CD71), 39 chambres (dont 3 créées), 4 façades, SRO, NRO, 6 immeubles |
+| Parcours | 248 linéaires (189 portées aériennes, 59 souterrains) ; 189 portées orientées, 211 câbles portés ; 59 conduites, 97 occupations |
+| Matériel | 86 boîtiers (77 PBO, 9 BPE), 2 baies et 5 tiroirs |
+| Optique | 86 câbles (13,4 km ; 84 avec leur parcours, 308 passages), 154 lovages, 3 210 fibres, 232 cassettes, 4 851 positions ; pas de routes optiques dans l'export ; 522 réflectométries rattachées à leur fibre et à leur boîtier d'extrémité |
+| BAL et immeubles | 260 adresses, 333 locaux rattachés à leur PBO, conventions d'immeuble jointes à 6 adresses |
+| Fichiers | 1 573 photos (968 Mo : 560 d'appuis, 628 de boîtiers, 68 du SRO, 309 extraites des 35 fiches de chambre dont 187 en vues A à D, dessus et environnement) ; 1 128 documents non publiés (311 Mo : plans de boîte, traces de mesure, DICT, conventions, permissions, plans) |
+
+Constats :
+- photos (FOT) : rangées par support (n° d'appui Orange, A717… pour les appuis CD71, « BT n » du relevé FibReady
+  pour Enedis, PT 7000… pour les boîtiers), mais nommées par l'appareil photo, sans légende : visuels libres « Appui
+  (DOE) » et « Boîtier optique ». Un classement à l'œil, comme pour les photos COMAC d'Evicom, rangerait les têtes et
+  les ensembles des 198 appuis (560 photos) ;
+- fiches de chambre (PMQ) : relevé Orange (annexe C16) avec ses photos intégrées (vignettes de 5 à 60 Ko), rangées
+  d'après leur case dans la fiche (masques A à D, dessus, environnement ; cases A et B sans libellé, B vérifiée sur
+  la photo) ; le relevé d'occupation (alvéoles par masque, diamètres, câbles cuivre) va au journal de la chambre : le
+  masque ne dit pas vers quel cheminement part chaque alvéole, d'où aucune position dans les faces ; trois fiches
+  CD71 d'un autre modèle, photos en visuel libre ; la fiche 71263-FT1 n'a pas de chambre ;
+- mesures (RFR, FiberCable, même format qu'Evicom) : l'appareil nomme le câble de départ (« TR 700002 » =
+  …/TR 70 0002) et le rang de la fibre ; 421 des 522 mesures dépassent les seuils de l'appareil (épissure du premier
+  boîtier vue à 0,4–0,6 dB pour un seuil de 0,3 dB) : mesures dans un seul sens (O→E), dont l'atténuation d'épissure
+  n'est pas une moyenne des deux sens ;
+- appuis Enedis : les dossiers photo « BT 01 » ou « BT 24 » se retrouvent par le numéro du relevé (« BT 1 »,
+  « BT 24-NC ») ; deux numéros (BT 77, BT 87) sont portés à la fois par un poteau BT et un poteau créé à côté : le
+  poteau BT reçoit les photos ;
+- non repris : la fin de travaux Enedis (DPO : annexes C8, plans de récolement, un shapefile par zone ; joints à la
+  zone), l'archive `FN_NRO71263LOI_25_D_RTE_P1_V3.7z` (version antérieure du même DOE).
+
 ## 8. Développer en attendant Android
 
 La compilation **web** fonctionne sur le poste actuel (vérifié le 30/10/2026 : `flutter build web` en 43 s ;
@@ -450,6 +491,32 @@ s'appliquent immédiatement.
   (les routes `OPT_ROUTE` restent au BE ; un câble arrivé à une baie du SRO est suivi dans ses tiroirs,
   `EQO_PARENT_KEY`) ; une suite hors du paquet est signalée ; sur Evicom, les 2 583 attentes donnent 732 routes
   jusqu'au connecteur du tiroir et 1 851 fibres en attente aux deux bouts (fibres mortes, surcapacité) ;
+- **lignes des liens, retours du 7 novembre** : traits des cellules nets (dessinés d'un pixel physique, sans
+  anticrénelage, `_GridPainter` ; plus de réduction d'image, les largeurs se calent sur la place), texte en graisse
+  normale, noir ou blanc selon la luminosité du fond (règle `GetContrastColor` de FibReady : blanc sur violet) ;
+  symbole retourné quand la fibre n'est que du côté sortant, règle de FibReady (`DoLinkFib`) : `o-` départ, `ø-`,
+  `R-`… ; attente abonné affichée `-#`. **Variante en pastilles** (notes equipements rep7, à l'essai) : badge du câble,
+  gros rond du tube, petit rond de la fibre, badge du connecteur ; Paramètres « Liens fibres » : charte FibReady
+  (cellules, par défaut), pastilles ou simplifié (`LinkDisplay`) ;
+- **étapes de la route optique** (7 novembre 2026, notes equipements rep5) : le picto du support (celui de la carte,
+  avec la marque de l'équipement optique porté) remplace le cadre du type (PBO, BPE…) ; l'étiquette de l'équipement
+  est préfixée de sa fonction si elle ne commence pas par elle (« PBO 01B19X ») ; comme sur la maquette, l'adresse du
+  support (`ADR_KEY` : numéro, voie, code postal, commune) remplace son étiquette, celle-ci restant à défaut
+  d'adresse ; cassette et position suivent ;
+- **charte FibReady des liens fibres** (7 novembre 2026, notes equipements rep4) : nouvelle version, par défaut, au
+  plus près de la maquette Figma (« schéma optique », « route optique ») et de FibReady ; l'affichage simplifié
+  précédent (`LinkChip`) est conservé, au choix dans les Paramètres (« Charte FibReady »). Une ligne par lien en
+  cellules (`FibreRow`, `modules/optique/fibready_chart.dart`) : capacité du câble entrant sur fond sombre, tube et
+  fibre aux couleurs de FibReady (`param_fiber_colours.csv` : rouge, bleu, vert #ADFF2F, jaune, violet, blanc, orange,
+  gris, marron, noir, turquoise, rose), connecteur par son symbole textuel de FibReady (`DLINK_SYMBOL` de
+  `connecteurs.csv` : `-x-`, `-#`, `-R`, `-o`, `<@>`, `-ø`, `o-`…, en chasse fixe ; les dessins SVG de
+  `Symbols/connecteurs`, d'abord repris, sont écartés à la demande de l'utilisateur), puis fibre, tube et capacité du câble
+  sortant ; cellules vides encadrées côté sans fibre. Fond du connecteur selon la destination de la fibre, règle de
+  FibReady (`LinkFib.GetLinkerStatus` / `GetStatutColor`) : prise abonné repérée en amont, orange ; fibre terminée en
+  réserve, violet ; prise ou attente abonné en aval, vert clair ; sinon jaune pâle (la prise bis, bleu ciel, et la
+  coupure, cramoisi, n'ont pas d'équivalent dans le paquet). Destination calculée par la route optique de chaque
+  position ; la route optique dépliée suit la même charte. Le rang de la position reste à droite de la ligne, avant
+  l'accès à la route ;
 - **cassettes de l'écran Optique** (5 novembre 2026) : repliées par défaut, seule la première est dépliée (hors
   passages hors cassettes, sauf s'ils sont seuls), plus celle du connecteur atteint depuis une route ;
 - **attente abonné, prise abonné** (5 novembre 2026) : la fibre réservée à un abonné, en attente au PBO, est une
@@ -465,7 +532,7 @@ s'appliquent immédiatement.
   support) ou du support affiché (autre support). Le repliage reste une action volontaire (« Replier », ou toucher à
   nouveau le connecteur), sans changement d'écran ;
 - **symboles des liens** (5 novembre 2026) : ceux de la légende FibReady (`connecteurs.csv` des paramètres :
-  `<A>` attente abonné, `-#` prise abonné, `-x-` fusion, `-o` attente, `-@` lové, `-R` réserve, `<@>` passage lové,
+  `<A>` attente abonné (affichée `-#` comme la prise abonné, retour du 7 novembre), `-#` prise abonné, `-x-` fusion, `-o` attente, `-@` lové, `-R` réserve, `<@>` passage lové,
   `<R>` passage réserve, `<P>` passage, `<x>` joint droit, `-ø` fibre morte ; plus `o-`, départ d'un connecteur de
   tiroir, que FibReady écrit dans ses liens sans l'avoir dans sa légende), pour distinguer attentes, réserves et
   prises (`FibreLink`). Déduits de la fonction de la position et de son affectation GraceTHD (`POS_AFFECT`) :
@@ -644,10 +711,18 @@ s'appliquent immédiatement.
     se retirent avec elle (confirmation) ; dessinées au-dessus d'elle, choisies d'une touche dans le panneau de
     l'alvéole. Comme dans FOA (notes rep15), une alvéole glissée (appui long) et déposée dans une plus grande en
     devient sous-tube, au numéro suivant, avec « Annuler » ; seulement dans la plus petite alvéole plus grande dont le
-    disque contient son centre, et du même parcours (le sous-tube hérite de la destination ; une alvéole créée dans
-    la session en change), sinon un message le dit ; « Détacher de l'alvéole » la rend alvéole. Pas de recalcul
-    géométrique de toutes les alvéoles comme dans FOA : seule l'alvéole déposée est rattachée. L'alvéole déplacée
-    n'est choisie qu'au relâcher (son panneau recentrait la grille sous le doigt).
+    carré englobant contient son centre (règle d'InfraExplorer, `ClsChbMask.MajTubage`, reprise le 7 novembre 2026,
+    notes rep17 ; d'abord le disque), et du même parcours (le sous-tube hérite de la destination ; une alvéole créée
+    dans la session en change), sinon un message le dit ; « Détacher de l'alvéole » la rend alvéole. Comparaison
+    avec le code d'InfraExplorer (notes rep17) : mêmes gabarits 3X et 4X (rayon de décalage = rayon du sous-tube),
+    même héritage de la destination, même suppression en cascade, alvéole entraînant ses sous-tubes, alvéole porteuse
+    occupée et laissée occupée au détachement ; écart corrigé : un sous-tube se déplace seul (désigné d'un toucher,
+    puis glissé), détaché s'il est déposé hors de son alvéole, sous-tube d'une autre s'il y est déposé, avec
+    « Annuler » qui le ramène (l'appui long d'un sous-tube déplace toujours son alvéole entière) ; écarts gardés :
+    contrôle que les sous-tubes tiennent dans l'alvéole (InfraExplorer n'en fait pas), numéro N.k gardé en rang
+    (`CD_NUM`) plutôt que recalculé d'après la position (le compteur d'InfraExplorer n'est pas remis à zéro d'une
+    alvéole à l'autre), seule l'alvéole déposée est rattachée (pas de recalcul de toutes les alvéoles). L'alvéole
+    déplacée n'est pas choisie au relâcher (son panneau recentrait la grille sous le doigt).
   - *Occupation* : câbles constatés de la conduite (`INF_CD_CABLE` : diamètre, nature Fo ou Cu, nombre ; une ligne
     par diamètre et nature, `CDC_RANG`), ajoutés d'une touche (diamètres de l'écran « Occupation alvéole » de FOA,
     6 à 50 mm, ou un autre), retirés un à un ; jauge du taux, Σ nb × (Ø câble / Ø intérieur)² (Ø intérieurs de

@@ -69,6 +69,14 @@ String addressLabel(GeoObject a) {
   return s.isNotEmpty ? s : '${p['ADR_COMMUNE'] ?? a.id}';
 }
 
+/// Adresse complète, comme la maquette de la route optique : « 15 rue du Fortin 91470 Limours ».
+String fullAddressLabel(GeoObject a) {
+  final p = a.props;
+  final town = [p['ADR_CP'], p['ADR_COMMUNE']].where((v) => v != null && '$v'.trim().isNotEmpty).join(' ');
+  final street = addressLabel(a);
+  return town.isEmpty || street == '${p['ADR_COMMUNE']}' ? street : '$street $town';
+}
+
 /// Nombre de locaux et leurs types (référentiel DEF_LOC_TYPE) : « 7 locaux (Résidentiel 6, Professionnel 1) ».
 String premisesSummary(List<Map<String, dynamic>> premises, ReferenceData ref) {
   final types = <String, int>{};

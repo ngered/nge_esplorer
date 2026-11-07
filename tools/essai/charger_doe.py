@@ -475,11 +475,20 @@ def lire_comac_vues():
 def base_grace(zdoe, dossier, qgis):
     """Export GraceTHD (02_GRACETHD) et relevé d'infrastructure FibReady (Shapes_Origine/INFRA_POINTS) du DOE → base
     SpatiaLite (shapefiles en Lambert 93, CSV en texte, champ vide → NULL)."""
+    return base_grace_fichiers(
+        ((os.path.basename(n), zdoe.read(n)) for n in zdoe.namelist()
+         if (n.startswith('02_GRACETHD/') and not n.endswith('/')) or n.startswith('01_PLAN/Shapes_Origine/INFRA_POINTS.')),
+        dossier, qgis)
+
+
+def base_grace_fichiers(fichiers, dossier, qgis):
+    """Fichiers d'un export GraceTHD (nom, contenu), avec INFRA_POINTS.* du relevé FibReady → base SpatiaLite
+    gracethd_doe.sqlite du dossier ; INFRA_POINTS en table fbr_infra_points (colonne commentair ajoutée vide si le
+    relevé n'en a pas)."""
     tmp = tempfile.mkdtemp()
-    for n in zdoe.namelist():
-        if (n.startswith('02_GRACETHD/') and not n.endswith('/')) or n.startswith('01_PLAN/Shapes_Origine/INFRA_POINTS.'):
-            with open(os.path.join(tmp, os.path.basename(n)), 'wb') as f:
-                f.write(zdoe.read(n))
+    for nom, contenu in fichiers:
+        with open(os.path.join(tmp, nom), 'wb') as f:
+            f.write(contenu)
     chemin = os.path.join(dossier, 'gracethd_doe.sqlite')
     if os.path.exists(chemin):
         os.remove(chemin)
@@ -504,6 +513,10 @@ def base_grace(zdoe, dossier, qgis):
             con.execute(f'CREATE TABLE "{base}" ({", ".join(f"{chr(34)}{c}{chr(34)} TEXT" for c in cols)})')
             con.executemany(f'INSERT INTO "{base}" VALUES ({",".join("?" * len(cols))})',
                             [[v or None for v in r] + [None] * (len(cols) - len(r)) for r in rangs[1:]])
+    if con.execute("SELECT 1 FROM sqlite_master WHERE name = 'fbr_infra_points'").fetchone() and 'commentair' not in {
+            r[1] for r in con.execute('PRAGMA table_info(fbr_infra_points)')}:
+        con.execute('ALTER TABLE fbr_infra_points ADD COLUMN commentair TEXT')
+    con.commit()
     con.close()
     shutil.rmtree(tmp)
     return chemin
@@ -565,6 +578,8 @@ def etudes_comac(zcalc, qgis):
 # Chargement ------------------------------------------------------------------------------------
 
 class Doe:
+    INTERVENTION = 'Chargement du DOE Evicom SRO-2-02HG'
+
     def __init__(self, dossier, qgis, zdoe, zcalc):
         self.dossier, self.zdoe, self.zcalc = dossier, zdoe, zcalc
         self.con = projet.ouvrir(dossier, qgis)
@@ -1399,8 +1414,8 @@ class Doe:
             'Buffer(ConvexHull(Collect(n.GEOMETRY)), 50))) FROM PRJ_NOE n WHERE n.ZONE_KEY = ?) WHERE ZONE_ID = ?',
             (zone, zone))
         self.con.execute("INSERT INTO PRJ_INTERVENTION (INT_CODE_EXT, INT_LIB, ACT_CODE, INT_AUTEUR, DATE_DEBUT, "
-                         "INT_STATUT) VALUES ('IMPORT-DOE', 'Chargement du DOE Evicom SRO-2-02HG', 'IMPORT', "
-                         "'tools/essai', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'INTEGREE')")
+                         "INT_STATUT) VALUES ('IMPORT-DOE', ?, 'IMPORT', 'tools/essai', "
+                         "strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'INTEGREE')", (self.INTERVENTION,))
         i = self.dernier()
         for table, pk in (('PRJ_NOE', 'NOE_ID'), ('PRJ_LINEAIRE', 'LIN_ID'), ('PRJ_ADRESSE', 'ADR_ID')):
             self.con.execute(f"INSERT INTO PRJ_INT_OBJET (INT_KEY, ENT_KEY, OBJ_KEY, IOB_ACTION) SELECT ?, ?, {pk}, 'C' "
